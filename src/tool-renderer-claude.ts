@@ -1,5 +1,5 @@
 import { Container, Text } from "@earendil-works/pi-tui";
-import { CustomEditor, getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { relative } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
@@ -20,47 +20,14 @@ export function createClaudeToolRendererExtension(): InlineExtension {
   return {
     name: "qronos-claude-tool-renderer",
     factory(pi: ExtensionAPI) {
-      let isAgentWorking = false;
-      pi.on("agent_start", () => {
-        isAgentWorking = true;
-      });
-      pi.on("agent_settled", () => {
-        isAgentWorking = false;
-      });
-
-      // 1. Clean borderless editor: removes ugly full-width horizontal lines (───) around the prompt
-      pi.on("session_start", (_event, ctx) => {
-        class ClaudeCleanEditor extends CustomEditor {
-          constructor(tui: any, theme: any, keybindings: any) {
-            super(tui, theme, keybindings, { paddingX: 1 });
-          }
-
-          override render(width: number): string[] {
-            const lines = super.render(width);
-            // Filter out full-width horizontal rule lines
-            const filtered = lines.filter((line) => {
-              const plain = line.replace(/\x1b\[[0-9;]*m/g, "").trim();
-              return !/^─+$/.test(plain);
-            });
-            // While agent is actively working, hide empty editor completely so no black box appears
-            if (isAgentWorking && filtered.every((l) => l.trim() === "")) {
-              return [];
-            }
-            return filtered;
-          }
-        }
-
-        ctx.ui.setEditorComponent((tui, theme, keybindings) => new ClaudeCleanEditor(tui, theme, keybindings));
-      });
-
-      // 2. Markdown transformer: format prompt chevrons and ensure headings/sections are separated
+      // 1. Markdown transformer: format prompt chevrons and ensure headings/sections are separated
       pi.registerMarkdownTransformer((markdown, context) => {
         if (context.messageType === "user") {
           const trimmed = markdown.trim();
           if (trimmed.startsWith("> ") || trimmed.startsWith("​> ") || trimmed.startsWith("› ")) {
-            return markdown;
+            return trimmed;
           }
-          return `​> ${markdown}`;
+          return `​> ${trimmed}`;
         }
 
         if (context.messageType === "assistant") {

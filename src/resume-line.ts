@@ -25,21 +25,30 @@ const RESUME_LABEL = "To resume this session:";
 const RESUME_COMMAND_RE = /(To resume this session:(?:\u001b\[[0-9;]*m|\s)*)pi(?=\s)( --session-dir (?:'(?:[^']|'\\'')*'|\S+))?/g;
 
 /**
- * Rewrites pi's `pi --session <id>` resume command into free-pi-cli's
- * equivalent. The command word is replaced and pi's `--session-dir <path>`
- * argument is removed: free-pi-cli rejects that flag and always derives the
- * session dir from the cwd, which is the dir pi printed. pi quotes the path
- * with single quotes (embedded `'` as `'\''`) unless it is only
- * [a-zA-Z0-9_\-./~:@] (quoteIfNeeded in pi-coding-agent's
- * dist/modes/interactive/interactive-mode.js).
- *
- * Returns the chunk unchanged when it carries no resume line, which is the
- * overwhelmingly common case (every other write passes through untouched).
+ * Strips OSC 133 shell integration sequences (\x1b]133;A\x07, \x1b]133;B\x07, \x1b]133;C\x07).
+ * When running inside web VS Code (Codespaces), xterm.js detects OSC 133;B and 133;C and injects
+ * a black horizontal command decoration rule right through the user message's #3a3a3a box.
+ * Removing these sequences leaves the user message as a solid, uninterrupted #3a3a3a panel.
  */
-export function rewriteResumeLine(chunk: string): string {
-  if (!chunk.includes(RESUME_LABEL)) return chunk;
-  return chunk.replace(RESUME_COMMAND_RE, "$1npx free-pi-cli");
+const OSC133_RE = /\x1b\]133;[^\x07\x1b]*(\x07|\x1b\\)/g;
+
+/**
+ * Rewrites pi's `pi --session <id>` resume command into qronos-cli's
+ * equivalent and strips OSC 133 command integration artifacts.
+ */
+export function rewriteStreamOutput(chunk: string): string {
+  let text = chunk;
+  if (text.includes(RESUME_LABEL)) {
+    text = text.replace(RESUME_COMMAND_RE, "$1qronos-cli");
+  }
+  if (text.includes("\x1b]133;")) {
+    text = text.replace(OSC133_RE, "");
+  }
+  return text;
 }
+
+/** Keep backwards compatible alias */
+export const rewriteResumeLine = rewriteStreamOutput;
 
 /** Minimal structural slice of the stream this patches — keeps it testable without a real TTY. */
 export interface WritableLike {
@@ -47,16 +56,13 @@ export interface WritableLike {
 }
 
 /**
- * Wraps `stream.write` so pi's resume line is rebranded on the way out.
- * Non-string chunks (Buffers) and every chunk without the resume label pass
- * straight through to the original write, so this cannot alter the TUI's own
- * byte stream. Returns a function that restores the original write.
+ * Wraps `stream.write` so pi's resume line is rebranded and OSC 133 decoration artifacts are stripped.
  */
 export function patchResumeLine(stream: WritableLike): () => void {
   const original = stream.write.bind(stream);
   stream.write = (chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
     if (typeof chunk !== "string") return original(chunk, ...rest);
-    return original(rewriteResumeLine(chunk), ...rest);
+    return original(rewriteStreamOutput(chunk), ...rest);
   };
   return () => {
     stream.write = original;
