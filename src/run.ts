@@ -17,6 +17,8 @@ export interface RunDeps {
   credentialsPath: string;
   /** Shows the consent screen, returns true on accept. */
   promptConsent: (text?: string) => Promise<boolean>;
+  /** Prompts interactively for API key. */
+  promptApiKey?: () => Promise<string>;
   /** Best-effort browser open; must never throw or block. */
   openBrowser: (url: string) => void;
   sleep: (ms: number) => Promise<void>;
@@ -103,13 +105,23 @@ export async function run(
       return 1;
     }
     showIntro(deps.log);
-    try {
-      jwt = await loginFlow(deps);
+
+    // Interactive key input
+    const enteredKey = await deps.promptApiKey?.();
+    if (enteredKey) {
+      await saveJwt(deps.credentialsPath, enteredKey);
+      jwt = enteredKey;
       consentCurrent = true;
-    } catch {
-      deps.log("Device login unreached. You can also supply an API key directly:");
-      deps.log("  export QRONOS_API_KEY=\"sk_live_...\" && qronos-cli");
-      return 1;
+      deps.log("✓ API key saved to ~/.qronos/agent/credentials.json\n");
+    } else {
+      try {
+        jwt = await loginFlow(deps);
+        consentCurrent = true;
+      } catch {
+        deps.log("Device login unreached. You can supply an API key directly:");
+        deps.log('  export QRONOS_API_KEY="sk_live_..." && qronos-cli');
+        return 1;
+      }
     }
   }
 

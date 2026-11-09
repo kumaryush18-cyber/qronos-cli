@@ -34,7 +34,7 @@ export const IMAGE_GUIDELINES = [
 ];
 
 const ERROR_TEXT: Record<string, string> = {
-  daily_cap: "The user's free allowance for today is used up. Do not retry. Tell the user they can get credits at freepi.ai/extra-credits, and continue without this tool.",
+  daily_cap: "The user's free allowance for today is used up. Do not retry. Tell the user they can get credits at qronos.me/account, and continue without this tool.",
   rolling_cap: "The user's short-term usage limit is reached. Do not retry; continue without this tool.",
   rate_limited: "Too many image requests right now. Do not call generate_image again in this turn unless the user asks.",
   not_configured: "Image generation is not available on this server. Do not call generate_image again in this session.",

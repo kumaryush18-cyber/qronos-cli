@@ -14,15 +14,6 @@ export interface ConsentPromptDeps {
   askLine: (prompt: string) => Promise<string>;
 }
 
-/**
- * Consent gate, deps-injected (test seam like run()'s). On a non-TTY stdin
- * this declines immediately instead of prompting: readline's question
- * promise never settles once piped stdin hits EOF, so the old
- * unconditional prompt hung a CI/piped invocation forever. Declining (never
- * auto-accepting) keeps the direction fail-safe — consent to ads + training
- * must be a deliberate interactive act, and run()'s decline path guarantees
- * zero server calls.
- */
 export async function promptConsent(deps: ConsentPromptDeps, text: string = CONSENT_TEXT): Promise<boolean> {
   if (!deps.stdinIsTTY) {
     deps.log(NON_INTERACTIVE_CONSENT_TEXT);
@@ -46,4 +37,15 @@ export async function promptConsentInteractive(text?: string): Promise<boolean> 
       }
     },
   }, text);
+}
+
+export async function promptApiKeyInteractive(): Promise<string> {
+  if (!process.stdin.isTTY) return "";
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const key = await rl.question("🔑 Enter your Qronos or OpenAI/Anthropic API Key (or press Enter to skip):\n> ");
+    return key.trim();
+  } finally {
+    rl.close();
+  }
 }

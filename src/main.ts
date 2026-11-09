@@ -11,7 +11,7 @@ import { runFreePiMcp } from "./mcp-command";
 import { getConfigPath, getCredentialsPath, getFreePiAgentDir } from "./paths";
 import { startGravityPixel } from "./gravity-pixel";
 import { launchPi } from "./pi-launch";
-import { promptConsentInteractive } from "./prompt";
+import { promptApiKeyInteractive, promptConsentInteractive } from "./prompt";
 import { createRealSpawn } from "./real-spawn";
 import { relaunchViaNpx } from "./relaunch";
 import { run } from "./run";
@@ -80,6 +80,7 @@ async function main(): Promise<void> {
       agentDir,
       credentialsPath: getCredentialsPath(agentDir),
       promptConsent: promptConsentInteractive,
+      promptApiKey: promptApiKeyInteractive,
       openBrowser,
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       launchPi,

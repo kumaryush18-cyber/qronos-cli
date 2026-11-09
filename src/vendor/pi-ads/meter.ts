@@ -15,7 +15,7 @@ export const METER_STATUS_KEY = "freepi-credits";
 
 /** Standard-lane balance at or below this share of the daily allowance triggers the low-credit warning. */
 export const LOW_CREDIT_FRACTION = 0.1;
-const BUY_LINK_TEXT = "freepi.ai/buy";
+const BUY_LINK_TEXT = "qronos.me/account";
 
 // buy_url carries a token, so it is only the OSC 8 target; the visible text is fixed.
 function buyMore(buyUrl: unknown): string {

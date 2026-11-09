@@ -50,24 +50,24 @@ it.
 
 ## MCP servers
 MCP (Model Context Protocol) servers give the agent extra tools, such as a
-database, a browser, or an internal API. free-pi includes none; you add your
+database, a browser, or an internal API. Qronos CLI includes none by default; you add your
 own. The agent reaches their tools by writing a short script for its
 \`codemode\` tool.
-Servers live in \`~/.free-pi/agent/mcp.json\`. A project can have its own
+Servers live in \`~/.qronos/agent/mcp.json\`. A project can have its own
 \`.pi/mcp.json\`; it is read only after you trust the project when asked.
 Add a server from a shell, or ask the agent to run the command for you with
 its bash tool:
-\`free-pi-cli mcp add files -- npx -y @modelcontextprotocol/server-filesystem .\`
-\`free-pi-cli mcp add docs --url https://example.com/mcp\`
-Other commands: \`free-pi-cli mcp list\` (add \`--json\` for machine output),
-\`free-pi-cli mcp remove <server>\`, \`free-pi-cli mcp login <server>\` to sign
-in to a server that uses OAuth, and \`free-pi-cli mcp logout <server>\`. Add
+\`qronos-cli mcp add files -- npx -y @modelcontextprotocol/server-filesystem .\`
+\`qronos-cli mcp add docs --url https://example.com/mcp\`
+Other commands: \`qronos-cli mcp list\` (add \`--json\` for machine output),
+\`qronos-cli mcp remove <server>\`, \`qronos-cli mcp login <server>\` to sign
+in to a server that uses OAuth, and \`qronos-cli mcp logout <server>\`. Add
 \`-l\` to add or remove in the current project instead of globally.
 Inside a session, \`/mcp\` shows each server and its tools, and lets you sign
 in, reconnect, or turn a server on or off.
 
 ## Support
-Today's sponsor keeps free-pi free. When the user asks how to help the
-project, or seems to like free-pi, suggest \`/support\` to visit the sponsor.
-More at https://freepi.ai
+Today's sponsor keeps free inference accessible. When the user asks how to help the
+project, or wants to explore developer tools, suggest \`/support\` to visit the sponsor.
+More at https://qronos.me
 `;
