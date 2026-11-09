@@ -1,15 +1,17 @@
 // Pure argv parsing for the local commands (help / version / logout / mcp) and the
-// `--session <id>` resume flag, extracted from index.ts (untestable: main() runs on import) as a test seam.
-//
-// Privacy note, same invariant as run()'s decline path: none of the commands
-// parsed here ever contact the free-pi server — they print or touch local
-// files and exit. (`mcp` reads and writes mcp.json and connects only to the
-// MCP servers the user names.) --session is not one of them: it maps to { kind: "run" } (the id is validated
-// in run.ts). Only { kind: "run" } proceeds into the consent-gated flow.
+// BYOK (Bring Your Own Key) & session flags.
 import { CLI_VERSION } from "./version";
 
+export interface RunOptions {
+  session?: string;
+  provider?: string;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+}
+
 export type CliCommand =
-  | { kind: "run" }
+  | { kind: "run"; options: RunOptions }
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "logout" }
@@ -17,53 +19,81 @@ export type CliCommand =
   | { kind: "unknown"; arg: string };
 
 export const HELP_TEXT = `
-qronos-cli — autonomous AI coding agent in your terminal powered by Qronos AI.
+⚡ qronos-cli — autonomous AI coding agent in your terminal powered by Qronos AI.
 
 Usage:
-  qronos-cli                 start the coding agent
-  qronos-cli --session <id>  resume a previous session
-  qronos-cli logout          remove the stored sign-in token; the next run signs in again
-  qronos-cli mcp <command>   add, remove, list, or sign in to your own MCP servers
-                             (qronos-cli mcp --help for details)
-  qronos-cli --version       print the CLI version
-  qronos-cli --help          show this help
+  qronos-cli                             start the coding agent (default: Qronos Gateway)
+  qronos-cli --provider <name>           use specific provider (qronos, openai, anthropic, deepseek, ollama)
+  qronos-cli --api-key <key>             supply direct API key (or set via env var)
+  qronos-cli --base-url <url>            supply custom OpenAI-compatible endpoint
+  qronos-cli --model <model>             use specific model (e.g. deepseek-v4-flash, gpt-4o, claude-3-7-sonnet)
+  qronos-cli --session <id>              resume a previous coding session
+  qronos-cli logout                      remove stored sign-in credentials
+  qronos-cli mcp <command>               manage Model Context Protocol tools (qronos-cli mcp --help)
+  qronos-cli --version                   print CLI version
+  qronos-cli --help                      show this help
 
-Environment:
-  QRONOS_BASE_URL            override the backend base URL (default https://api.qronos.me)
+Supported Providers (--provider):
+  qronos     Qronos AI Universal Gateway (default, https://api.qronos.me)
+  openai     Direct OpenAI API (https://api.openai.com/v1)
+  anthropic  Direct Anthropic Claude Messages API (https://api.anthropic.com)
+  deepseek   Direct DeepSeek API (https://api.deepseek.com/v1)
+  openrouter Direct OpenRouter API (https://openrouter.ai/api/v1)
+  groq       Direct Groq API (https://api.groq.com/openai/v1)
+  ollama     Local Ollama instance (http://localhost:11434/v1)
+
+Environment Variables:
   QRONOS_API_KEY             direct Qronos AI API key (sk_live_...)
-  FREEPI_NO_AUTO_UPDATE      disable in-place self-update for this run
-  FREEPI_NO_GRAVITY_PIXEL=1  do not run Gravity's ad-measurement pixel
+  OPENAI_API_KEY             direct OpenAI API key (sk-...)
+  ANTHROPIC_API_KEY          direct Anthropic Claude API key (sk-ant-...)
+  DEEPSEEK_API_KEY           direct DeepSeek API key (sk-...)
+  OPENROUTER_API_KEY         direct OpenRouter API key (sk-or-...)
+  GROQ_API_KEY               direct Groq API key (gsk_...)
+  QRONOS_BASE_URL            override Qronos backend URL (default https://api.qronos.me)
 `.trim();
 
 export function versionLine(): string {
   return `qronos-cli ${CLI_VERSION}`;
 }
 
-/**
- * argv is process.argv.slice(2). Anything unrecognized — including trailing
- * args after a valid command — is { kind: "unknown" } so index.ts can show
- * help and exit nonzero, rather than silently ignoring input the way the
- * arg-less CLI used to (a typo'd `free-pi-cli loguot` must not quietly start
- * a full agent session and burn ad-funded tokens).
- */
 export function parseCliArgs(argv: readonly string[]): CliCommand {
   const [first, ...rest] = argv;
-  if (first === undefined) return { kind: "run" };
+  if (first === undefined) return { kind: "run", options: {} };
 
-  // Everything after `mcp` belongs to pi's mcp command, so pass it through untouched.
   if (first === "mcp") return { kind: "mcp", args: rest };
+  if (first === "--help" || first === "-h" || first === "help") return { kind: "help" };
+  if (first === "--version" || first === "-v" || first === "version") return { kind: "version" };
+  if (first === "logout") return { kind: "logout" };
 
-  // run.ts reads and validates the value itself (incl. the missing-value message).
-  if (first === "--session") {
-    return rest.length > 1 ? { kind: "unknown", arg: rest[1] as string } : { kind: "run" };
+  const options: RunOptions = {};
+  let i = 0;
+  while (i < argv.length) {
+    const arg = argv[i];
+    if (arg === "--session" || arg === "-s") {
+      const val = argv[++i];
+      if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };
+      options.session = val;
+    } else if (arg === "--provider" || arg === "-p") {
+      const val = argv[++i];
+      if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };
+      options.provider = val.toLowerCase();
+    } else if (arg === "--api-key" || arg === "-k") {
+      const val = argv[++i];
+      if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };
+      options.apiKey = val;
+    } else if (arg === "--base-url" || arg === "-u") {
+      const val = argv[++i];
+      if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };
+      options.baseUrl = val;
+    } else if (arg === "--model" || arg === "-m") {
+      const val = argv[++i];
+      if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };
+      options.model = val;
+    } else {
+      return { kind: "unknown", arg: arg ?? "" };
+    }
+    i++;
   }
 
-  let kind: "help" | "version" | "logout";
-  if (first === "--help" || first === "-h" || first === "help") kind = "help";
-  else if (first === "--version" || first === "-v") kind = "version";
-  else if (first === "logout") kind = "logout";
-  else return { kind: "unknown", arg: first };
-
-  if (rest.length > 0) return { kind: "unknown", arg: rest[0] as string };
-  return { kind };
+  return { kind: "run", options };
 }

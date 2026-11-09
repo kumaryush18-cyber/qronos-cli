@@ -88,9 +88,9 @@ export function renderAdCard(
   // line built to exactly `columns` wraps its closing border onto the next
   // row (witnessed live at 80/100/140 cols on 2026-08-15).
   const innerWidth = Math.max(20, columns - 6);
-  const label = " AD ░▒▓ ";
-  const top = `┌${label}${"─".repeat(Math.max(0, innerWidth + 2 - label.length))}┐`;
-  const bottom = `└${"─".repeat(innerWidth + 2)}┘`;
+  const label = " Sponsored ⚡ ";
+  const top = `╭──${label}${"─".repeat(Math.max(0, innerWidth + 2 - label.length - 2))}╮`;
+  const bottom = `╰${"─".repeat(innerWidth + 2)}╯`;
 
   // KTD2: a short hex digest of the (sanitized) click URL, not the click
   // token itself, so the id visible in the escape stream is stable for
@@ -128,7 +128,7 @@ export function renderPlainAdLine(
   const url = sanitizeText(clickUrl);
   // #61: same as the card — the CTA carries the destination; the raw tracker
   // URL is the OSC-8 target only, never visible text.
-  const plain = truncateToWidth(`AD ▚ ${headline} — ${cta}`, Math.max(0, columns - 2), "…");
+  const plain = truncateToWidth(`⚡ Sponsored: ${headline} — ${cta}`, Math.max(0, columns - 2), "…");
   return theme.fg("dim", osc8(plain, url));
 }
 

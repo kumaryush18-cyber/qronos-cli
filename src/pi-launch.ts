@@ -40,6 +40,8 @@ export interface LaunchOptions {
   jwt: string;
   agentDir: string;
   session?: string;
+  /** Custom provider name (qronos, openai, anthropic, deepseek, ollama). */
+  provider?: string;
   /** Server-reported active model to display (falls back to MODEL_ID). */
   model?: string;
   /** #140: the selectable model catalog from /client-version. When present the
@@ -147,23 +149,20 @@ export function resolveModelName(opts: LaunchOptions): string {
  * always passed explicitly.
  */
 export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[], projectTrusted: boolean): SettingsManager {
+  const providerName = opts.provider || PROVIDER_NAME;
   return SettingsManager.inMemory(
     {
-      defaultProvider: PROVIDER_NAME,
+      defaultProvider: providerName,
       // The picker starts on the first catalog model (the server lists the
       // default first); the user switches with /model.
       defaultModel: models[0]!.id,
       defaultTools: [...SAFE_TOOLS, TODO_TOOL_NAME],
       packages: [],
-      // KTD1: hides pi's own startup header/skills/extensions dump so the
-      // free-pi-header extension's setHeader is the only header shown (R5).
+      // hides pi's own startup header dump so qronos-header is the only header shown.
       quietStartup: true,
-      // pi 1.2.0 defaults to fullscreen; keep 0.84's inline rendering with normal scrollback.
+      // regular inline rendering with normal scrollback.
       tuiMode: "regular",
-      // pi 1.2.0 falls back to a "system" palette; keep 0.84's light/dark pick from the terminal background.
       theme: "light/dark",
-      // Pi's own install ping to pi.dev/api/report-install (interactive-mode.js)
-      // is off for free-pi users; PI_TELEMETRY=0 below enforces it too.
       enableInstallTelemetry: false,
     },
     { projectTrusted },
@@ -180,16 +179,24 @@ export function settingsForRuntime(
 }
 
 export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): RuntimeBuildOptions {
-  // pi's MCP extension finds mcp.json, mcp-auth.json and mcp.log through
-  // getAgentDir(), which reads this env var and otherwise falls back to the
-  // user's own ~/.pi/agent. Point it at free-pi's agent dir so user servers
-  // live in ~/.free-pi/agent/mcp.json and a real pi install is never read.
+  // Point it at qronos agent dir so user servers live in ~/.qronos/agent/mcp.json.
   process.env.PI_CODING_AGENT_DIR = opts.agentDir;
   const models = catalogModelsFor(opts);
+  const providerName = opts.provider || PROVIDER_NAME;
   const providerExtension: InlineExtension = {
-    name: "free-pi-provider",
+    name: "qronos-provider",
     factory: (pi: ExtensionAPI) => {
-      pi.registerProvider(PROVIDER_NAME, buildProviderConfig(opts.baseUrl, opts.jwt, sessionId, models));
+      pi.registerProvider(
+        providerName,
+        buildProviderConfig({
+          providerName,
+          baseUrl: opts.baseUrl,
+          apiKey: opts.jwt,
+          sessionId,
+          modelId: opts.model,
+          models,
+        }),
+      );
     },
   };
 

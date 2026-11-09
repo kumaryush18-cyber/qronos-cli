@@ -20,21 +20,22 @@ export interface TuiLike {
 // description starts at the same column.
 const COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
   { name: "/usage", description: "credits and usage statistics" },
+  { name: "/model", description: "switch active model" },
   { name: "/support", description: "visit today's sponsor" },
-  { name: "/buy-credits", description: "get more tokens on qronos.me" },
+  { name: "/buy-credits", description: "top up token balance on qronos.me" },
   { name: "/close-other-session", description: "free a stuck session on another machine" },
   { name: "/update", description: "get the latest qronos-cli" },
 ];
 
-const NAME_COLUMN = 24; // 2 leading spaces + longest name (20) + 2 spaces gap
+const NAME_COLUMN = 26; // 2 leading spaces + longest name (20) + 4 spaces gap
 
 const WELCOME_LINE =
-  "Welcome to Qronos CLI, autonomous AI coding agent powered by Qronos AI.";
+  "Autonomous terminal agent with tool execution (bash, read, write, edit) and MCP.";
 
 // Split into two lines rather than one 106-char line, so it fits the 100-column
 // truncation rule in headerLines without ever being cut off with an ellipsis.
-const CONSENT_LINE_1 = "Universal LLM gateway with built-in active safety & MCP tool harness.";
-const CONSENT_LINE_2 = "Visit https://qronos.me for dashboard, models, and API keys.";
+const CONSENT_LINE_1 = "Universal Gateway: https://qronos.me · Active Safety & Identity Shielding.";
+const CONSENT_LINE_2 = "Sponsors power free inference. Press ctrl+o for options or / for commands.";
 
 const EXPANDED_HINT_LINE = "esc interrupt · ctrl+c clear / exit · / commands · ! bash";
 
@@ -88,25 +89,34 @@ export function headerLines(
   const fit = (plain: string, styled: () => string): string =>
     plain.length <= inner ? styled() : theme.fg("dim", truncate(plain, inner));
 
-  const titleRest = ` · ${modelName} · ctrl+o for help`;
-  const title = fit(
-    `qronos-cli${titleRest}`,
-    () => `${theme.bold(theme.fg("accent", "qronos-cli"))}${theme.fg("dim", titleRest)}`,
-  );
+  const dim = (plain: string) => fit(plain, () => theme.fg("dim", plain));
+  const accent = (plain: string) => fit(plain, () => theme.fg("accent", plain));
+
+  const boxWidth = Math.min(inner, 64);
+  const boxTop = `╭─ ⚡ QRONOS CLI ${"─".repeat(Math.max(0, boxWidth - 18))}╮`;
+  const boxBottom = `╰${"─".repeat(Math.max(0, boxWidth - 2))}╯`;
+  const boxLine1 = `│ Model: ${modelName.slice(0, boxWidth - 14).padEnd(boxWidth - 12)} │`;
+  const boxLine2 = `│ Base: https://api.qronos.me/v1${" ".repeat(Math.max(0, boxWidth - 34))} │`;
+
+  const bannerLines = inner >= 45 ? [
+    theme.fg("borderAccent", boxTop),
+    theme.bold(theme.fg("accent", boxLine1)),
+    theme.fg("dim", boxLine2),
+    theme.fg("borderAccent", boxBottom),
+  ] : [
+    `${theme.bold(theme.fg("accent", "⚡ QRONOS CLI"))} ${theme.fg("dim", `· ${modelName}`)}`,
+  ];
 
   const commandLines = COMMANDS.map(({ name, description }) => {
-    const padded = `  ${name}`.padEnd(NAME_COLUMN, " ");
-    return fit(`${padded}${description}`, () => `${padded}${theme.fg("dim", description)}`);
+    const padded = `  ▸ ${name}`.padEnd(NAME_COLUMN, " ");
+    return fit(`${padded}${description}`, () => `${theme.fg("accent", padded)}${theme.fg("dim", description)}`);
   });
-
-  const dim = (plain: string) => fit(plain, () => theme.fg("dim", plain));
 
   const lines = [
     "",
-    title,
+    ...bannerLines,
     "",
     dim(WELCOME_LINE),
-    "",
     dim(CONSENT_LINE_1),
     dim(CONSENT_LINE_2),
     "",

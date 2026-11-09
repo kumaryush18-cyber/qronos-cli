@@ -73,36 +73,41 @@ async function main(): Promise<void> {
   }
 
   const agentDir = getFreePiAgentDir();
-  const code = await run({
-    baseUrl: resolveBaseUrl(),
-    agentDir,
-    credentialsPath: getCredentialsPath(agentDir),
-    promptConsent: promptConsentInteractive,
-    openBrowser,
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    launchPi,
-    log: (message) => console.log(message),
-    checkClientVersion,
-    startGravityPixel: (jwt) => startGravityPixel(jwt, join(dirname(agentDir), "gravity")),
-    relaunchLatest: (latest) =>
-      relaunchViaNpx(latest, {
-        env: process.env,
-        argv: process.argv.slice(2),
-        platform: process.platform,
-        autoUpdateEnabled: () => readAutoUpdate(getConfigPath()),
-        spawn: (cmd, args, opts) => spawn(cmd, args, opts),
-        proc: process,
-        log: (message) => console.log(message),
-      }),
-    maybeSelfUpdate: (action, latest) =>
-      maybeSelfUpdate(action, latest, {
-        env: process.env,
-        autoUpdateEnabled: () => readAutoUpdate(getConfigPath()),
-        spawn: createRealSpawn(),
-        cliRealpath: resolveCliRealpath(),
-        log: (message) => console.log(message),
-      }),
-  });
+  const runOptions = command.kind === "run" ? command.options : {};
+  const code = await run(
+    {
+      baseUrl: resolveBaseUrl(),
+      agentDir,
+      credentialsPath: getCredentialsPath(agentDir),
+      promptConsent: promptConsentInteractive,
+      openBrowser,
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      launchPi,
+      log: (message) => console.log(message),
+      checkClientVersion,
+      startGravityPixel: (jwt) => startGravityPixel(jwt, join(dirname(agentDir), "gravity")),
+      relaunchLatest: (latest) =>
+        relaunchViaNpx(latest, {
+          env: process.env,
+          argv: process.argv.slice(2),
+          platform: process.platform,
+          autoUpdateEnabled: () => readAutoUpdate(getConfigPath()),
+          spawn: (cmd, args, opts) => spawn(cmd, args, opts),
+          proc: process,
+          log: (message) => console.log(message),
+        }),
+      maybeSelfUpdate: (action, latest) =>
+        maybeSelfUpdate(action, latest, {
+          env: process.env,
+          autoUpdateEnabled: () => readAutoUpdate(getConfigPath()),
+          spawn: createRealSpawn(),
+          cliRealpath: resolveCliRealpath(),
+          log: (message) => console.log(message),
+        }),
+    },
+    process.argv,
+    runOptions,
+  );
   process.exit(code);
 }
 
