@@ -17,14 +17,14 @@ export function createClaudeToolRendererExtension(): InlineExtension {
   return {
     name: "qronos-claude-tool-renderer",
     factory(pi: ExtensionAPI) {
-      // 1. Prepend literal upright '> ' to user messages (escaped so markdown won't italicize it)
+      // 1. Prepend literal upright '> ' to user messages (using zero-width space so Markdown won't treat it as a blockquote)
       pi.registerMarkdownTransformer((markdown, context) => {
         if (context.messageType === "user") {
           const trimmed = markdown.trim();
-          if (trimmed.startsWith("> ") || trimmed.startsWith("\\> ") || trimmed.startsWith("› ")) {
+          if (trimmed.startsWith("> ") || trimmed.startsWith("​> ") || trimmed.startsWith("› ")) {
             return markdown;
           }
-          return `\\> ${markdown}`;
+          return `​> ${markdown}`;
         }
         return markdown;
       });
@@ -88,13 +88,13 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             const maxLines = options?.expanded ? 120 : 8;
             const displayLines = rawLines.slice(0, maxLines);
 
-            // Syntax highlighting for code files
+            // Syntax highlighting: detect language from file path, command string, or code structure
+            const lang = detectLanguage(toolName, context?.args, textContent);
             const rawTarget = context?.args?.file_path || context?.args?.path || "";
             const targetFile = rawTarget ? relative(cwd, rawTarget) : "";
-            const lang = targetFile ? getLanguageFromPath(targetFile) : undefined;
 
             let highlightedLines = displayLines;
-            if (lang && toolName !== "bash") {
+            if (lang) {
               try {
                 highlightedLines = highlightCode(displayLines.join("\n"), lang);
               } catch {
@@ -104,9 +104,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
 
             // Summary line for read/write/edit if available
             let summaryPrefix = "";
-            if (toolName === "write") {
+            if (toolName === "write" && targetFile) {
               summaryPrefix = `Wrote ${rawLines.length} lines to ${targetFile}`;
-            } else if (toolName === "read") {
+            } else if (toolName === "read" && targetFile) {
               summaryPrefix = `Read ${rawLines.length} lines from ${targetFile}`;
             }
 
@@ -119,9 +119,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             } else {
               highlightedLines.forEach((line: string, index: number) => {
                 const branch = index === 0 ? `  ${theme.fg("dim", "└")} ` : `    `;
-                if (line.startsWith("+")) {
+                if (!lang && line.startsWith("+")) {
                   linesToDraw.push(`${branch}${theme.fg("success", line)}`);
-                } else if (line.startsWith("-")) {
+                } else if (!lang && line.startsWith("-")) {
                   linesToDraw.push(`${branch}${theme.fg("error", line)}`);
                 } else {
                   linesToDraw.push(`${branch}${line}`);
@@ -143,6 +143,46 @@ export function createClaudeToolRendererExtension(): InlineExtension {
       });
     },
   };
+}
+
+function detectLanguage(toolName: string, args: any, text: string): string | undefined {
+  // 1. Direct path from args (read, write, edit, etc.)
+  const rawTarget = args?.file_path || args?.path || "";
+  if (rawTarget) {
+    const lang = getLanguageFromPath(rawTarget);
+    if (lang) return lang;
+  }
+
+  // 2. If tool is bash, check command for file extension (e.g. cat server/gateway.ts, sed ... script.py)
+  if (toolName === "bash" && args?.command) {
+    const fileMatch = String(args.command).match(
+      /[\w./-]+\.(ts|tsx|js|jsx|json|py|rs|go|html|css|md|sh|bash|yml|yaml|sql|c|cpp|h|java|php)\b/i,
+    );
+    if (fileMatch) {
+      const lang = getLanguageFromPath(fileMatch[0]);
+      if (lang) return lang;
+    }
+  }
+
+  // 3. Fallback: inspect the first few lines of text to detect common formats
+  const firstFew = text.slice(0, 1000);
+  if (/^\s*[{}\[\]]/.test(firstFew) && (firstFew.includes('":') || firstFew.includes("':"))) {
+    return "json";
+  }
+  if (/^\s*(import\s|export\s|const\s|let\s|function\s|class\s|type\s|interface\s)/m.test(firstFew)) {
+    return "typescript";
+  }
+  if (/^\s*(def\s|class\s.*:|from\s+\w+\s+import)/m.test(firstFew)) {
+    return "python";
+  }
+  if (/^\s*<\?php/.test(firstFew)) {
+    return "php";
+  }
+  if (/^\s*<!DOCTYPE\s+html|<\w+>[\s\S]*<\/\w+>/i.test(firstFew)) {
+    return "html";
+  }
+
+  return undefined;
 }
 
 function formatToolName(toolName: string): string {

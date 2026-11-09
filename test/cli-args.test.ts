@@ -4,7 +4,7 @@ import { CLI_VERSION } from "../src/version";
 
 describe("parseCliArgs — local command dispatch", () => {
   test("no args -> run (the agent flow, unchanged default)", () => {
-    expect(parseCliArgs([])).toEqual({ kind: "run" });
+    expect(parseCliArgs([])).toEqual({ kind: "run", options: {} });
   });
 
   test.each([["--help"], ["-h"], ["help"]])("%s -> help", (arg) => {
@@ -42,11 +42,21 @@ describe("parseCliArgs — local command dispatch", () => {
   });
 
   test("--session <id> -> run (value validation stays in run.ts)", () => {
-    expect(parseCliArgs(["--session", "abc"])).toEqual({ kind: "run" });
+    expect(parseCliArgs(["--session", "abc"])).toEqual({ kind: "run", options: { session: "abc" } });
   });
 
-  test("bare --session -> run so run.ts prints its own missing-value message", () => {
-    expect(parseCliArgs(["--session"])).toEqual({ kind: "run" });
+  test("bare --session -> unknown missing-value", () => {
+    expect(parseCliArgs(["--session"])).toEqual({ kind: "unknown", arg: "--session" });
+  });
+
+  test("--continue / -c -> resumes latest session", () => {
+    expect(parseCliArgs(["--continue"])).toEqual({ kind: "run", options: { session: "latest" } });
+    expect(parseCliArgs(["-c"])).toEqual({ kind: "run", options: { session: "latest" } });
+  });
+
+  test("--resume / -r -> resumes session", () => {
+    expect(parseCliArgs(["--resume"])).toEqual({ kind: "run", options: { session: "latest" } });
+    expect(parseCliArgs(["-r", "abc"])).toEqual({ kind: "run", options: { session: "abc" } });
   });
 
   test("--session <id> with extra trailing args -> unknown", () => {

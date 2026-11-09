@@ -11,7 +11,7 @@ export interface RunOptions {
 }
 
 export type CliCommand =
-  | { kind: "run"; options: RunOptions }
+  | { kind: "run"; options?: RunOptions }
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "logout" }
@@ -22,12 +22,14 @@ export const HELP_TEXT = `
 ◈ qronos-cli — autonomous AI coding agent in your terminal powered by Qronos AI.
 
 Usage:
-  qronos-cli                             start the coding agent (default: Qronos Gateway)
+  qronos-cli                             start a new coding session (default: Qronos Gateway)
+  qronos-cli -c, --continue              continue the most recent coding session
+  qronos-cli -r, --resume [id]           resume the most recent session (or specify session ID)
+  qronos-cli -s, --session <id>          resume a specific session by ID
   qronos-cli --provider <name>           use specific provider (qronos, openai, anthropic, deepseek, ollama)
   qronos-cli --api-key <key>             supply direct API key (or set via env var)
   qronos-cli --base-url <url>            supply custom OpenAI-compatible endpoint
   qronos-cli --model <model>             use specific model (e.g. deepseek-v4-flash, gpt-4o, claude-3-7-sonnet)
-  qronos-cli --session <id>              resume a previous coding session
   qronos-cli logout                      remove stored sign-in credentials
   qronos-cli mcp <command>               manage Model Context Protocol tools (qronos-cli mcp --help)
   qronos-cli --version                   print CLI version
@@ -73,6 +75,16 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
       const val = argv[++i];
       if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };
       options.session = val;
+    } else if (arg === "--continue" || arg === "-c") {
+      options.session = "latest";
+    } else if (arg === "--resume" || arg === "-r" || arg === "-resume") {
+      const next = argv[i + 1];
+      if (next && !next.startsWith("-")) {
+        options.session = next;
+        i++;
+      } else {
+        options.session = "latest";
+      }
     } else if (arg === "--provider" || arg === "-p") {
       const val = argv[++i];
       if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };

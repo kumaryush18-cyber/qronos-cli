@@ -363,7 +363,13 @@ export async function createSessionManager(
 ): Promise<SessionManager> {
   if (sessionId) {
     const infos = await api.list(cwd, sessionDir);
-    const info = infos.find((session) => session.id === sessionId);
+    if (sessionId === "latest") {
+      if (infos.length > 0) {
+        return api.open(infos[0]!.path, sessionDir);
+      }
+      return api.create(cwd, sessionDir);
+    }
+    const info = infos.find((session) => session.id === sessionId || session.id.startsWith(sessionId));
     if (!info) {
       throw new Error(`No session found matching '${sessionId}' in this directory`);
     }

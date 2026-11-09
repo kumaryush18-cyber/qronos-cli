@@ -2,6 +2,9 @@
 // short). They target waste seen in real sessions: turns that end on a plan
 // instead of a tool call, retry loops, and "done" claims nobody checked.
 export const AGENT_RULES = `## Working rules
+- When inspecting or reading files, prefer the built-in read tool over shell commands (cat, head, tail, sed, awk).
+- When modifying files, prefer the built-in edit or write tools over shell scripts.
+- Avoid running binary hex dumps (xxd, hexdump) or byte-level inspection unless explicitly requested.
 - When you say you will run, check, or change something, make that tool call in the same
   turn. Never end a turn with only a plan or a script printed as text.
 - If the same error appears twice, stop retrying variants. Read the relevant source, docs

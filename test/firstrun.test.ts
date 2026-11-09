@@ -863,7 +863,12 @@ describe("trial: server-reported model + notice (run.ts)", () => {
 
 describe("provider registration", () => {
   test("points at the configured base URL with the free-pi model", () => {
-    const config = buildProviderConfig("http://example.test:4321", "jwt-abc", "session-1", [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }]);
+    const config = buildProviderConfig({
+      baseUrl: "http://example.test:4321",
+      apiKey: "jwt-abc",
+      sessionId: "session-1",
+      models: [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }],
+    });
 
     // /v1 is appended because pi's openai-completions client (openai SDK)
     // appends /chat/completions to the base — verified live 2026-08-14.
@@ -878,17 +883,32 @@ describe("provider registration", () => {
   });
 
   test("#28 R19/KTD-3: threads sessionId through as a static x-session-id header", () => {
-    const a = buildProviderConfig("http://example.test:4321", "jwt-abc", "session-a", [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }]);
+    const a = buildProviderConfig({
+      baseUrl: "http://example.test:4321",
+      apiKey: "jwt-abc",
+      sessionId: "session-a",
+      models: [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }],
+    });
     // #37: x-client-version rides alongside x-session-id on every completion.
     expect(a.headers).toEqual({ "x-session-id": "session-a", "x-client-version": CLI_VERSION });
 
     // Stable across repeated calls with the same sessionId, different across
     // two different sessionIds — a process's identity is fixed for its
     // lifetime (KTD-3: generated once per launchPi() call).
-    const aAgain = buildProviderConfig("http://example.test:4321", "jwt-abc", "session-a", [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }]);
+    const aAgain = buildProviderConfig({
+      baseUrl: "http://example.test:4321",
+      apiKey: "jwt-abc",
+      sessionId: "session-a",
+      models: [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }],
+    });
     expect(aAgain.headers).toEqual(a.headers);
 
-    const b = buildProviderConfig("http://example.test:4321", "jwt-abc", "session-b", [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }]);
+    const b = buildProviderConfig({
+      baseUrl: "http://example.test:4321",
+      apiKey: "jwt-abc",
+      sessionId: "session-b",
+      models: [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }],
+    });
     expect(b.headers).not.toEqual(a.headers);
   });
 });
