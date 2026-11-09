@@ -5,7 +5,7 @@ import type { Api } from "@earendil-works/pi-ai";
 import { CLI_VERSION } from "./version";
 
 export const DEFAULT_PROVIDER_NAME = "qronos";
-export const DEFAULT_MODEL_ID = "deepseek/deepseek-v4-flash";
+export const DEFAULT_MODEL_ID = "claude-sonnet-5.5";
 
 export const SAFE_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
@@ -41,7 +41,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     name: "qronos",
     baseUrl: "https://api.qronos.me/v1",
     api: "openai-completions",
-    defaultModel: "deepseek/deepseek-v4-flash",
+    defaultModel: "claude-sonnet-5.5",
     envKey: "QRONOS_API_KEY",
   },
   openai: {

@@ -137,11 +137,12 @@ export async function run(
     return 1;
   }
 
-  // Version check (only when using Qronos gateway)
+  // Version & live model catalog check (when using Qronos gateway)
   let updateLatest: string | undefined;
+  let versionCheck: ClientVersionCheck = { action: "ok" };
   if (!isDirectThirdParty) {
     try {
-      const versionCheck = await deps.checkClientVersion(baseUrl, CLI_VERSION);
+      versionCheck = await deps.checkClientVersion(baseUrl, CLI_VERSION);
       if (versionCheck.action !== "ok") {
         const outcome = await deps.maybeSelfUpdate(versionCheck.action, versionCheck.latest);
         if (outcome === "updated-exit") return 0;
@@ -173,14 +174,20 @@ export async function run(
     }
   }
 
+  const activeModel = selectedModel || versionCheck.model || "claude-sonnet-5.5";
+  const catalogModels = versionCheck.models && versionCheck.models.length > 0
+    ? versionCheck.models
+    : (selectedModel ? [{ id: selectedModel, name: selectedModel }] : undefined);
+
   const finalSessionId = await deps.launchPi({
     baseUrl,
     jwt,
     agentDir: deps.agentDir,
     session: options.session || sessionArg.session,
     provider: providerKey,
-    model: selectedModel,
-    models: selectedModel ? [{ id: selectedModel, name: selectedModel }] : undefined,
+    model: activeModel,
+    models: catalogModels,
+    fusion: versionCheck.fusion,
     updateLatest,
     getGravityContext,
   });
