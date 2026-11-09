@@ -10,11 +10,10 @@ import { z } from "zod";
 // surface.
 
 export const ConfigSchema = z.object({
-  // Show the inline ad card once every Nth assistant turn.
-  adInlineTurnFrequency: z.number().int().default(5),
-  // Minimum terminal width (columns) for the framed ad card. Below this a
-  // single plain line is rendered instead.
-  adMinColumns: z.number().int().default(60),
+  // Show the inline ad card after assistant turns.
+  adInlineTurnFrequency: z.number().int().default(1),
+  // Minimum terminal width (columns) for the framed ad card.
+  adMinColumns: z.number().int().default(35),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

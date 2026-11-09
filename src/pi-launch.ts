@@ -38,6 +38,7 @@ import { patchResumeLine } from "./resume-line";
 import { CLAUDE_THEME_NAME, ensureQronosTheme } from "./theme-claude";
 import { createClaudeToolRendererExtension } from "./tool-renderer-claude";
 import { decideProjectTrustInteractive, projectTrustForCwd } from "./project-trust";
+import { DEFAULT_BASE_URL } from "./env";
 
 export interface LaunchOptions {
   baseUrl: string;
@@ -212,8 +213,9 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
 
   // U7: banner/inline ads + usage meter, sandboxed to UI-only hooks (KTD9).
   // See packages/pi-ads/src/sandbox.test.ts for the enforced proof.
+  const adsBaseUrl = process.env.QRONOS_BASE_URL || DEFAULT_BASE_URL;
   const adsExtension: InlineExtension = createAdsExtension({
-    baseUrl: opts.baseUrl,
+    baseUrl: adsBaseUrl,
     getToken: () => opts.jwt,
     sessionId,
     getGravityContext: opts.getGravityContext,
