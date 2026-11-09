@@ -1,70 +1,113 @@
 import { Container, Text } from "@earendil-works/pi-tui";
+import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 
 /**
  * Custom tool renderer extension that styles tool execution exactly like Claude Code:
- * - A clean dot bullet (● in green for success, ● in red for error, dim ● for in-progress)
- * - Concise ToolName(target) header
- * - Elegant tree connector ('└') on the first line below the command
- * - Aligned 4-space indentation on subsequent lines with zero full-block colored backgrounds
+ * - Single-line header: ● ToolName(target) with green ● on success, red ● on error, dim ● while running
+ * - Tree branch connector: '  └ ' on the first line of output
+ * - Clean 4-space aligned indentation on all subsequent lines
+ * - Full syntax highlighting for code files and diffs (+ in green, - in red)
+ * - User message prompt chevron '> ' prepended to user prompt blocks
  */
 export function createClaudeToolRendererExtension(): InlineExtension {
   return {
     name: "qronos-claude-tool-renderer",
     factory(pi: ExtensionAPI) {
+      // 1. Prepend Claude Code '> ' prompt chevron to user messages
+      pi.registerMarkdownTransformer((markdown, context) => {
+        if (context.messageType === "user") {
+          const trimmed = markdown.trim();
+          if (trimmed.startsWith("> ") || trimmed.startsWith("› ") || trimmed.startsWith("» ")) {
+            return markdown;
+          }
+          return `> ${markdown}`;
+        }
+        return markdown;
+      });
+
+      // 2. Register Claude Code style tool renderers
       pi.registerToolRenderer((toolName, _next) => {
         return {
-          renderShell: "self", // Completely disables Box and full-width colored background fills
-          renderCall(args: any, theme: any, _context: any) {
+          renderShell: "self", // Disables Box container and full-width colored background fills
+
+          // renderCall: ONLY renders the single header line: ● ToolName(target)
+          renderCall(args: any, theme: any, context: any) {
             const container = new Container();
             const { name, target } = formatToolCall(toolName, args);
-            const dot = theme.fg("dim", "● ");
+
+            // If command finished, update dot to green or red. While running, show dim.
+            const isFinished = !context.isPartial && context.durationMs !== undefined;
+            const isError = Boolean(context.isError);
+
+            const dot = isFinished
+              ? (isError ? theme.fg("error", "● ") : theme.fg("success", "● "))
+              : theme.fg("dim", "● ");
+
             const title = theme.bold(theme.fg("text", name));
             const sub = target ? theme.fg("dim", `(${target})`) : "";
             container.addChild(new Text(`${dot}${title}${sub}`, 0, 0));
             return container;
           },
+
+          // renderResult: ONLY renders the result output with '  └ ' branch connector.
+          // DOES NOT re-print the header (prevents duplicate tool lines).
           renderResult(result: any, options: any, theme: any, context: any) {
             const container = new Container();
-            const { name, target } = formatToolCall(toolName, context?.args);
-
-            const isError = Boolean(result?.isError);
-            const dot = isError ? theme.fg("error", "● ") : theme.fg("success", "● ");
-            const title = theme.bold(theme.fg("text", name));
-            const sub = target ? theme.fg("dim", `(${target})`) : "";
-            container.addChild(new Text(`${dot}${title}${sub}`, 0, 0));
-
-            // Extract and format result text with Claude Code "└" tree branch connector
             const textContent = extractResultText(result);
-            if (textContent) {
-              const rawLines = textContent.trim().split("\n");
-              const maxLines = options?.expanded ? 100 : 8;
-              const displayLines = rawLines.slice(0, maxLines);
-
-              const formattedLines = displayLines
-                .map((line: string, index: number) => {
-                  // First line uses '  └ ', subsequent lines indent with '    ' (aligned under └ text)
-                  const branch = index === 0 ? `  ${theme.fg("dim", "└")} ` : `    `;
-                  if (line.startsWith("+")) return `${branch}${theme.fg("success", line)}`;
-                  if (line.startsWith("-")) return `${branch}${theme.fg("error", line)}`;
-                  return `${branch}${theme.fg("muted", line)}`;
-                })
-                .join("\n");
-
-              container.addChild(new Text(`\n${formattedLines}`, 0, 0));
-
-              if (rawLines.length > maxLines) {
-                container.addChild(
-                  new Text(
-                    `\n    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines, ctrl+o to expand)`)}`,
-                    0,
-                    0,
-                  ),
-                );
+            if (!textContent) {
+              if (!result?.isError) {
+                container.addChild(new Text(`  ${theme.fg("dim", "└")} ${theme.fg("muted", "Done")}`, 0, 0));
               }
-            } else if (!isError) {
-              // Empty successful output still gets clean tree connector
-              container.addChild(new Text(`\n  ${theme.fg("dim", "└")} ${theme.fg("muted", "Done")}`, 0, 0));
+              return container;
+            }
+
+            const rawLines = textContent.trimEnd().split("\n");
+            // Remove leading empty lines
+            while (rawLines.length > 0 && rawLines[0].trim() === "") {
+              rawLines.shift();
+            }
+
+            if (rawLines.length === 0) {
+              return container;
+            }
+
+            const maxLines = options?.expanded ? 120 : 8;
+            const displayLines = rawLines.slice(0, maxLines);
+
+            // Check if this output is code from a known file path
+            const targetPath = context?.args?.file_path || context?.args?.path || "";
+            const lang = targetPath ? getLanguageFromPath(targetPath) : undefined;
+
+            let highlightedLines = displayLines;
+            if (lang && toolName !== "bash") {
+              try {
+                highlightedLines = highlightCode(displayLines.join("\n"), lang);
+              } catch {
+                highlightedLines = displayLines;
+              }
+            }
+
+            // Format with Claude Code '  └ ' branch on the first line and '    ' (4-space indent) on rest
+            const formattedLines = highlightedLines
+              .map((line: string, index: number) => {
+                const branch = index === 0 ? `  ${theme.fg("dim", "└")} ` : `    `;
+                if (line.startsWith("+")) return `${branch}${theme.fg("success", line)}`;
+                if (line.startsWith("-")) return `${branch}${theme.fg("error", line)}`;
+                return `${branch}${line}`;
+              })
+              .join("\n");
+
+            container.addChild(new Text(`${formattedLines}`, 0, 0));
+
+            if (rawLines.length > maxLines) {
+              container.addChild(
+                new Text(
+                  `\n    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines, ctrl+o to expand)`)}`,
+                  0,
+                  0,
+                ),
+              );
             }
 
             return container;

@@ -8,7 +8,7 @@ export const CLAUDE_THEME_JSON = {
   "name": CLAUDE_THEME_NAME,
   "appearance": "dark",
   "vars": {
-    "text": "okhsl(234 3% 89%)",
+    "text": "okhsl(234 3% 92%)",
     "muted": "okhsl(229 6% 67%)",
     "dim": "okhsl(229 8% 50%)",
     "amber": "okhsl(55 90% 55%)",
@@ -18,21 +18,21 @@ export const CLAUDE_THEME_JSON = {
     "red": "okhsl(20 72% 67%)",
     "yellow": "okhsl(83 88% 67%)",
     "borderMuted": "okhsl(229 8% 30%)",
-    "userGrey": "okhsl(228 12% 23%)"
+    "userGrey": "#3a3a3a"
   },
   "colors": {
     "accent": "terracotta",
     "border": "okhsl(231 20% 35%)",
     "borderAccent": "terracotta",
-    "borderMuted": "okhsl(229 8% 30%)",
+    "borderMuted": "borderMuted",
     "success": "green",
     "error": "red",
     "warning": "yellow",
     "muted": "muted",
-    "dim": "okhsl(229 8% 50%)",
+    "dim": "dim",
     "text": "text",
     "thinkingText": "muted",
-    // All background panel fills set to "" except userMessageBg which has Claude Code subtle charcoal grey
+    // All background panel fills set to "" except userMessageBg which uses Claude Code #3a3a3a
     "selectedBg": "",
     "searchMatchBg": "",
     "searchMatchText": "text",
@@ -45,7 +45,7 @@ export const CLAUDE_THEME_JSON = {
     "toolSuccessBg": "",
     "toolErrorBg": "",
     "toolTitle": "text",
-    "toolOutput": "muted",
+    "toolOutput": "text",
     "mdHeading": "terracotta",
     "mdLink": "blue",
     "mdLinkUrl": "muted",
