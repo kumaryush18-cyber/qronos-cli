@@ -17,7 +17,8 @@ export const CLAUDE_THEME_JSON = {
     "green": "okhsl(159 59% 67%)",
     "red": "okhsl(20 72% 67%)",
     "yellow": "okhsl(83 88% 67%)",
-    "borderMuted": "okhsl(229 8% 30%)"
+    "borderMuted": "okhsl(229 8% 30%)",
+    "userGrey": "okhsl(228 12% 23%)"
   },
   "colors": {
     "accent": "terracotta",
@@ -31,11 +32,11 @@ export const CLAUDE_THEME_JSON = {
     "dim": "okhsl(229 8% 50%)",
     "text": "text",
     "thinkingText": "muted",
-    // All background panel fills set to "" (empty = transparent terminal default!)
+    // All background panel fills set to "" except userMessageBg which has Claude Code subtle charcoal grey
     "selectedBg": "",
     "searchMatchBg": "",
     "searchMatchText": "text",
-    "userMessageBg": "",
+    "userMessageBg": "userGrey",
     "userMessageText": "text",
     "customMessageBg": "",
     "customMessageText": "muted",

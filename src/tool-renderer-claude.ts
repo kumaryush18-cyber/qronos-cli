@@ -5,7 +5,8 @@ import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-ag
  * Custom tool renderer extension that styles tool execution exactly like Claude Code:
  * - A clean dot bullet (● in green for success, ● in red for error, dim ● for in-progress)
  * - Concise ToolName(target) header
- * - Indented clean output with no solid background rectangles
+ * - Elegant tree connector ('└') on the first line below the command
+ * - Aligned 4-space indentation on subsequent lines with zero full-block colored backgrounds
  */
 export function createClaudeToolRendererExtension(): InlineExtension {
   return {
@@ -13,7 +14,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
     factory(pi: ExtensionAPI) {
       pi.registerToolRenderer((toolName, _next) => {
         return {
-          renderShell: "self", // Disables Box container and full-width background fills
+          renderShell: "self", // Completely disables Box and full-width colored background fills
           renderCall(args: any, theme: any, _context: any) {
             const container = new Container();
             const { name, target } = formatToolCall(toolName, args);
@@ -25,36 +26,45 @@ export function createClaudeToolRendererExtension(): InlineExtension {
           },
           renderResult(result: any, options: any, theme: any, context: any) {
             const container = new Container();
-            const { name, target } = formatToolCall(toolName, context.args);
+            const { name, target } = formatToolCall(toolName, context?.args);
 
-            const isError = Boolean(result.isError);
+            const isError = Boolean(result?.isError);
             const dot = isError ? theme.fg("error", "● ") : theme.fg("success", "● ");
             const title = theme.bold(theme.fg("text", name));
             const sub = target ? theme.fg("dim", `(${target})`) : "";
             container.addChild(new Text(`${dot}${title}${sub}`, 0, 0));
 
-            // Clean output rendering with subtle indentation and zero solid background blocks
+            // Extract and format result text with Claude Code "└" tree branch connector
             const textContent = extractResultText(result);
             if (textContent) {
-              const lines = textContent.trim().split("\n");
-              const maxLines = options?.expanded ? 100 : 6;
-              const displayLines = lines.slice(0, maxLines);
+              const rawLines = textContent.trim().split("\n");
+              const maxLines = options?.expanded ? 100 : 8;
+              const displayLines = rawLines.slice(0, maxLines);
 
               const formattedLines = displayLines
-                .map((line: string) => {
-                  if (line.startsWith("+")) return `  ${theme.fg("success", line)}`;
-                  if (line.startsWith("-")) return `  ${theme.fg("error", line)}`;
-                  return `  ${theme.fg("muted", line)}`;
+                .map((line: string, index: number) => {
+                  // First line uses '  └ ', subsequent lines indent with '    ' (aligned under └ text)
+                  const branch = index === 0 ? `  ${theme.fg("dim", "└")} ` : `    `;
+                  if (line.startsWith("+")) return `${branch}${theme.fg("success", line)}`;
+                  if (line.startsWith("-")) return `${branch}${theme.fg("error", line)}`;
+                  return `${branch}${theme.fg("muted", line)}`;
                 })
                 .join("\n");
 
               container.addChild(new Text(`\n${formattedLines}`, 0, 0));
 
-              if (lines.length > maxLines) {
+              if (rawLines.length > maxLines) {
                 container.addChild(
-                  new Text(`\n  ${theme.fg("dim", `... (${lines.length - maxLines} more lines)`)}`, 0, 0),
+                  new Text(
+                    `\n    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines, ctrl+o to expand)`)}`,
+                    0,
+                    0,
+                  ),
                 );
               }
+            } else if (!isError) {
+              // Empty successful output still gets clean tree connector
+              container.addChild(new Text(`\n  ${theme.fg("dim", "└")} ${theme.fg("muted", "Done")}`, 0, 0));
             }
 
             return container;
@@ -68,7 +78,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
 function formatToolCall(toolName: string, args: any): { name: string; target: string } {
   switch (toolName) {
     case "bash":
-      return { name: "Bash", target: args?.command ? truncate(args.command, 45) : "" };
+      return { name: "Bash", target: args?.command ? truncate(args.command, 55) : "" };
     case "read":
       return { name: "Read", target: args?.file_path || args?.path || "" };
     case "write":
