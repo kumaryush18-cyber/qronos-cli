@@ -1,5 +1,5 @@
 import { Container, Text } from "@earendil-works/pi-tui";
-import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { relative } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
@@ -9,15 +9,51 @@ import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-ag
  * - Single-line header: ● ToolName(target) with dot strictly beside the name (no awkward wrapping)
  * - Tree branch connector: '  └ ' on the first line of output
  * - Clean 4-space aligned indentation on all subsequent lines
+ * - Automatic dedenting so nested code snippets are not pushed excessively to the right
  * - Line lengths strictly bounded to terminal width to prevent mobile soft-wrapping to column 0
  * - Full syntax highlighting for code files and diffs (+ in green, - in red)
  * - User message prompt with literal upright '> ' (not slanted/italic)
+ * - Clean borderless editor input without distracting horizontal black lines
+ * - Clear spacing separating headings and sections in assistant responses
  */
 export function createClaudeToolRendererExtension(): InlineExtension {
   return {
     name: "qronos-claude-tool-renderer",
     factory(pi: ExtensionAPI) {
-      // 1. Prepend literal upright '> ' to user messages (using zero-width space so Markdown won't treat it as a blockquote)
+      let isAgentWorking = false;
+      pi.on("agent_start", () => {
+        isAgentWorking = true;
+      });
+      pi.on("agent_settled", () => {
+        isAgentWorking = false;
+      });
+
+      // 1. Clean borderless editor: removes ugly full-width horizontal lines (───) around the prompt
+      pi.on("session_start", (_event, ctx) => {
+        class ClaudeCleanEditor extends CustomEditor {
+          constructor(tui: any, theme: any, keybindings: any) {
+            super(tui, theme, keybindings, { paddingX: 1 });
+          }
+
+          override render(width: number): string[] {
+            const lines = super.render(width);
+            // Filter out full-width horizontal rule lines
+            const filtered = lines.filter((line) => {
+              const plain = line.replace(/\x1b\[[0-9;]*m/g, "").trim();
+              return !/^─+$/.test(plain);
+            });
+            // While agent is actively working, hide empty editor completely so no black box appears
+            if (isAgentWorking && filtered.every((l) => l.trim() === "")) {
+              return [];
+            }
+            return filtered;
+          }
+        }
+
+        ctx.ui.setEditorComponent((tui, theme, keybindings) => new ClaudeCleanEditor(tui, theme, keybindings));
+      });
+
+      // 2. Markdown transformer: format prompt chevrons and ensure headings/sections are separated
       pi.registerMarkdownTransformer((markdown, context) => {
         if (context.messageType === "user") {
           const trimmed = markdown.trim();
@@ -26,10 +62,22 @@ export function createClaudeToolRendererExtension(): InlineExtension {
           }
           return `​> ${markdown}`;
         }
+
+        if (context.messageType === "assistant") {
+          let text = markdown;
+          // Ensure markdown headings (# Heading) have proper separation
+          text = text.replace(/([^\n])\n(#{1,6}\s+[^\n]+)/g, "$1\n\n$2");
+          text = text.replace(/(#{1,6}\s+[^\n]+)\n([^\n#])/g, "$1\n\n$2");
+
+          // Ensure bold section titles (**Title:**) have proper separation
+          text = text.replace(/([^\n])\n(\*\*[^*]+:\*\*)\n?([^\n*])/g, "$1\n\n$2\n\n$3");
+          return text;
+        }
+
         return markdown;
       });
 
-      // 2. Register Claude Code style tool renderers
+      // 3. Register Claude Code style tool renderers
       pi.registerToolRenderer((toolName, _next) => {
         return {
           renderShell: "self", // Disables Box container and full-width colored background fills
@@ -86,7 +134,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             }
 
             const maxLines = options?.expanded ? 120 : 8;
-            const displayLines = rawLines.slice(0, maxLines);
+            // Dedent lines so deeply nested code snippets aren't pushed far to the right
+            const dedented = dedentLines(rawLines);
+            const displayLines = dedented.slice(0, maxLines);
 
             // Syntax highlighting: detect language from file path, command string, or code structure
             const lang = detectLanguage(toolName, context?.args, textContent);
@@ -133,8 +183,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
               linesToDraw.push(`    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines, ctrl+o to expand)`)}`);
             }
 
-            // Strictly truncate every single line so narrow mobile screens never wrap to column 0
-            const safeOutput = linesToDraw.map((l) => truncateToWidth(l, termWidth - 1)).join("\n");
+            // Strictly truncate every single line so narrow mobile screens never wrap to column 0,
+            // with a blank separator line below so assistant responses have clear spacing
+            const safeOutput = linesToDraw.map((l) => truncateToWidth(l, termWidth - 1)).join("\n") + "\n";
             container.addChild(new Text(safeOutput, 0, 0));
 
             return container;
@@ -143,6 +194,19 @@ export function createClaudeToolRendererExtension(): InlineExtension {
       });
     },
   };
+}
+
+function dedentLines(lines: string[]): string[] {
+  const nonEmpty = lines.filter((l) => l.trim().length > 0);
+  if (nonEmpty.length === 0) return lines;
+  const minIndent = Math.min(
+    ...nonEmpty.map((l) => {
+      const m = l.match(/^[ \t]*/);
+      return m ? m[0].length : 0;
+    }),
+  );
+  if (minIndent === 0) return lines;
+  return lines.map((l) => (l.length >= minIndent ? l.slice(minIndent) : l));
 }
 
 function detectLanguage(toolName: string, args: any, text: string): string | undefined {
