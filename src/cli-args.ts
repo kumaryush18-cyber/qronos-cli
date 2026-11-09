@@ -19,7 +19,7 @@ export type CliCommand =
   | { kind: "unknown"; arg: string };
 
 export const HELP_TEXT = `
-⚡ qronos-cli — autonomous AI coding agent in your terminal powered by Qronos AI.
+◈ qronos-cli — autonomous AI coding agent in your terminal powered by Qronos AI.
 
 Usage:
   qronos-cli                             start the coding agent (default: Qronos Gateway)

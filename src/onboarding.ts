@@ -2,7 +2,7 @@
 export const INTRO_ENV_SKIP = "QRONOS_NO_INTRO";
 
 export const INTRO_TEXT = `
-⚡ Welcome to Qronos CLI — autonomous AI coding agent in your terminal.
+◈ Welcome to Qronos CLI — autonomous AI coding agent in your terminal.
 
   • Inspects, edits, and creates files with surgical diffs.
   • Executes shell commands and handles git workflows natively.

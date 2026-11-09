@@ -1,5 +1,5 @@
 export const CONSENT_TEXT = `
-⚡ Qronos CLI — Privacy & Transparency Notice
+◈ Qronos CLI — Privacy & Transparency Notice
 
   * Privacy-First: We do NOT log, store, or inspect your source code, files, or
     prompts for AI model training. Your code remains 100% yours.

@@ -1,6 +1,7 @@
 // Responsive, minimalist Claude Code-inspired header.
 // Adapts cleanly to narrow mobile screens without line-wrapping or visual clutter.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export interface ThemeLike {
   fg(color: string, text: string): string;
@@ -27,23 +28,16 @@ const UPDATE_MAX_WIDTH = 80;
 export function updateBannerLines(theme: ThemeLike, latest: string, width: number): string[] {
   const headline = "Update Available";
   const detail = `New version ${latest} is available. Run /update`;
-  const inner = Math.max(0, Math.min(width - 1, UPDATE_MAX_WIDTH));
+  const inner = Math.max(0, Math.min(width - 2, UPDATE_MAX_WIDTH));
   if (inner <= 0) return [];
   const border = theme.fg("warning", UPDATE_BORDER_CHAR.repeat(inner));
   return [
     "",
     border,
-    theme.bold(theme.fg("warning", truncate(headline, inner))),
-    theme.fg("dim", truncate(detail, inner)),
+    theme.bold(theme.fg("warning", truncateToWidth(headline, inner))),
+    theme.fg("dim", truncateToWidth(detail, inner)),
     border,
   ];
-}
-
-function truncate(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  if (text.length <= maxWidth) return text;
-  if (maxWidth <= 1) return text.slice(0, maxWidth);
-  return `${text.slice(0, maxWidth - 1)}…`;
 }
 
 export function headerLines(
@@ -53,30 +47,31 @@ export function headerLines(
   width: number = Number.POSITIVE_INFINITY,
   updateLatest?: string,
 ): string[] {
-  const inner = width - 1;
-  const fit = (plain: string, styled: () => string): string =>
-    plain.length <= inner ? styled() : theme.fg("dim", truncate(plain, inner));
+  const safeWidth = Math.max(20, width);
+  const isNarrow = safeWidth < 58;
+  const boxWidth = Math.min(safeWidth - 4, 48);
 
-  const dim = (plain: string) => fit(plain, () => theme.fg("dim", plain));
-
-  // Clean, Claude Code-inspired header box
-  const isNarrow = inner < 55;
-  const boxWidth = Math.min(inner, 54);
-  const title = " ⚡ Qronos CLI ";
-  const top = `╭─${title}${"─".repeat(Math.max(0, boxWidth - title.length - 2))}╮`;
+  // Official Qronos mark (◈ Obsidian Core) instead of generic lightning bolt
+  const title = " ◈ Qronos CLI ";
+  const titleW = visibleWidth(title);
+  const dashCount = Math.max(0, boxWidth - titleW - 3);
+  const top = `╭─${title}${"─".repeat(dashCount)}╮`;
   const bottom = `╰${"─".repeat(Math.max(0, boxWidth - 2))}╯`;
-  const cleanModel = modelName.replace(/^.*\//, ""); // Strip any provider prefix for clean display
+  const cleanModel = modelName.replace(/^.*\//, "");
 
   const lines: string[] = [];
 
   if (!isNarrow) {
-    const line1 = `│ Model: ${cleanModel.padEnd(boxWidth - 11)}│`;
-    const line2 = `│ Type prompt below or / for commands.${" ".repeat(Math.max(0, boxWidth - 40))}│`;
+    const innerPad = Math.max(0, boxWidth - 11);
+    const line1Content = truncateToWidth(cleanModel, innerPad).padEnd(innerPad);
+    const line2Inner = Math.max(0, boxWidth - 4);
+    const line2Content = truncateToWidth("Type prompt below or / for commands.", line2Inner).padEnd(line2Inner);
+
     lines.push(
       "",
       theme.fg("borderAccent", top),
-      `${theme.fg("borderAccent", "│")} ${theme.bold(theme.fg("accent", "Model:"))} ${theme.fg("accent", cleanModel.padEnd(boxWidth - 11))}${theme.fg("borderAccent", "│")}`,
-      theme.fg("dim", line2),
+      `${theme.fg("borderAccent", "│")} ${theme.bold(theme.fg("accent", "Model:"))} ${theme.fg("accent", line1Content)}${theme.fg("borderAccent", "│")}`,
+      `${theme.fg("borderAccent", "│")} ${theme.fg("dim", line2Content)}${theme.fg("borderAccent", "│")}`,
       theme.fg("borderAccent", bottom),
       "",
     );
@@ -84,8 +79,8 @@ export function headerLines(
     // Ultra-compact single line for mobile viewports
     lines.push(
       "",
-      `${theme.bold(theme.fg("accent", "⚡ Qronos CLI"))} ${theme.fg("dim", `· ${cleanModel}`)}`,
-      theme.fg("dim", "Type prompt below or / for commands."),
+      `${theme.bold(theme.fg("accent", "◈ Qronos CLI"))} ${theme.fg("dim", `· ${truncateToWidth(cleanModel, safeWidth - 18)}`)}`,
+      theme.fg("dim", truncateToWidth("Type prompt below or / for commands.", safeWidth - 2)),
       "",
     );
   }
@@ -94,15 +89,20 @@ export function headerLines(
   if (expanded) {
     const commandLines = COMMANDS.map(({ name, description }) => {
       const padded = `  ▸ ${name}`.padEnd(NAME_COLUMN, " ");
-      return fit(`${padded}${description}`, () => `${theme.fg("accent", padded)}${theme.fg("dim", description)}`);
+      const full = `${padded}${description}`;
+      return `${theme.fg("accent", padded)}${theme.fg("dim", description)}`;
     });
     lines.push(...commandLines, "");
-    lines.push(dim(EXPANDED_HINT_LINE), "");
+    lines.push(theme.fg("dim", EXPANDED_HINT_LINE), "");
   }
 
-  if (updateLatest) lines.push(...updateBannerLines(theme, updateLatest, width));
+  if (updateLatest) lines.push(...updateBannerLines(theme, updateLatest, safeWidth));
 
-  return lines.map((line) => (line === "" ? line : ` ${line}`));
+  // Strictly enforce visible width on every line with margin to prevent any terminal overflow
+  return lines.map((line) => {
+    if (!line) return "";
+    return truncateToWidth(` ${line}`, safeWidth);
+  });
 }
 
 export interface CreateHeaderExtensionOptions {
