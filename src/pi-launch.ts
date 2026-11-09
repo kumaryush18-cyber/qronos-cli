@@ -33,6 +33,8 @@ import { createHeaderExtension } from "./header";
 import { resolveFreePiScope } from "./provider-lock";
 import { createFusionExtension, resolveFusionIds } from "./fusion";
 import { patchResumeLine } from "./resume-line";
+import { CLAUDE_THEME_NAME, ensureQronosTheme } from "./theme-claude";
+import { createClaudeToolRendererExtension } from "./tool-renderer-claude";
 import { decideProjectTrustInteractive, projectTrustForCwd } from "./project-trust";
 
 export interface LaunchOptions {
@@ -162,7 +164,7 @@ export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[]
       quietStartup: true,
       // regular inline rendering with normal scrollback.
       tuiMode: "regular",
-      theme: "light/dark",
+      theme: CLAUDE_THEME_NAME,
       enableInstallTelemetry: false,
     },
     { projectTrusted },
@@ -315,6 +317,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     mcpExtension,
     codemodeExtension,
     toolSearchExtension,
+    createClaudeToolRendererExtension(),
   ];
 
   const settingsManager = buildSettingsManager(opts, models, opts.projectTrusted === true);
@@ -390,6 +393,7 @@ process.env.PI_TELEMETRY = "0";
 patchResumeLine(process.stdout);
 
 export async function launchPi(opts: LaunchOptions): Promise<string> {
+  await ensureQronosTheme(opts.agentDir);
   const cwd = process.cwd();
   const sessionDir = getSessionDir(cwd, opts.agentDir);
   const sm = await createSessionManager(cwd, sessionDir, opts.session);
