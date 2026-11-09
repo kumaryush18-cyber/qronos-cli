@@ -8,10 +8,12 @@ import {
   InteractiveMode,
   SessionManager,
   SettingsManager,
+  UserMessageComponent,
   type CreateAgentSessionRuntimeFactory,
   type ExtensionAPI,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
 import { createAdsExtension } from "@freepi/pi-ads";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -397,6 +399,18 @@ process.env.PI_TELEMETRY = "0";
 // prints "To resume this session: pi --session <id>" straight to stdout and
 // then exits the process. See resume-line.ts.
 patchResumeLine(process.stdout);
+
+/**
+ * Patch UserMessageComponent to render user messages as a single, solid #3a3a3a box:
+ * 1. Bounded to (width - 1) so padding never touches the exact right terminal boundary
+ *    and triggers terminal autowrap (which inserts a blank black line on narrow mobile screens).
+ * 2. Does not emit OSC 133 command zone escapes that trigger VS Code Codespaces to draw
+ *    terminal command decoration rules through the message block.
+ */
+UserMessageComponent.prototype.render = function (width: number): string[] {
+  const safeWidth = Math.max(1, width - 1);
+  return Container.prototype.render.call(this, safeWidth);
+};
 
 export async function launchPi(opts: LaunchOptions): Promise<string> {
   await ensureQronosTheme(opts.agentDir);
