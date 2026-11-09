@@ -19,24 +19,22 @@ export interface TuiLike {
 // R2: fixed command list, in order, with descriptions. Names padded so every
 // description starts at the same column.
 const COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
-  { name: "/usage", description: "credits left today and refill time" },
-  { name: "/support", description: "visit today's advertiser" },
-  { name: "/tos", description: "terms of service" },
-  { name: "/privacy-policy", description: "privacy policy" },
-  { name: "/buy-credits", description: "get more usage" },
+  { name: "/usage", description: "credits and usage statistics" },
+  { name: "/support", description: "visit today's sponsor" },
+  { name: "/buy-credits", description: "get more tokens on qronos.me" },
   { name: "/close-other-session", description: "free a stuck session on another machine" },
-  { name: "/update", description: "get the latest free-pi" },
+  { name: "/update", description: "get the latest qronos-cli" },
 ];
 
 const NAME_COLUMN = 24; // 2 leading spaces + longest name (20) + 2 spaces gap
 
 const WELCOME_LINE =
-  "Welcome to Free Pi, ad-supported inference. Please visit our advertisers to support us.";
+  "Welcome to Qronos CLI, autonomous AI coding agent powered by Qronos AI.";
 
 // Split into two lines rather than one 106-char line, so it fits the 100-column
 // truncation rule in headerLines without ever being cut off with an ellipsis.
-const CONSENT_LINE_1 = "Usage is funded by ads and training. By using free-pi you consent.";
-const CONSENT_LINE_2 = "See /tos and /privacy-policy.";
+const CONSENT_LINE_1 = "Universal LLM gateway with built-in active safety & MCP tool harness.";
+const CONSENT_LINE_2 = "Visit https://qronos.me for dashboard, models, and API keys.";
 
 const EXPANDED_HINT_LINE = "esc interrupt · ctrl+c clear / exit · / commands · ! bash";
 
@@ -92,8 +90,8 @@ export function headerLines(
 
   const titleRest = ` · ${modelName} · ctrl+o for help`;
   const title = fit(
-    `free-pi${titleRest}`,
-    () => `${theme.bold(theme.fg("accent", "free-pi"))}${theme.fg("dim", titleRest)}`,
+    `qronos-cli${titleRest}`,
+    () => `${theme.bold(theme.fg("accent", "qronos-cli"))}${theme.fg("dim", titleRest)}`,
   );
 
   const commandLines = COMMANDS.map(({ name, description }) => {

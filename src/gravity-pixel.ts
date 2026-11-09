@@ -67,7 +67,7 @@ export function startGravityPixel(
   void (async () => {
     try {
       sdk = await load();
-      const p = sdk.gravityPixel({ pixelId: GRAVITY_PIXEL_ID, appName: "free-pi", storageDir });
+      const p = sdk.gravityPixel({ pixelId: GRAVITY_PIXEL_ID, appName: "qronos-cli", storageDir });
       pixel = p;
       const stopWatching = dropPixelSignalHandlers();
       try {

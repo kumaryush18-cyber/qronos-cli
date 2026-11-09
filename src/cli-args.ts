@@ -17,25 +17,26 @@ export type CliCommand =
   | { kind: "unknown"; arg: string };
 
 export const HELP_TEXT = `
-free-pi — free AI coding in your terminal; ads pay for the inference.
+qronos-cli — autonomous AI coding agent in your terminal powered by Qronos AI.
 
 Usage:
-  free-pi-cli                 start the coding agent (first run: consent + GitHub sign-in)
-  free-pi-cli --session <id>  resume a previous session
-  free-pi-cli logout          remove the stored sign-in token; the next run signs in again
-  free-pi-cli mcp <command>   add, remove, list, or sign in to your own MCP servers
-                              (free-pi-cli mcp --help for details)
-  free-pi-cli --version       print the CLI version
-  free-pi-cli --help          show this help
+  qronos-cli                 start the coding agent
+  qronos-cli --session <id>  resume a previous session
+  qronos-cli logout          remove the stored sign-in token; the next run signs in again
+  qronos-cli mcp <command>   add, remove, list, or sign in to your own MCP servers
+                             (qronos-cli mcp --help for details)
+  qronos-cli --version       print the CLI version
+  qronos-cli --help          show this help
 
 Environment:
-  FREEPI_BASE_URL        override the backend base URL (default https://api.freepi.ai)
-  FREEPI_NO_AUTO_UPDATE  disable in-place self-update for this run
+  QRONOS_BASE_URL            override the backend base URL (default https://api.qronos.me)
+  QRONOS_API_KEY             direct Qronos AI API key (sk_live_...)
+  FREEPI_NO_AUTO_UPDATE      disable in-place self-update for this run
   FREEPI_NO_GRAVITY_PIXEL=1  do not run Gravity's ad-measurement pixel
 `.trim();
 
 export function versionLine(): string {
-  return `free-pi-cli ${CLI_VERSION}`;
+  return `qronos-cli ${CLI_VERSION}`;
 }
 
 /**

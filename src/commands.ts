@@ -95,7 +95,7 @@ async function defaultInstallLatest(): Promise<{ ok: boolean }> {
     // .cmd without a shell (CVE-2024-27980 hardening), so this resolved
     // { ok: false } on every Windows /update. Same root cause as the
     // self-update spawn — the command is a fixed literal, no quoting surface.
-    const child = spawn("npm", ["install", "-g", "free-pi-cli@latest"], {
+    const child = spawn("npm", ["install", "-g", "qronos-cli@latest"], {
       stdio: "ignore",
       shell: process.platform === "win32",
     });
@@ -106,7 +106,7 @@ async function defaultInstallLatest(): Promise<{ ok: boolean }> {
 
 /**
  * On-demand update. An npx run is always the latest by definition, so it's a
- * no-op there; a global install runs `npm install -g free-pi-cli@latest`.
+ * no-op there; a global install runs `npm install -g qronos-cli@latest`.
  * Never throws.
  */
 export async function runUpdate(ctx: NotifyContext, deps: UpdateDeps = {}): Promise<void> {
@@ -115,17 +115,17 @@ export async function runUpdate(ctx: NotifyContext, deps: UpdateDeps = {}): Prom
     ctx.ui.notify("You're running via npx, which always fetches the latest — you're already up to date.", "info");
     return;
   }
-  ctx.ui.notify("Updating free-pi-cli… (npm install -g free-pi-cli@latest)", "info");
+  ctx.ui.notify("Updating qronos-cli… (npm install -g qronos-cli@latest)", "info");
   try {
     const { ok } = await (deps.installLatest ?? defaultInstallLatest)();
     ctx.ui.notify(
       ok
-        ? "Updated — restart free-pi-cli to use the new version."
-        : "Update failed. Try manually: npm install -g free-pi-cli@latest",
+        ? "Updated — restart qronos-cli to use the new version."
+        : "Update failed. Try manually: npm install -g qronos-cli@latest",
       ok ? "info" : "error",
     );
   } catch {
-    ctx.ui.notify("Update failed. Try manually: npm install -g free-pi-cli@latest", "error");
+    ctx.ui.notify("Update failed. Try manually: npm install -g qronos-cli@latest", "error");
   }
 }
 
@@ -159,13 +159,13 @@ export async function openAdvertiser(opts: CreateCommandsOptions, ctx: NotifyCon
     return;
   }
   (opts.openBrowserImpl ?? openBrowser)(url);
-  ctx.ui.notify("Opening today's advertiser in your browser. Thank you for supporting free-pi.", "info");
+  ctx.ui.notify("Opening today's advertiser in your browser. Thank you for supporting Qronos CLI.", "info");
 }
 
 // ---- /tos / /privacy-policy -------------------------------------------------
 
-export const TERMS_URL = "https://freepi.ai/terms";
-export const PRIVACY_URL = "https://freepi.ai/privacy";
+export const TERMS_URL = "https://qronos.me/terms";
+export const PRIVACY_URL = "https://qronos.me/privacy";
 
 /** Opens the Terms of Service in the browser. Never throws. */
 export async function openTos(opts: CreateCommandsOptions, ctx: NotifyContext): Promise<void> {
@@ -240,15 +240,15 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
       // 0.3.0: keep /bug listed with a free-pi description (the handler itself is installed in pi-launch.ts).
       registerBugAutocomplete(pi);
       pi.registerCommand("close-other-session", {
-        description: "Clear your other running free-pi session (use if a previous one is stuck).",
+        description: "Clear your other running Qronos session (use if a previous one is stuck).",
         handler: (_args, ctx) => closeOtherSession(opts, ctx),
       });
       pi.registerCommand("whats-new", {
-        description: "Show what's new in recent free-pi releases.",
+        description: "Show what's new in recent Qronos CLI releases.",
         handler: async (_args, ctx) => showWhatsNew(ctx),
       });
       pi.registerCommand("update", {
-        description: "Update free-pi-cli to the latest version.",
+        description: "Update qronos-cli to the latest version.",
         handler: (_args, ctx) => runUpdate(ctx),
       });
       pi.registerCommand("usage", {
@@ -256,19 +256,19 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
         handler: (_args, ctx) => showUsage(opts, ctx),
       });
       pi.registerCommand("buy-credits", {
-        description: "Buy more usage ($5 or $10 packs, card or USDC) — opens the buy page.",
+        description: "Buy more usage packs or top up balance on qronos.me.",
         handler: (_args, ctx) => buyCredits(opts, ctx),
       });
       pi.registerCommand("support", {
-        description: "Open today's advertiser in your browser to support free-pi.",
+        description: "Open today's advertiser in your browser to support Qronos CLI.",
         handler: (_args, ctx) => openAdvertiser(opts, ctx),
       });
       pi.registerCommand("tos", {
-        description: "Open the free-pi Terms of Service in your browser.",
+        description: "Open the Qronos Terms of Service in your browser.",
         handler: (_args, ctx) => openTos(opts, ctx),
       });
       pi.registerCommand("privacy-policy", {
-        description: "Open the free-pi Privacy Policy in your browser.",
+        description: "Open the Qronos Privacy Policy in your browser.",
         handler: (_args, ctx) => openPrivacyPolicy(opts, ctx),
       });
       pi.registerCommand("reverse-engineer-anything", {

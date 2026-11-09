@@ -1,11 +1,12 @@
 {
-  "name": "free-pi-cli",
-  "version": "0.4.10",
-  "description": "Free, ad-supported distribution of the pi coding agent. Inference paid for by ads.",
+  "name": "qronos-cli",
+  "version": "1.0.0",
+  "description": "Qronos CLI - Autonomous AI coding agent in your terminal powered by Qronos AI.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "free-pi-cli": "./dist/index.js"
+    "qronos-cli": "./dist/index.js",
+    "qronos": "./dist/index.js"
   },
   "files": [
     "dist",

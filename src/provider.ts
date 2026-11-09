@@ -6,7 +6,7 @@
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { CLI_VERSION } from "./version";
 
-export const PROVIDER_NAME = "free-pi";
+export const PROVIDER_NAME = "qronos";
 export const MODEL_ID = "deepseek/deepseek-v4-flash";
 
 // Built-in tool names we enable (pi-coding-agent 1.2.0, docs/settings.md lists
@@ -62,7 +62,7 @@ export function buildProviderConfig(
   models: CatalogModel[],
 ): ProviderConfig {
   return {
-    name: "free-pi",
+    name: "qronos",
     baseUrl: completionsBaseUrl(baseUrl),
     apiKey: jwt,
     api: "openai-completions",

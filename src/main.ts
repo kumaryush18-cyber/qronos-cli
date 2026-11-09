@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   if (command.kind === "unknown") {
-    console.error(`free-pi-cli: unknown argument "${command.arg}"\n\n${HELP_TEXT}`);
+    console.error(`qronos-cli: unknown argument "${command.arg}"\n\n${HELP_TEXT}`);
     process.exit(2);
   }
   if (command.kind === "logout") {
