@@ -8,6 +8,7 @@ import { clearJwt, loadJwt } from "./credentials";
 import { resolveBaseUrl } from "./env";
 import { runLogout } from "./logout";
 import { runFreePiMcp } from "./mcp-command";
+import { runInitCli } from "./init-cmd";
 import { getConfigPath, getCredentialsPath, getFreePiAgentDir } from "./paths";
 import { startGravityPixel } from "./gravity-pixel";
 import { launchPi } from "./pi-launch";
@@ -47,6 +48,10 @@ async function main(): Promise<void> {
   if (command.kind === "help") {
     console.log(HELP_TEXT);
     process.exit(0);
+  }
+  if (command.kind === "init") {
+    const code = await runInitCli();
+    process.exit(code);
   }
   if (command.kind === "unknown") {
     console.error(`qronos-cli: unknown argument "${command.arg}"\n\n${HELP_TEXT}`);

@@ -10,11 +10,16 @@ import { CHANGELOG_HIGHLIGHTS } from "./changelog";
 import { openBrowser } from "./browser";
 import { BUY_NOT_AVAILABLE_TEXT, buyPageText, resolveBuyPage } from "./buy-tool";
 import { fetchUsageText } from "./usage-tool";
+import { runInit } from "./init-cmd";
+import { runCost } from "./cost-cmd";
 
 export interface CreateCommandsOptions {
   baseUrl: string;
   /** Reads the current JWT from the cli's credential store. May be async. */
   getToken: () => string | Promise<string>;
+  apiKey?: string;
+  provider?: string;
+  model?: string;
   fetchImpl?: typeof fetch;
   /** Injected in tests; defaults to browser.ts's opener. */
   openBrowserImpl?: typeof openBrowser;
@@ -239,6 +244,14 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
     factory(pi: ExtensionAPI) {
       // 0.3.0: keep /bug listed with a free-pi description (the handler itself is installed in pi-launch.ts).
       registerBugAutocomplete(pi);
+      pi.registerCommand("init", {
+        description: "Initialize project instructions for Qronos AI (creates QRONOS.md).",
+        handler: async (_args, ctx) => runInit(ctx as any),
+      });
+      pi.registerCommand("cost", {
+        description: "Show detailed session token usage and PAYG / Token Plan billing status.",
+        handler: async (_args, ctx) => runCost(ctx as any, opts),
+      });
       pi.registerCommand("close-other-session", {
         description: "Clear your other running Qronos session (use if a previous one is stuck).",
         handler: (_args, ctx) => closeOtherSession(opts, ctx),

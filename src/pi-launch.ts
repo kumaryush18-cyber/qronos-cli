@@ -274,6 +274,9 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const commandsExtension: InlineExtension = createFreePiCommandsExtension({
     baseUrl: opts.baseUrl,
     getToken: () => opts.jwt,
+    apiKey: opts.jwt,
+    provider: opts.provider,
+    model: opts.model,
     getAdvertiserUrl: () => advertiserUrl,
   });
 

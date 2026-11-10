@@ -1,7 +1,7 @@
 import { Container, Text } from "@earendil-works/pi-tui";
 import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { relative } from "node:path";
+import { relative, resolve } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 
 /**
@@ -122,9 +122,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             // Summary line for read/write/edit if available
             let summaryPrefix = "";
             if (toolName === "write" && targetFile) {
-              summaryPrefix = `Wrote ${rawLines.length} lines to ${targetFile}`;
+              summaryPrefix = `Wrote ${rawLines.length} lines to ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
             } else if (toolName === "read" && targetFile) {
-              summaryPrefix = `Read ${rawLines.length} lines from ${targetFile}`;
+              summaryPrefix = `Read ${rawLines.length} lines from ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
             }
 
             const linesToDraw: string[] = [];
@@ -234,16 +234,24 @@ function formatToolName(toolName: string): string {
 function formatTarget(toolName: string, args: any, cwd: string, maxLen: number): string {
   if (!args) return "";
   let raw = "";
+  let rawFilePath = "";
   if (toolName === "bash") {
     raw = args.command || "";
   } else if (toolName === "read" || toolName === "write" || toolName === "edit") {
-    const p = args.file_path || args.path || "";
-    raw = p ? relative(cwd, p) : "";
+    rawFilePath = args.file_path || args.path || "";
+    raw = rawFilePath ? relative(cwd, rawFilePath) : "";
   } else {
     const val = Object.values(args)[0];
     raw = typeof val === "string" ? val : "";
   }
-  return truncateMiddle(raw, maxLen);
+  const display = truncateMiddle(raw, maxLen);
+  return rawFilePath ? makeClickableFileLink(display, rawFilePath, cwd) : display;
+}
+
+function makeClickableFileLink(displayPath: string, rawPath: string, cwd: string): string {
+  if (!rawPath || !displayPath) return displayPath;
+  const absPath = rawPath.startsWith("/") ? rawPath : resolve(cwd, rawPath);
+  return `\x1b]8;;file://${absPath}\x07${displayPath}\x1b]8;;\x07`;
 }
 
 function extractResultText(result: any): string {

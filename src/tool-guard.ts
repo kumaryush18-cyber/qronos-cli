@@ -38,24 +38,54 @@ async function reportToolGuardTrigger(opts: CreateToolGuardOptions, toolName: st
 // plus the three resource tools pi adds when a server has resources.
 const MCP_RESOURCE_TOOLS = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
 
+const DESTRUCTIVE_COMMAND_PATTERNS = [
+  /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f?|-[a-zA-Z]*f[a-zA-Z]*r?)\s+/i, // rm -rf, rm -r
+  /\bgit\s+reset\s+--hard\b/i,
+  /\bgit\s+clean\s+(-[a-zA-Z]*f)/i,
+  /\bgit\s+push\s+.*(--force|-f)\b/i,
+  /\b(drop\s+database|drop\s+table|truncate\s+table)\b/i,
+  /\b(prisma\s+migrate\s+reset|drizzle-kit\s+drop)\b/i,
+  /\b(mkfs|dd\s+if=)\b/i,
+  /\bchmod\s+(-[a-zA-Z]*R\s+)?777\s+\//i,
+];
+
+export function isDestructiveCommand(cmd: string): boolean {
+  if (!cmd) return false;
+  return DESTRUCTIVE_COMMAND_PATTERNS.some((pattern) => pattern.test(cmd));
+}
+
 function isAllowed(opts: CreateToolGuardOptions, name: string): boolean {
   return opts.allowedTools.includes(name) || name.startsWith("mcp__") || MCP_RESOURCE_TOOLS.includes(name);
 }
 
 export function createToolGuardExtension(opts: CreateToolGuardOptions): InlineExtension {
   return {
-    name: "free-pi-tool-guard",
+    name: "qronos-tool-guard",
     factory(pi: ExtensionAPI) {
-      pi.on("tool_call", (event): ToolCallEventResult | undefined => {
-        if (isAllowed(opts, event.toolName)) return undefined;
-        void reportToolGuardTrigger(opts, event.toolName);
-        // block (not terminate): refuse the single non-allowlisted call but
-        // keep the session alive. The SDK `tools` allowlist should stop any
-        // such call reaching here at all, so this is belt-and-braces — and a
-        // maximally-destructive terminate would hard-kill a live session on
-        // the false-positive path where the SDK ever emits a legit tool under
-        // an unlisted name. Blocking the one call already stops the rogue tool.
-        return { block: true, reason: "tool not permitted in the free-pi distro" };
+      pi.on("tool_call", async (event, ctx): Promise<ToolCallEventResult | undefined> => {
+        if (!isAllowed(opts, event.toolName)) {
+          void reportToolGuardTrigger(opts, event.toolName);
+          return { block: true, reason: "tool not permitted in the Qronos distro" };
+        }
+
+        // Destructive command safety confirmation gate
+        if (event.toolName === "bash") {
+          const cmd = (event.input as any)?.command || "";
+          if (isDestructiveCommand(cmd)) {
+            const confirmed = await ctx.ui.confirm(
+              "⚠️ Destructive Command Detected",
+              `The agent wants to execute a potentially destructive command:\n\n  ${cmd}\n\nDo you want to proceed?`
+            );
+            if (!confirmed) {
+              return {
+                block: true,
+                reason: `Command execution cancelled by user for safety: "${cmd}"`,
+              };
+            }
+          }
+        }
+
+        return undefined;
       });
     },
   };

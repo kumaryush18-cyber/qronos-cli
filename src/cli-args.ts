@@ -12,6 +12,7 @@ export interface RunOptions {
 
 export type CliCommand =
   | { kind: "run"; options?: RunOptions }
+  | { kind: "init" }
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "logout" }
@@ -23,6 +24,7 @@ export const HELP_TEXT = `
 
 Usage:
   qronos-cli                             start a new coding session (default: Qronos Gateway)
+  qronos-cli init                        initialize project instructions (creates QRONOS.md)
   qronos-cli -c, --continue              continue the most recent coding session
   qronos-cli -r, --resume [id]           resume the most recent session (or specify session ID)
   qronos-cli -s, --session <id>          resume a specific session by ID
@@ -63,6 +65,7 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
   if (first === undefined) return { kind: "run", options: {} };
 
   if (first === "mcp") return { kind: "mcp", args: rest };
+  if (first === "init") return { kind: "init" };
   if (first === "--help" || first === "-h" || first === "help") return { kind: "help" };
   if (first === "--version" || first === "-v" || first === "version") return { kind: "version" };
   if (first === "logout") return { kind: "logout" };
