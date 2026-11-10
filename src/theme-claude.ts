@@ -20,7 +20,7 @@ export const CLAUDE_THEME_JSON = {
     "diffGreen": "#3fb950",
     "diffRed": "#f85149",
     "borderMuted": "#30363d",
-    "userGrey": "#3a3a3a"
+    "userGrey": "#373737"
   },
   "colors": {
     "accent": "keywordRed",
@@ -34,7 +34,7 @@ export const CLAUDE_THEME_JSON = {
     "dim": "dim",
     "text": "text",
     "thinkingText": "muted",
-    // All background panel fills set to "" except userMessageBg which uses Claude Code #3a3a3a
+    // All background panel fills set to "" except userMessageBg which uses Claude Code #373737
     "selectedBg": "",
     "searchMatchBg": "",
     "searchMatchText": "text",
@@ -61,15 +61,15 @@ export const CLAUDE_THEME_JSON = {
     "toolDiffAdded": "diffGreen",
     "toolDiffRemoved": "diffRed",
     "toolDiffContext": "dim",
-    "syntaxComment": "dim",
+    "syntaxComment": "muted",
     "syntaxKeyword": "keywordRed",
     "syntaxFunction": "functionBlue",
     "syntaxVariable": "text",
     "syntaxString": "stringGreen",
     "syntaxNumber": "numberOrange",
     "syntaxType": "typeYellow",
-    "syntaxOperator": "keywordRed",
-    "syntaxPunctuation": "muted",
+    "syntaxOperator": "muted",
+    "syntaxPunctuation": "dim",
     "thinkingOff": "dim",
     "thinkingMinimal": "dim",
     "thinkingLow": "muted",

@@ -119,9 +119,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             if (lang) {
               try {
                 highlightedLines = highlightCode(displayLines.join("\n"), lang);
-                if (lang === "typescript" || lang === "javascript" || lang === "html") {
-                  highlightedLines = highlightedLines.map((line: string) => enhanceJsxHighlighting(line));
-                }
+                highlightedLines = highlightedLines.map((line: string) => enhanceCodeHighlighting(line, lang));
               } catch {
                 highlightedLines = displayLines;
               }
@@ -173,9 +171,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
               if (lang) {
                 try {
                   writeHighlighted = highlightCode(displayWriteLines.join("\n"), lang);
-                  if (lang === "typescript" || lang === "javascript" || lang === "html") {
-                    writeHighlighted = writeHighlighted.map((line: string) => enhanceJsxHighlighting(line));
-                  }
+                  writeHighlighted = writeHighlighted.map((line: string) => enhanceCodeHighlighting(line, lang));
                 } catch {
                   writeHighlighted = displayWriteLines;
                 }
@@ -235,9 +231,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
                   const numPad = String(lineNum).padStart(4, " ");
 
                   if (prefix === "-") {
-                    linesToDraw.push(`    \x1b[38;2;248;81;73m${numPad} -\x1b[39m   \x1b[38;2;248;81;73m${content}\x1b[39m`);
+                    linesToDraw.push(`    \x1b[48;2;112;26;26m\x1b[38;2;255;255;255m${numPad} -\x1b[39m   ${content}\x1b[0m`);
                   } else if (prefix === "+") {
-                    linesToDraw.push(`    \x1b[38;2;63;185;80m${numPad} +\x1b[39m   \x1b[38;2;63;185;80m${content}\x1b[39m`);
+                    linesToDraw.push(`    \x1b[48;2;20;75;35m\x1b[38;2;255;255;255m${numPad} +\x1b[39m   ${content}\x1b[0m`);
                   } else {
                     linesToDraw.push(`    ${theme.fg("dim", numPad)}     ${content}`);
                   }
@@ -263,10 +259,10 @@ export function createClaudeToolRendererExtension(): InlineExtension {
 
                   if (isDiffDel) {
                     const clean = line.slice(1).replace(/^\s/, "");
-                    linesToDraw.push(`    \x1b[38;2;248;81;73m${numPad} -\x1b[39m   \x1b[38;2;248;81;73m${clean}\x1b[39m`);
+                    linesToDraw.push(`    \x1b[48;2;112;26;26m\x1b[38;2;255;255;255m${numPad} -\x1b[39m   ${clean}\x1b[0m`);
                   } else if (isDiffAdd) {
                     const clean = line.slice(1).replace(/^\s/, "");
-                    linesToDraw.push(`    \x1b[38;2;63;185;80m${numPad} +\x1b[39m   \x1b[38;2;63;185;80m${clean}\x1b[39m`);
+                    linesToDraw.push(`    \x1b[48;2;20;75;35m\x1b[38;2;255;255;255m${numPad} +\x1b[39m   ${clean}\x1b[0m`);
                   } else {
                     linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
                   }
@@ -322,21 +318,26 @@ function dedentLines(lines: string[]): string[] {
 }
 
 /**
- * Enhances JSX/TSX syntax coloring with vibrant Claude Code palette:
+ * Enhances code syntax coloring with vibrant Claude Code palette:
  * - Tags in vibrant coral red (\x1b[38;2;255;123;114m)
  * - Attributes in sky blue (\x1b[38;2;121;192;255m)
- * - Brackets in muted slate (\x1b[38;2;139;148;158m)
+ * - Comments in muted slate (\x1b[38;2;139;148;158m)
  */
-function enhanceJsxHighlighting(line: string): string {
-  if (!/<[a-zA-Z0-9_\/.]/.test(line)) return line;
-
+function enhanceCodeHighlighting(line: string, _lang?: string): string {
   let res = line;
-  // Attributes: className=, id=, src=, onClick=
-  res = res.replace(/\b([a-zA-Z0-9_-]+)=/g, "\x1b[38;2;121;192;255m$1\x1b[39m=");
-  // Tags: <div, <span, </div, <Button
-  res = res.replace(/(<\/?)([a-zA-Z0-9_.-]+)/g, "$1\x1b[38;2;255;123;114m$2\x1b[39m");
-  // Tag brackets: <, >, />
-  res = res.replace(/(<|>|\/>)/g, "\x1b[38;2;139;148;158m$1\x1b[39m");
+
+  // Comments: lines starting with // or /* or *
+  if (/^\s*(\/\/|\/\*|\*)/.test(res)) {
+    return `\x1b[38;2;139;148;158m${res.replace(/\x1b\[[0-9;]*m/g, "")}\x1b[39m`;
+  }
+
+  // JSX / HTML Tags & Attributes
+  if (/<[a-zA-Z0-9_\/.]/.test(res)) {
+    res = res.replace(/\b([a-zA-Z0-9_-]+)=/g, "\x1b[38;2;121;192;255m$1\x1b[39m=");
+    res = res.replace(/(<\/?)([a-zA-Z0-9_.-]+)/g, "$1\x1b[38;2;255;123;114m$2\x1b[39m");
+    res = res.replace(/(<|>|\/>)/g, "\x1b[38;2;139;148;158m$1\x1b[39m");
+  }
+
   return res;
 }
 
@@ -404,6 +405,18 @@ function formatTarget(toolName: string, args: any, cwd: string, maxLen: number):
   } else if (toolName === "read" || toolName === "write" || toolName === "edit") {
     rawFilePath = args.file_path || args.path || "";
     raw = rawFilePath ? relative(cwd, rawFilePath) : "";
+  } else if (toolName === "codemode") {
+    const code = args.code || args.script || Object.values(args)[0] || "";
+    if (typeof code === "string") {
+      if (/registry\.npmjs|npm\s|pkgs\s*=|dependencies/i.test(code)) {
+        raw = "npm dependency check";
+      } else {
+        const firstLine = code.split("\n")[0].trim().replace(/^const\s+/, "").slice(0, 40);
+        raw = firstLine || "script";
+      }
+    } else {
+      raw = "script";
+    }
   } else {
     const val = Object.values(args)[0];
     raw = typeof val === "string" ? val : "";
