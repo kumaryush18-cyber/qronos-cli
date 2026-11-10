@@ -115,7 +115,16 @@ export function buildProviderConfig(opts: ProviderOptions): ProviderConfig {
     models: models.map((m) => ({
       id: m.id,
       name: m.name,
-      reasoning: false,
+      reasoning: true,
+      thinkingLevelMap: {
+        off: "off",
+        minimal: "minimal",
+        low: "low",
+        medium: "medium",
+        high: "high",
+        xhigh: "xhigh",
+        max: "max",
+      },
       input: ["text"] as const,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: api === "anthropic-messages" ? 200_000 : 1_048_576,

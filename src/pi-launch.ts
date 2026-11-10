@@ -29,6 +29,7 @@ import { createErrorNoticeExtension } from "./error-notice";
 import { AGENT_RULES } from "./agent-rules";
 import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
+import { installEffortHandler } from "./effort-selector";
 import { installFooterRightAlign } from "./footer-align";
 import { createFreePiCommandsExtension } from "./commands";
 import { createHeaderExtension } from "./header";
@@ -469,6 +470,7 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
     initialMessages: [],
   });
   installBugHandler(mode, { baseUrl: opts.baseUrl, getToken: () => opts.jwt });
+  installEffortHandler(mode);
   installFooterRightAlign(mode);
 
   await mode.run();
