@@ -1,6 +1,7 @@
 import { Container, Text } from "@earendil-works/pi-tui";
 import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 
@@ -145,49 +146,135 @@ export function createClaudeToolRendererExtension(): InlineExtension {
                 }
               }
             }
-            // 2. Tool: Write
+            // 2. Tool: Write (Claude Code behavior: show actual code block written with line numbers & syntax colors!)
             else if (toolName === "write") {
-              const summaryLine = `Wrote ${rawLines.length} lines to ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
-              linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
-
-              highlightedLines.forEach((line: string, index: number) => {
-                const lineNum = startLine + index;
-                const numPad = String(lineNum).padStart(4, " ");
-                linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
-              });
-
-              if (rawLines.length > maxLines) {
-                linesToDraw.push(`    ${theme.fg("dim", `... +${rawLines.length - maxLines} lines (ctrl+o to expand)`)}`);
+              let fileContent = typeof context?.args?.content === "string" ? context.args.content : "";
+              if (!fileContent && rawTarget) {
+                try {
+                  const absPath = rawTarget.startsWith("/") ? rawTarget : resolve(cwd, rawTarget);
+                  if (existsSync(absPath)) {
+                    fileContent = readFileSync(absPath, "utf-8");
+                  }
+                } catch {}
               }
-            }
-            // 3. Tool: Edit (Update with diffs)
-            else if (toolName === "edit") {
-              const addCount = rawLines.filter((l) => l.startsWith("+")).length;
-              const delCount = rawLines.filter((l) => l.startsWith("-")).length;
-              const summaryLine = addCount > 0 || delCount > 0
-                ? `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)} (added ${addCount}, removed ${delCount})`
-                : `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
+
+              const contentLines = fileContent ? fileContent.replace(/\r\n/g, "\n").split("\n") : rawLines;
+              const totalLines = contentLines.length;
+              const sizeBytes = Buffer.byteLength(fileContent || textContent, "utf-8");
+              const sizeKb = Math.max(1, Math.round(sizeBytes / 1024));
+
+              const summaryLine = `Wrote ${totalLines} line${totalLines === 1 ? "" : "s"} to ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
               linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
 
-              highlightedLines.forEach((line: string, index: number) => {
-                const isDiffAdd = line.startsWith("+");
-                const isDiffDel = line.startsWith("-");
-                const lineNum = startLine + index;
-                const numPad = String(lineNum).padStart(4, " ");
+              const writeMaxLines = options?.expanded ? 120 : 8;
+              const displayWriteLines = contentLines.slice(0, writeMaxLines);
 
-                if (isDiffDel) {
-                  const clean = line.slice(1).replace(/^\s/, "");
-                  linesToDraw.push(`    \x1b[38;2;248;81;73m${numPad} -\x1b[39m   \x1b[38;2;248;81;73m${clean}\x1b[39m`);
-                } else if (isDiffAdd) {
-                  const clean = line.slice(1).replace(/^\s/, "");
-                  linesToDraw.push(`    \x1b[38;2;63;185;80m${numPad} +\x1b[39m   \x1b[38;2;63;185;80m${clean}\x1b[39m`);
+              let writeHighlighted = displayWriteLines;
+              if (lang) {
+                try {
+                  writeHighlighted = highlightCode(displayWriteLines.join("\n"), lang);
+                  if (lang === "typescript" || lang === "javascript" || lang === "html") {
+                    writeHighlighted = writeHighlighted.map((line: string) => enhanceJsxHighlighting(line));
+                  }
+                } catch {
+                  writeHighlighted = displayWriteLines;
+                }
+              }
+
+              writeHighlighted.forEach((line: string, index: number) => {
+                const lineNum = 1 + index;
+                const numPad = String(lineNum).padStart(3, " ");
+                if (line.trim().length === 0) {
+                  linesToDraw.push(`    ${theme.fg("dim", numPad)}`);
                 } else {
-                  linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
+                  linesToDraw.push(`    ${theme.fg("dim", numPad)} ${line}`);
                 }
               });
 
-              if (rawLines.length > maxLines) {
-                linesToDraw.push(`    ${theme.fg("dim", `... +${rawLines.length - maxLines} lines (ctrl+o to expand)`)}`);
+              if (totalLines > writeMaxLines) {
+                const remaining = totalLines - writeMaxLines;
+                linesToDraw.push(`    ${theme.fg("dim", `... +${remaining} lines (~${sizeKb} KB) (ctrl+o to expand)`)}`);
+              }
+            }
+            // 3. Tool: Edit / Update with diffs (Claude Code behavior: Added X lines, removed Y lines + diff view)
+            else if (toolName === "edit") {
+              const diffText = result?.details?.diff || (typeof result?.diff === "string" ? result.diff : "");
+              if (diffText) {
+                const diffLines = diffText.trimEnd().split("\n");
+                let addCount = 0;
+                let delCount = 0;
+                for (const line of diffLines) {
+                  if (line.startsWith("+")) addCount++;
+                  else if (line.startsWith("-")) delCount++;
+                }
+
+                let summaryLine = "";
+                if (addCount > 0 && delCount > 0) {
+                  summaryLine = `Added ${addCount} line${addCount === 1 ? "" : "s"}, removed ${delCount} line${delCount === 1 ? "" : "s"}`;
+                } else if (addCount > 0) {
+                  summaryLine = `Added ${addCount} line${addCount === 1 ? "" : "s"}`;
+                } else if (delCount > 0) {
+                  summaryLine = `Removed ${delCount} line${delCount === 1 ? "" : "s"}`;
+                } else {
+                  summaryLine = `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
+                }
+                linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
+
+                const editMaxLines = options?.expanded ? 120 : 12;
+                const displayDiffLines = diffLines.slice(0, editMaxLines);
+
+                for (const rawLine of displayDiffLines) {
+                  const m = rawLine.match(/^([+-\s])(\s*\d*)\s?(.*)$/);
+                  if (!m) {
+                    linesToDraw.push(`    ${rawLine}`);
+                    continue;
+                  }
+                  const prefix = m[1];
+                  const lineNum = m[2].trim();
+                  const content = m[3];
+                  const numPad = String(lineNum).padStart(4, " ");
+
+                  if (prefix === "-") {
+                    linesToDraw.push(`    \x1b[38;2;248;81;73m${numPad} -\x1b[39m   \x1b[38;2;248;81;73m${content}\x1b[39m`);
+                  } else if (prefix === "+") {
+                    linesToDraw.push(`    \x1b[38;2;63;185;80m${numPad} +\x1b[39m   \x1b[38;2;63;185;80m${content}\x1b[39m`);
+                  } else {
+                    linesToDraw.push(`    ${theme.fg("dim", numPad)}     ${content}`);
+                  }
+                }
+
+                if (diffLines.length > editMaxLines) {
+                  const remaining = diffLines.length - editMaxLines;
+                  linesToDraw.push(`    ${theme.fg("dim", `... +${remaining} lines (ctrl+o to expand)`)}`);
+                }
+              } else {
+                const addCount = rawLines.filter((l) => l.startsWith("+")).length;
+                const delCount = rawLines.filter((l) => l.startsWith("-")).length;
+                const summaryLine = addCount > 0 || delCount > 0
+                  ? `Added ${addCount} line${addCount === 1 ? "" : "s"}, removed ${delCount} line${delCount === 1 ? "" : "s"}`
+                  : `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
+                linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
+
+                highlightedLines.forEach((line: string, index: number) => {
+                  const isDiffAdd = line.startsWith("+");
+                  const isDiffDel = line.startsWith("-");
+                  const lineNum = startLine + index;
+                  const numPad = String(lineNum).padStart(4, " ");
+
+                  if (isDiffDel) {
+                    const clean = line.slice(1).replace(/^\s/, "");
+                    linesToDraw.push(`    \x1b[38;2;248;81;73m${numPad} -\x1b[39m   \x1b[38;2;248;81;73m${clean}\x1b[39m`);
+                  } else if (isDiffAdd) {
+                    const clean = line.slice(1).replace(/^\s/, "");
+                    linesToDraw.push(`    \x1b[38;2;63;185;80m${numPad} +\x1b[39m   \x1b[38;2;63;185;80m${clean}\x1b[39m`);
+                  } else {
+                    linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
+                  }
+                });
+
+                if (rawLines.length > maxLines) {
+                  linesToDraw.push(`    ${theme.fg("dim", `... +${rawLines.length - maxLines} lines (ctrl+o to expand)`)}`);
+                }
               }
             }
             // 4. Other tools (Bash, etc.)
@@ -302,7 +389,7 @@ function formatToolName(toolName: string): string {
     case "write":
       return "Write";
     case "edit":
-      return "Edit";
+      return "Update";
     default:
       return toolName.charAt(0).toUpperCase() + toolName.slice(1);
   }
