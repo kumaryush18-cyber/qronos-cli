@@ -114,6 +114,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             if (lang) {
               try {
                 highlightedLines = highlightCode(displayLines.join("\n"), lang);
+                if (lang === "typescript" || lang === "javascript" || lang === "html") {
+                  highlightedLines = highlightedLines.map((line: string) => enhanceJsxHighlighting(line));
+                }
               } catch {
                 highlightedLines = displayLines;
               }
@@ -121,25 +124,46 @@ export function createClaudeToolRendererExtension(): InlineExtension {
 
             // Summary line for read/write/edit if available
             let summaryPrefix = "";
+            const isFileTool = toolName === "write" || toolName === "read" || toolName === "edit";
+            const startLine = Number(context?.args?.offset || context?.args?.line || 1);
+
             if (toolName === "write" && targetFile) {
               summaryPrefix = `Wrote ${rawLines.length} lines to ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
             } else if (toolName === "read" && targetFile) {
               summaryPrefix = `Read ${rawLines.length} lines from ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
+            } else if (toolName === "edit" && targetFile) {
+              summaryPrefix = `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
             }
 
             const linesToDraw: string[] = [];
             if (summaryPrefix) {
               linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryPrefix)}`);
-              for (const line of highlightedLines) {
-                linesToDraw.push(`    ${line}`);
-              }
+              highlightedLines.forEach((line: string, index: number) => {
+                const isDiffAdd = line.startsWith("+");
+                const isDiffDel = line.startsWith("-");
+                const lineNum = startLine + index;
+                const numPad = String(lineNum).padStart(4, " ");
+
+                if (isDiffDel) {
+                  const clean = line.slice(1).replace(/^\s/, "");
+                  linesToDraw.push(`    \x1b[38;2;248;81;73m${numPad} -\x1b[39m   \x1b[38;2;248;81;73m${clean}\x1b[39m`);
+                } else if (isDiffAdd) {
+                  const clean = line.slice(1).replace(/^\s/, "");
+                  linesToDraw.push(`    \x1b[38;2;63;185;80m${numPad} +\x1b[39m   \x1b[38;2;63;185;80m${clean}\x1b[39m`);
+                } else if (isFileTool) {
+                  // Claude Code style line numbering for file operations
+                  linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
+                } else {
+                  linesToDraw.push(`    ${line}`);
+                }
+              });
             } else {
               highlightedLines.forEach((line: string, index: number) => {
                 const branch = index === 0 ? `  ${theme.fg("dim", "└")} ` : `    `;
-                if (!lang && line.startsWith("+")) {
-                  linesToDraw.push(`${branch}${theme.fg("success", line)}`);
-                } else if (!lang && line.startsWith("-")) {
-                  linesToDraw.push(`${branch}${theme.fg("error", line)}`);
+                if (line.startsWith("+")) {
+                  linesToDraw.push(`${branch}\x1b[38;2;63;185;80m${line}\x1b[39m`);
+                } else if (line.startsWith("-")) {
+                  linesToDraw.push(`${branch}\x1b[38;2;248;81;73m${line}\x1b[39m`);
                 } else {
                   linesToDraw.push(`${branch}${line}`);
                 }
@@ -174,6 +198,25 @@ function dedentLines(lines: string[]): string[] {
   );
   if (minIndent === 0) return lines;
   return lines.map((l) => (l.length >= minIndent ? l.slice(minIndent) : l));
+}
+
+/**
+ * Enhances JSX/TSX syntax coloring with vibrant Claude Code palette:
+ * - Tags in vibrant coral red (\x1b[38;2;255;123;114m)
+ * - Attributes in sky blue (\x1b[38;2;121;192;255m)
+ * - Brackets in muted slate (\x1b[38;2;139;148;158m)
+ */
+function enhanceJsxHighlighting(line: string): string {
+  if (!/<[a-zA-Z0-9_\/.]/.test(line)) return line;
+
+  let res = line;
+  // Attributes: className=, id=, src=, onClick=
+  res = res.replace(/\b([a-zA-Z0-9_-]+)=/g, "\x1b[38;2;121;192;255m$1\x1b[39m=");
+  // Tags: <div, <span, </div, <Button
+  res = res.replace(/(<\/?)([a-zA-Z0-9_.-]+)/g, "$1\x1b[38;2;255;123;114m$2\x1b[39m");
+  // Tag brackets: <, >, />
+  res = res.replace(/(<|>|\/>)/g, "\x1b[38;2;139;148;158m$1\x1b[39m");
+  return res;
 }
 
 function detectLanguage(toolName: string, args: any, text: string): string | undefined {
