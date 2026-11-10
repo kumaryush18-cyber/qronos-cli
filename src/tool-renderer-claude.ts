@@ -69,7 +69,8 @@ export function createClaudeToolRendererExtension(): InlineExtension {
               : theme.fg("dim", "● ");
 
             const title = theme.bold(theme.fg("text", name));
-            const sub = target ? theme.fg("dim", `(${target})`) : "";
+            // Target is normal readable text, not dim grey
+            const sub = target ? theme.fg("text", `(${target})`) : "";
 
             const headerLine = `${dot}${title}${sub}`;
             container.addChild(new Text(truncateToWidth(headerLine, termWidth), 0, 0));
@@ -86,7 +87,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             const textContent = extractResultText(result);
             if (!textContent) {
               if (!result?.isError) {
-                container.addChild(new Text(`  ${theme.fg("dim", "└")} ${theme.fg("muted", "Done")}`, 0, 0));
+                container.addChild(new Text(`  ${theme.fg("dim", "└")} ${theme.fg("text", "Done")}`, 0, 0));
               }
               return container;
             }
@@ -97,6 +98,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             }
 
             if (rawLines.length === 0) {
+              if (!result?.isError) {
+                container.addChild(new Text(`  ${theme.fg("dim", "└")} ${theme.fg("text", "Done")}`, 0, 0));
+              }
               return container;
             }
 
@@ -122,22 +126,49 @@ export function createClaudeToolRendererExtension(): InlineExtension {
               }
             }
 
-            // Summary line for read/write/edit if available
-            let summaryPrefix = "";
-            const isFileTool = toolName === "write" || toolName === "read" || toolName === "edit";
+            const linesToDraw: string[] = [];
             const startLine = Number(context?.args?.offset || context?.args?.line || 1);
 
-            if (toolName === "write" && targetFile) {
-              summaryPrefix = `Wrote ${rawLines.length} lines to ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
-            } else if (toolName === "read" && targetFile) {
-              summaryPrefix = `Read ${rawLines.length} lines from ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
-            } else if (toolName === "edit" && targetFile) {
-              summaryPrefix = `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
-            }
+            // 1. Tool: Read (Claude Code behavior: do NOT dump code by default! Keep clean unless expanded with ctrl+o)
+            if (toolName === "read") {
+              const summaryLine = `Read ${rawLines.length} lines${!options?.expanded ? " (ctrl+o to expand)" : ""}`;
+              linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
 
-            const linesToDraw: string[] = [];
-            if (summaryPrefix) {
-              linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryPrefix)}`);
+              if (options?.expanded) {
+                highlightedLines.forEach((line: string, index: number) => {
+                  const lineNum = startLine + index;
+                  const numPad = String(lineNum).padStart(4, " ");
+                  linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
+                });
+                if (rawLines.length > maxLines) {
+                  linesToDraw.push(`    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines)`)}`);
+                }
+              }
+            }
+            // 2. Tool: Write
+            else if (toolName === "write") {
+              const summaryLine = `Wrote ${rawLines.length} lines to ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
+              linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
+
+              highlightedLines.forEach((line: string, index: number) => {
+                const lineNum = startLine + index;
+                const numPad = String(lineNum).padStart(4, " ");
+                linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
+              });
+
+              if (rawLines.length > maxLines) {
+                linesToDraw.push(`    ${theme.fg("dim", `... +${rawLines.length - maxLines} lines (ctrl+o to expand)`)}`);
+              }
+            }
+            // 3. Tool: Edit (Update with diffs)
+            else if (toolName === "edit") {
+              const addCount = rawLines.filter((l) => l.startsWith("+")).length;
+              const delCount = rawLines.filter((l) => l.startsWith("-")).length;
+              const summaryLine = addCount > 0 || delCount > 0
+                ? `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)} (added ${addCount}, removed ${delCount})`
+                : `Updated ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
+              linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
+
               highlightedLines.forEach((line: string, index: number) => {
                 const isDiffAdd = line.startsWith("+");
                 const isDiffDel = line.startsWith("-");
@@ -150,14 +181,17 @@ export function createClaudeToolRendererExtension(): InlineExtension {
                 } else if (isDiffAdd) {
                   const clean = line.slice(1).replace(/^\s/, "");
                   linesToDraw.push(`    \x1b[38;2;63;185;80m${numPad} +\x1b[39m   \x1b[38;2;63;185;80m${clean}\x1b[39m`);
-                } else if (isFileTool) {
-                  // Claude Code style line numbering for file operations
-                  linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
                 } else {
-                  linesToDraw.push(`    ${line}`);
+                  linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
                 }
               });
-            } else {
+
+              if (rawLines.length > maxLines) {
+                linesToDraw.push(`    ${theme.fg("dim", `... +${rawLines.length - maxLines} lines (ctrl+o to expand)`)}`);
+              }
+            }
+            // 4. Other tools (Bash, etc.)
+            else {
               highlightedLines.forEach((line: string, index: number) => {
                 const branch = index === 0 ? `  ${theme.fg("dim", "└")} ` : `    `;
                 if (line.startsWith("+")) {
@@ -168,10 +202,10 @@ export function createClaudeToolRendererExtension(): InlineExtension {
                   linesToDraw.push(`${branch}${line}`);
                 }
               });
-            }
 
-            if (rawLines.length > maxLines) {
-              linesToDraw.push(`    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines, ctrl+o to expand)`)}`);
+              if (rawLines.length > maxLines) {
+                linesToDraw.push(`    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines, ctrl+o to expand)`)}`);
+              }
             }
 
             // Strictly truncate every single line so narrow mobile screens never wrap to column 0,
