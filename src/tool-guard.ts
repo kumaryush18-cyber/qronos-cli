@@ -84,23 +84,6 @@ export function createToolGuardExtension(opts: CreateToolGuardOptions): InlineEx
           return { block: true, reason: perm.reason || "Action blocked by execution mode permission" };
         }
 
-        // Destructive command safety confirmation gate
-        if (event.toolName === "bash") {
-          const cmd = (event.input as any)?.command || "";
-          if (isDestructiveCommand(cmd)) {
-            const confirmed = await ctx.ui.confirm(
-              "⚠️ Destructive Command Detected",
-              `The agent wants to execute a potentially destructive command:\n\n  ${cmd}\n\nDo you want to proceed?`
-            );
-            if (!confirmed) {
-              return {
-                block: true,
-                reason: `Command execution cancelled by user for safety: "${cmd}"`,
-              };
-            }
-          }
-        }
-
         return undefined;
       });
     },

@@ -32,6 +32,13 @@ export function readAutoUpdate(configPath: string): boolean {
   return parsed.autoUpdate !== false;
 }
 
+export function readStatusLineCommand(configPath: string): string | undefined {
+  const parsed = readConfigObject(configPath);
+  if (!parsed || typeof parsed.statusLine !== "string") return undefined;
+  const cmd = parsed.statusLine.trim();
+  return cmd.length > 0 ? cmd : undefined;
+}
+
 /**
  * Merge a shallow patch into the config file, preserving unrelated keys.
  * Best-effort: returns false instead of throwing when the file cannot be

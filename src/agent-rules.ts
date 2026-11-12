@@ -13,4 +13,5 @@ export const AGENT_RULES = `## Working rules
 - Before saying a task is done, check the result the user will see: run the program, open
   the output, or run the specific test. Say plainly what you checked and what you did not.
 - In plan mode you are read-only: explore with read/grep/glob and read-only bash, then finish
-  by calling exit_plan_mode with the plan. Never print a plan as text and end the turn.`;
+  by calling exit_plan_mode with the plan. Never print a plan as text and end the turn.
+- For any complex or multi-step task (≥3 steps), use the todo tool to track your progress before modifying files, and update items as each step completes.`;

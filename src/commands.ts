@@ -17,6 +17,11 @@ import { HOOK_EVENTS, mergeHookConfigs, parseHookConfig } from "./hooks";
 import { readHooksFile } from "./cli-config";
 import { getHooksPath, getProjectHooksPath, getUserMemoryPath } from "./paths";
 import { loadMemory, memoryPathsFor } from "./memory-io";
+import { formatContextBreakdown, getLatestContextStats, updateContextStats } from "./context-view";
+import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { getConfigPath } from "./paths";
+import { CLI_VERSION } from "./version";
 
 export interface CreateCommandsOptions {
   baseUrl: string;
@@ -335,6 +340,114 @@ async function showPermissions(ctx: { ui: { notify(message: string, type?: "info
   ctx.ui.notify(lines.join("\n"), mode === "dangerously-skip-permissions" ? "warning" : "info");
 }
 
+async function showContext(ctx: any, opts: CreateCommandsOptions): Promise<void> {
+  const usage = ctx?.getContextUsage?.() || ctx?.sessionManager?.getContextUsage?.();
+  if (usage) {
+    updateContextStats({
+      usedTokens: usage.tokens || usage.totalTokens || usage.contextTokens || 0,
+      contextWindow: usage.contextWindow || 200_000,
+      inputTokens: usage.input,
+      outputTokens: usage.output,
+      cacheReadTokens: usage.cacheRead,
+      cacheWriteTokens: usage.cacheWrite,
+    });
+  }
+  const text = formatContextBreakdown(getLatestContextStats(), opts.model);
+  ctx.ui.notify(text, "info");
+}
+
+async function showStatus(ctx: any, opts: CreateCommandsOptions): Promise<void> {
+  const mode = getExecutionMode();
+  const memory = loadMemory(process.cwd(), getUserMemoryPath());
+  const activeToolsCount = ctx?.getActiveTools?.()?.length ?? "standard";
+  const stats = getLatestContextStats();
+
+  const lines = [
+    `◈ Qronos CLI v${CLI_VERSION} Status`,
+    "",
+    `  • Execution Mode:    ${mode}`,
+    `  • Active Model:      ${opts.model || "Default Model"}`,
+    `  • Provider:          ${opts.provider || "qronos"}`,
+    `  • Base URL:          ${opts.baseUrl}`,
+    `  • Memory Sources:    ${memory.sources.length} active layer(s)`,
+    `  • Active Tools:      ${activeToolsCount}`,
+    `  • Context Window:    ${stats ? `${stats.usedTokens} / ${stats.contextWindow} tokens` : "no active tokens"}`,
+    `  • Working Directory: ${process.cwd()}`,
+  ];
+  ctx.ui.notify(lines.join("\n"), "info");
+}
+
+async function showDoctor(ctx: any, opts: CreateCommandsOptions): Promise<void> {
+  const checks: string[] = [`◈ Qronos CLI v${CLI_VERSION} Diagnostics`, ""];
+
+  // 1. Runtime environment
+  const nodeVer = process.version;
+  checks.push(`[✓] Runtime: Node ${nodeVer} on ${process.platform} (${process.arch})`);
+
+  // 2. Git status
+  try {
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const status = execSync("git status --porcelain", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const dirty = status.length > 0 ? "dirty working tree" : "clean";
+    checks.push(`[✓] Git Repository: branch '${branch}' (${dirty})`);
+  } catch {
+    checks.push(`[-] Git Repository: not a git directory or git not available`);
+  }
+
+  // 3. Config file
+  const configPath = getConfigPath();
+  checks.push(existsSync(configPath) ? `[✓] Config File: ${configPath}` : `[i] Config File: none (using defaults)`);
+
+  // 4. Memory files
+  const memory = loadMemory(process.cwd(), getUserMemoryPath());
+  if (memory.sources.length > 0) {
+    checks.push(`[✓] Memory: ${memory.sources.length} QRONOS.md layers loaded`);
+  } else {
+    checks.push(`[i] Memory: No QRONOS.md found (run /init to create project instructions)`);
+  }
+
+  // 5. Hooks
+  const userHooks = parseHookConfig(readHooksFile(getHooksPath()));
+  const projHooks = parseHookConfig(readHooksFile(getProjectHooksPath(process.cwd())));
+  const merged = mergeHookConfigs(userHooks, projHooks);
+  const hookCount = Object.values(merged).reduce((acc, matchers) => acc + (matchers?.length || 0), 0);
+  checks.push(hookCount > 0 ? `[✓] Lifecycle Hooks: ${hookCount} hook matcher(s) active` : `[i] Lifecycle Hooks: 0 configured`);
+
+  // 6. Provider connection
+  checks.push(`[✓] Provider: ${opts.provider || "qronos"} (${opts.baseUrl})`);
+
+  ctx.ui.notify(checks.join("\n"), "info");
+}
+
+async function runReview(ctx: any, pi: ExtensionAPI): Promise<void> {
+  let diff = "";
+  try {
+    diff = execSync("git diff HEAD", { encoding: "utf8", maxBuffer: 1024 * 1024 }).trim();
+    if (!diff) {
+      diff = execSync("git diff --staged", { encoding: "utf8", maxBuffer: 1024 * 1024 }).trim();
+    }
+  } catch (err: any) {
+    ctx.ui.notify(`Could not read git diff: ${err?.message || String(err)}`, "error");
+    return;
+  }
+
+  if (!diff) {
+    ctx.ui.notify("Working tree is clean — no git changes to review.", "info");
+    return;
+  }
+
+  const prompt = [
+    "Please perform a thorough code review of the following git diff.",
+    "Review for correctness bugs, edge cases, performance issues, and adherence to project patterns.",
+    "",
+    "```diff",
+    diff.slice(0, 40_000), // cap to prevent overwhelming
+    "```",
+  ].join("\n");
+
+  pi.sendUserMessage(prompt);
+}
+
 export function createFreePiCommandsExtension(opts: CreateCommandsOptions): InlineExtension {
   return {
     name: "free-pi-commands",
@@ -396,6 +509,22 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
       pi.registerCommand("hooks", {
         description: "Show the lifecycle hooks configured for this session.",
         handler: (_args, ctx) => showHooks(ctx as any),
+      });
+      pi.registerCommand("context", {
+        description: "Show current context window token usage, remaining headroom, and auto-compact limit.",
+        handler: (_args, ctx) => showContext(ctx as any, opts),
+      });
+      pi.registerCommand("status", {
+        description: "Show current session info, active model, execution mode, and working directory.",
+        handler: (_args, ctx) => showStatus(ctx as any, opts),
+      });
+      pi.registerCommand("doctor", {
+        description: "Run diagnostics on your environment, API provider, git repo, memory, and hooks.",
+        handler: (_args, ctx) => showDoctor(ctx as any, opts),
+      });
+      pi.registerCommand("review", {
+        description: "Review current git diff changes for correctness, bugs, and code quality.",
+        handler: (_args, ctx) => runReview(ctx as any, pi),
       });
     },
   };

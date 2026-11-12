@@ -25,6 +25,7 @@ import { createBuyToolExtension, BUY_TOOL_NAME } from "./buy-tool";
 import { createDocsToolExtension, DOCS_TOOL_NAME } from "./docs-tool";
 import { createTodoToolExtension, TODO_TOOL_NAME } from "./todo-tool";
 import { createExitPlanToolExtension, EXIT_PLAN_TOOL_NAME } from "./exit-plan-tool";
+import { createAgentToolExtension, AGENT_TOOL_NAME } from "./agent-tool";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
@@ -35,7 +36,7 @@ import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
 import { installEffortHandler } from "./effort-selector";
 import { installFooterRightAlign } from "./footer-align";
-import { readConfigObject, readHooksFile, writeConfigPatch } from "./cli-config";
+import { readConfigObject, readHooksFile, readStatusLineCommand, writeConfigPatch } from "./cli-config";
 import { getConfigPath, getHooksPath, getProjectHooksPath } from "./paths";
 import { createHooksExtension } from "./hooks-extension";
 import { mergeHookConfigs, parseHookConfig } from "./hooks";
@@ -47,6 +48,7 @@ import { createFusionExtension, resolveFusionIds } from "./fusion";
 import { patchResumeLine } from "./resume-line";
 import { CLAUDE_THEME_NAME, ensureQronosTheme } from "./theme-claude";
 import { createClaudeToolRendererExtension } from "./tool-renderer-claude";
+import { createInterruptExtension } from "./interrupt-handler";
 import { decideProjectTrustInteractive, projectTrustForCwd } from "./project-trust";
 import { DEFAULT_BASE_URL } from "./env";
 
@@ -112,6 +114,7 @@ export const ALLOWED_TOOL_NAMES: readonly string[] = [
   IMAGE_TOOL_NAME,
   TODO_TOOL_NAME,
   EXIT_PLAN_TOOL_NAME,
+  AGENT_TOOL_NAME,
   "codemode",
   "tool_search",
 ];
@@ -173,7 +176,7 @@ export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[]
       // The picker starts on the first catalog model (the server lists the
       // default first); the user switches with /model.
       defaultModel: models[0]!.id,
-      defaultTools: [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME],
+      defaultTools: [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME],
       packages: [],
       // hides pi's own startup header dump so qronos-header is the only header shown.
       quietStartup: true,
@@ -309,6 +312,8 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // Tier 1 item 2: plan mode's ExitPlanMode tool. It is refused outside plan
   // mode (see exit-plan-tool.ts), so it cannot be used to skip review.
   const exitPlanToolExtension: InlineExtension = createExitPlanToolExtension({});
+  // Tier 2 item 7: Subagent tool with Option B read-only start and plan approval gate.
+  const agentToolExtension: InlineExtension = createAgentToolExtension();
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
   // Tier 2 item 6: lifecycle hooks. User-level hooks.json first, then project
@@ -348,6 +353,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     headerExtension,
     todoToolExtension,
     exitPlanToolExtension,
+    agentToolExtension,
     fileCompletionExtension,
     hooksExtension,
     toolAliasesExtension,
@@ -355,6 +361,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     codemodeExtension,
     toolSearchExtension,
     createClaudeToolRendererExtension(),
+    createInterruptExtension(),
   ];
 
   const settingsManager = buildSettingsManager(opts, models, opts.projectTrusted === true);
@@ -517,7 +524,8 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
   });
   installBugHandler(mode, { baseUrl: opts.baseUrl, getToken: () => opts.jwt });
   installEffortHandler(mode);
-  installFooterRightAlign(mode);
+  const statusLineCommand = readStatusLineCommand(getConfigPath());
+  installFooterRightAlign(mode, { statusLineCommand });
 
   await mode.run();
   return sm.getSessionId();
