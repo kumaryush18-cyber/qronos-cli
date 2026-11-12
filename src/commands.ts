@@ -15,7 +15,8 @@ import { runCost } from "./cost-cmd";
 import { getExecutionMode, type ExecutionMode } from "./execution-modes";
 import { HOOK_EVENTS, mergeHookConfigs, parseHookConfig } from "./hooks";
 import { readHooksFile } from "./cli-config";
-import { getHooksPath, getProjectHooksPath } from "./paths";
+import { getHooksPath, getProjectHooksPath, getUserMemoryPath } from "./paths";
+import { loadMemory, memoryPathsFor } from "./memory-io";
 
 export interface CreateCommandsOptions {
   baseUrl: string;
@@ -258,6 +259,34 @@ function describeMode(mode: ExecutionMode): string {
   }
 }
 
+/** /memory: show which memory layers resolved, and any broken @imports. */
+async function showMemory(ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }): Promise<void> {
+  const root = process.cwd();
+  const memory = loadMemory(root, getUserMemoryPath());
+  const checked = memoryPathsFor(root, getUserMemoryPath());
+
+  const lines: string[] = [];
+  if (memory.sources.length === 0) {
+    lines.push("No memory loaded.", "", "Create one with /init (writes QRONOS.md here),");
+    lines.push(`or add ${getUserMemoryPath()} to apply to every project.`);
+  } else {
+    lines.push("Loaded memory, lowest precedence first:");
+    for (const s of memory.sources) lines.push(`  [${s.layer}] ${s.path} (${s.contents.length} chars)`);
+    lines.push("", "Later entries override earlier ones.");
+  }
+  if (memory.missing.length > 0) {
+    lines.push("", "Broken @imports:");
+    for (const m of memory.missing) lines.push(`  ${m}`);
+  }
+  if (memory.cycles.length > 0) {
+    lines.push("", "Cyclic @imports skipped:");
+    for (const c of memory.cycles) lines.push(`  ${c}`);
+  }
+  lines.push("", "Checked:", ...checked.map((c) => `  ${c}`));
+
+  ctx.ui.notify(lines.join("\n"), memory.missing.length > 0 ? "warning" : "info");
+}
+
 /** /hooks: list what is configured, from both hook sources. */
 async function showHooks(ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }): Promise<void> {
   const user = parseHookConfig(readHooksFile(getHooksPath()));
@@ -359,6 +388,10 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
       pi.registerCommand("permissions", {
         description: "Show the active execution mode and what it will ask you to approve.",
         handler: (_args, ctx) => showPermissions(ctx as any),
+      });
+      pi.registerCommand("memory", {
+        description: "Show which QRONOS.md memory files are loaded for this project.",
+        handler: (_args, ctx) => showMemory(ctx as any),
       });
       pi.registerCommand("hooks", {
         description: "Show the lifecycle hooks configured for this session.",

@@ -29,6 +29,8 @@ import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
 import { AGENT_RULES } from "./agent-rules";
+import { loadMemoryPrompt } from "./memory-io";
+import { getUserMemoryPath } from "./paths";
 import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
 import { installEffortHandler } from "./effort-selector";
@@ -364,7 +366,14 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     resourceLoaderOptions: {
       extensionFactories,
       additionalSkillPaths: [SKILLS_DIR],
-      appendSystemPromptOverride: (base) => [...base, AGENT_RULES],
+      appendSystemPromptOverride: (base) => {
+        // Tier 2 item 5: layered memory (~/.qronos/QRONOS.md, then the project's
+        // QRONOS.md). Resolved per runtime build so an edit is picked up on
+        // reload, and empty when there is no memory file to avoid wasting
+        // prompt tokens.
+        const memory = loadMemoryPrompt(process.cwd(), getUserMemoryPath());
+        return memory === "" ? [...base, AGENT_RULES] : [...base, AGENT_RULES, memory];
+      },
     },
     extensionNames: extensionFactories.map((e) => (e as { name: string }).name),
     tools: SDK_TOOLS,
