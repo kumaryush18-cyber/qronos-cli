@@ -31,7 +31,9 @@ import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
 import { installEffortHandler } from "./effort-selector";
 import { installFooterRightAlign } from "./footer-align";
-import { initExecutionMode } from "./execution-modes";
+import { readConfigObject, writeConfigPatch } from "./cli-config";
+import { getConfigPath } from "./paths";
+import { initExecutionMode, isExecutionMode, setExecutionModePersistence } from "./execution-modes";
 import { createFreePiCommandsExtension } from "./commands";
 import { createHeaderExtension } from "./header";
 import { resolveFreePiScope } from "./provider-lock";
@@ -471,7 +473,16 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
     initialImages: [],
     initialMessages: [],
   });
-  initExecutionMode(opts.dangerouslySkipPermissions);
+  // 0.5.0: restore the execution mode chosen in a previous session so a user
+  // who works in plan mode does not get silently dropped back into auto mode
+  // every time they relaunch. An explicit --dangerously-skip-permissions flag
+  // still wins (initExecutionMode handles that precedence).
+  const savedConfig = readConfigObject(getConfigPath());
+  const restoredMode = isExecutionMode(savedConfig?.executionMode) ? savedConfig.executionMode : undefined;
+  initExecutionMode(opts.dangerouslySkipPermissions, restoredMode);
+  setExecutionModePersistence((next) => {
+    writeConfigPatch(getConfigPath(), { executionMode: next });
+  });
   installBugHandler(mode, { baseUrl: opts.baseUrl, getToken: () => opts.jwt });
   installEffortHandler(mode);
   installFooterRightAlign(mode);

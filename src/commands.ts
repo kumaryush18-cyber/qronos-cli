@@ -12,6 +12,7 @@ import { BUY_NOT_AVAILABLE_TEXT, buyPageText, resolveBuyPage } from "./buy-tool"
 import { fetchUsageText } from "./usage-tool";
 import { runInit } from "./init-cmd";
 import { runCost } from "./cost-cmd";
+import { getExecutionMode, type ExecutionMode } from "./execution-modes";
 
 export interface CreateCommandsOptions {
   baseUrl: string;
@@ -238,6 +239,35 @@ export function loadRea(pi: Pick<ExtensionAPI, "registerMcpServer" | "getMcpServ
 
 // ---- extension ------------------------------------------------------------
 
+/** Human summary of what each mode auto-approves, for /permissions. */
+function describeMode(mode: ExecutionMode): string {
+  switch (mode) {
+    case "auto":
+      return "Edits and reads run freely. bash commands pause only when they look destructive.";
+    case "edit-automatically":
+      return "File edits are applied without asking. Every bash command asks first.";
+    case "plan":
+      return "Read-only. Writes are refused and bash is limited to inspection commands (ls, cat, git diff...).";
+    case "manual":
+      return "Every file edit and every bash command asks for approval.";
+    case "dangerously-skip-permissions":
+      return "Nothing is checked. The agent can edit and run anything without asking.";
+  }
+}
+
+async function showPermissions(ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }): Promise<void> {
+  const mode = getExecutionMode();
+  const lines = [
+    `Execution mode: ${mode}`,
+    "",
+    describeMode(mode),
+    "",
+    "Press Shift+Tab in the prompt to cycle: auto -> accept edits -> plan -> manual.",
+    "The mode is remembered between sessions in ~/.qronos/config.json.",
+  ];
+  ctx.ui.notify(lines.join("\n"), mode === "dangerously-skip-permissions" ? "warning" : "info");
+}
+
 export function createFreePiCommandsExtension(opts: CreateCommandsOptions): InlineExtension {
   return {
     name: "free-pi-commands",
@@ -287,6 +317,10 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
       pi.registerCommand("reverse-engineer-anything", {
         description: "Load reverse-engineering tools (REA: binaries, apps, APKs, websites) for this session.",
         handler: async (_args, ctx) => loadRea(pi, opts, ctx),
+      });
+      pi.registerCommand("permissions", {
+        description: "Show the active execution mode and what it will ask you to approve.",
+        handler: (_args, ctx) => showPermissions(ctx as any),
       });
     },
   };
