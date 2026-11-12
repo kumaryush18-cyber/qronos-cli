@@ -1,6 +1,6 @@
 // Startup version & live model catalog check.
 // Connects to Qronos AI /v1/models to fetch live frontier models.
-import { ClientVersionResponseSchema, compareVersions } from "@freepi/shared";
+import { ClientVersionResponseSchema, compareVersions } from "@qronos/shared";
 
 export interface ClientVersionCheck {
   action: "block" | "notice" | "ok";

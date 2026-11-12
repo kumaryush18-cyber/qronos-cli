@@ -1,9 +1,9 @@
 // U3: proves the KTD7 handoff — createBannerRenderer's onBannerAd option
-// mirrors the currently-shown banner's click URL out to free-pi-cli's
+// mirrors the currently-shown banner's click URL out to qronos-cli's
 // /support command, and clears it (undefined) whenever no ad is shown.
 import { describe, expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "@freepi/shared";
+import { loadConfig } from "@qronos/shared";
 import { createBannerRenderer } from "./banner";
 import type { AdsDeps } from "./api";
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "@freepi/shared";
+import { loadConfig } from "@qronos/shared";
 import { fetchAdNext, postImpression, type AdsDeps } from "./api";
 import { BANNER_WIDGET_ID, createBannerRenderer } from "./banner";
 import { inferErrorFromRemainingBudget, mapErrorCode } from "./errors";
@@ -251,7 +251,7 @@ describe("narrow terminal fallback", () => {
 describe("mapErrorCode", () => {
   test("daily_cap contains the exact reset-time message", () => {
     expect(mapErrorCode("daily_cap")).toBe("out of free credits today — refills at UTC midnight");
-    expect(mapErrorCode("queue_wait")).toBe("free-pi is near its daily budget — wait and retry");
+    expect(mapErrorCode("queue_wait")).toBe("qronos is near its daily budget — wait and retry");
   });
 
   test("every error code maps to a non-empty message", () => {

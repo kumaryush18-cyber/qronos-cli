@@ -35,7 +35,7 @@ export async function maybeSelfUpdate(
 
   try {
     // Gate (a): enabled — config default-true, env is a one-off override.
-    if ("FREEPI_NO_AUTO_UPDATE" in deps.env || !deps.autoUpdateEnabled()) return fallback();
+    if ("QRONOS_NO_AUTO_UPDATE" in deps.env || !deps.autoUpdateEnabled()) return fallback();
 
     // Gate (b): not an ephemeral npx/dlx run (already the latest by definition).
     if (deps.env.npm_config_user_agent || deps.env.npm_lifecycle_event === "npx") return fallback();
@@ -49,7 +49,7 @@ export async function maybeSelfUpdate(
       deps.cliRealpath === globalRoot || deps.cliRealpath.startsWith(globalRoot + path.sep);
     if (!isGlobalInstall) return fallback();
 
-    const install = deps.spawn("npm", ["install", "-g", "free-pi-cli@latest"], {
+    const install = deps.spawn("npm", ["install", "-g", "qronos-cli@latest"], {
       timeout: NPM_INSTALL_TIMEOUT_MS,
     });
     if (install.error || install.status !== 0) return fallback();
@@ -58,7 +58,7 @@ export async function maybeSelfUpdate(
       deps.log(`updated to ${latest}; applies next launch`);
       return "updated-continue";
     }
-    deps.log(`updated to ${latest} — re-run free-pi-cli`);
+    deps.log(`updated to ${latest} — re-run qronos-cli`);
     return "updated-exit";
   } catch {
     return fallback();

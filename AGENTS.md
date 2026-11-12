@@ -2,8 +2,8 @@
 
 ## This repo is a generated mirror
 
-`free-pi-cli` is a one-way mirror of `packages/cli` (plus the vendored
-`pi-ads` and `shared` packages) from the private `dennisonbertram/free-pi`
+`qronos-cli` is a one-way mirror of `packages/cli` (plus the vendored
+`pi-ads` and `shared` packages) from the private `dennisonbertram/qronos`
 monorepo. A GitHub Actions workflow in that repo syncs this one on every push
 to its `main` branch. `.mirror-state.json` records the sha256 of every file the
 last sync wrote.

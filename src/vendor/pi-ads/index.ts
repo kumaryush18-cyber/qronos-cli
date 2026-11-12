@@ -3,9 +3,9 @@
 // context, before_provider_request, before_agent_start, message_*, tool_*,
 // or agent_*. See src/sandbox.test.ts for the enforced proof. Ad content
 // only ever reaches the terminal through ctx.ui.setWidget; it never touches
-// pi.sendMessage / pi.sendUserMessage / pi.appendEntry / the session.
+// qronos.sendMessage / qronos.sendUserMessage / qronos.appendEntry / the session.
 import type { ExtensionAPI, ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "@freepi/shared";
+import { loadConfig } from "@qronos/shared";
 import type { AdsDeps } from "./api";
 import { createBannerRenderer } from "./banner";
 import { createInlineRenderer } from "./inline";
@@ -21,7 +21,7 @@ export interface CreateAdsExtensionOptions {
   /** Base64url Gravity context for the /ads/next header; undefined result = header omitted. */
   getGravityContext?: () => string | undefined;
   /** KTD7: mirrors the currently-shown banner ad's click URL to the caller
-   * (free-pi-cli's /support command) — undefined when no ad is shown. */
+   * (qronos-cli's /support command) — undefined when no ad is shown. */
   onBannerAd?: (clickUrl: string | undefined) => void;
 }
 
@@ -42,8 +42,8 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
   const config = loadConfig();
 
   return {
-    name: "free-pi-ads",
-    factory(pi: ExtensionAPI) {
+    name: "qronos-ads",
+    factory(qronos: ExtensionAPI) {
       let stopped = false;
       const screen: AdScreen = {};
       const banner = createBannerRenderer({ onBannerAd: opts.onBannerAd, isActive: () => !stopped, screen });
@@ -69,7 +69,7 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
         }
       };
 
-      pi.on("session_start", async (_event, ctx) => {
+      qronos.on("session_start", async (_event, ctx) => {
         stopped = false;
         inline.reset(ctx);
 
@@ -82,14 +82,14 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
         (bannerInterval as unknown as { unref?: () => void }).unref?.();
       });
 
-      pi.on("turn_end", async (_event, ctx) => {
+      qronos.on("turn_end", async (_event, ctx) => {
         // Not awaited: a slow /ads/next (Gravity can take seconds) must not
         // hold up the agent's next step.
         void renderBanner(ctx);
         await Promise.all([inline.onTurnEnd(deps, ctx, config), renderMeter(deps, ctx)]);
       });
 
-      pi.on("session_shutdown", () => {
+      qronos.on("session_shutdown", () => {
         stopped = true;
         if (bannerInterval) {
           clearInterval(bannerInterval);

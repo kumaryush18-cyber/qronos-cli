@@ -143,8 +143,8 @@ export interface CreateHeaderExtensionOptions {
 export function createHeaderExtension(opts: CreateHeaderExtensionOptions): InlineExtension {
   return {
     name: "qronos-header",
-    factory(pi: ExtensionAPI) {
-      pi.on("session_start", (_event, ctx) => {
+    factory(qronos: ExtensionAPI) {
+      qronos.on("session_start", (_event, ctx) => {
         ctx.ui.setHeader((tui: TuiLike, theme: ThemeLike) => {
           let expanded = false;
 

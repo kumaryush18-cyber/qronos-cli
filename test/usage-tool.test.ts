@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { MeStatsResponse } from "@freepi/shared";
+import type { MeStatsResponse } from "@qronos/shared";
 import { createUsageToolExtension, formatStats, percentUsed } from "../src/usage-tool";
 
 // Mirrors packages/pi-ads/src/sandbox.test.ts's fake-ExtensionAPI Proxy

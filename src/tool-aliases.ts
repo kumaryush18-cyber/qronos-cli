@@ -50,8 +50,8 @@ export function normalizeShellPath(
 
 export function createToolAliasesExtension(): InlineExtension {
   return {
-    name: "free-pi-tool-aliases",
-    factory: (pi: ExtensionAPI) => {
+    name: "qronos-tool-aliases",
+    factory: (qronos: ExtensionAPI) => {
       const cwd = process.cwd();
       const bash = createBashToolDefinition(cwd);
       const read = createReadToolDefinition(cwd);
@@ -59,21 +59,21 @@ export function createToolAliasesExtension(): InlineExtension {
       // _buildRuntime). Settings are not readable while a factory loads
       // (getSettings throws until the runner binds it), so build the real tool
       // inside execute, from the settings at that moment.
-      pi.registerTool({
+      qronos.registerTool({
         ...bash,
         prepareArguments: (a) => aliasArgs(bash.prepareArguments ? bash.prepareArguments(a) : a, "command", ["cmd"]) as never,
         execute: (...args) => {
-          const s = pi.getSettings();
+          const s = qronos.getSettings();
           const shellPath = s.shellPath ? normalizeShellPath(s.shellPath) : s.shellPath;
           return createBashToolDefinition(cwd, { commandPrefix: s.shellCommandPrefix, shellPath }).execute(...args);
         },
       });
-      pi.registerTool({
+      qronos.registerTool({
         ...read,
         prepareArguments: (a) =>
           aliasArgs(read.prepareArguments ? read.prepareArguments(a) : a, "path", ["file", "file_path"]) as never,
         execute: (...args) =>
-          createReadToolDefinition(cwd, { autoResizeImages: pi.getSettings().images?.autoResize ?? true }).execute(...args),
+          createReadToolDefinition(cwd, { autoResizeImages: qronos.getSettings().images?.autoResize ?? true }).execute(...args),
       });
     },
   };

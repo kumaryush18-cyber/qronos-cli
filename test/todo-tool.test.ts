@@ -26,9 +26,9 @@ function setup() {
 const text = async (t: { execute: Exec }, params: Record<string, unknown>) => (await t.execute("c", params)).content[0]!.text;
 
 describe("todo tool", () => {
-  test("is named free-pi-todo and registers tool `todo` plus /todos", () => {
+  test("is named qronos-todo and registers tool `todo` plus /todos", () => {
     const { ext, tool, commands } = setup();
-    expect(ext.name).toBe("free-pi-todo");
+    expect(ext.name).toBe("qronos-todo");
     expect(tool.name).toBe(TODO_TOOL_NAME);
     expect([...commands.keys()]).toEqual(["todos"]);
   });
@@ -92,7 +92,7 @@ describe("todo tool", () => {
     await first.tool.execute("nested/2", { action: "add", text: "two" });
     await first.tool.execute("nested/3", { action: "toggle", id: 1 });
     await first.tool.execute("nested/4", { action: "list" });
-    expect(first.entries.map((e) => e.customType)).toEqual(["free-pi-todo", "free-pi-todo", "free-pi-todo"]);
+    expect(first.entries.map((e) => e.customType)).toEqual(["qronos-todo", "qronos-todo", "qronos-todo"]);
     // Only custom entries on the branch (nested results are never stored).
     const resumed = setup();
     await resumed.handlers.get("session_start")!({}, { sessionManager: { getBranch: () => first.entries } });

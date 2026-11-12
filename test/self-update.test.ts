@@ -16,7 +16,7 @@ function spawnRecorder(script: (cmd: string, args: string[]) => SpawnResult) {
 // path.sep boundary check — on a Windows runner a posix-literal fixture would
 // never match and every happy-path test here would fail.
 const NPM_ROOT_OK = join(sep, "opt", "homebrew", "lib", "node_modules");
-const CLI_REALPATH_GLOBAL = join(NPM_ROOT_OK, "free-pi-cli", "dist", "index.js");
+const CLI_REALPATH_GLOBAL = join(NPM_ROOT_OK, "qronos-cli", "dist", "index.js");
 
 function happyPathSpawn(): (cmd: string, args: string[]) => SpawnResult {
   return (_cmd, args) => {
@@ -39,9 +39,9 @@ function baseDeps(overrides: Partial<SelfUpdateDeps> = {}): SelfUpdateDeps {
 }
 
 describe("maybeSelfUpdate (#37 U1) — every gate falls back with NO install spawn", () => {
-  test("FREEPI_NO_AUTO_UPDATE env present -> fallback, no spawn at all", async () => {
+  test("QRONOS_NO_AUTO_UPDATE env present -> fallback, no spawn at all", async () => {
     const { spawn, calls } = spawnRecorder(happyPathSpawn());
-    const outcome = await maybeSelfUpdate("notice", "0.3.0", baseDeps({ spawn, env: { FREEPI_NO_AUTO_UPDATE: "1" } }));
+    const outcome = await maybeSelfUpdate("notice", "0.3.0", baseDeps({ spawn, env: { QRONOS_NO_AUTO_UPDATE: "1" } }));
     expect(outcome).toBe("notice");
     expect(calls.length).toBe(0);
   });
@@ -76,7 +76,7 @@ describe("maybeSelfUpdate (#37 U1) — every gate falls back with NO install spa
     const outcome = await maybeSelfUpdate(
       "notice",
       "0.3.0",
-      baseDeps({ spawn, cliRealpath: join(sep, "Users", "dev", "free-pi", "packages", "cli", "dist", "index.js") }),
+      baseDeps({ spawn, cliRealpath: join(sep, "Users", "dev", "qronos", "packages", "cli", "dist", "index.js") }),
     );
     expect(outcome).toBe("notice");
     // "npm root -g" is still checked (that's how we learn it's not global) but install is not.
@@ -91,7 +91,7 @@ describe("maybeSelfUpdate (#37 U1) — every gate falls back with NO install spa
     const outcome = await maybeSelfUpdate(
       "notice",
       "0.3.0",
-      baseDeps({ spawn, cliRealpath: join(`${NPM_ROOT_OK}-evil`, "free-pi-cli", "dist", "index.js") }),
+      baseDeps({ spawn, cliRealpath: join(`${NPM_ROOT_OK}-evil`, "qronos-cli", "dist", "index.js") }),
     );
     expect(outcome).toBe("notice");
     expect(calls.some((c) => c.args[0] === "install")).toBe(false);
@@ -122,12 +122,12 @@ describe("maybeSelfUpdate — success paths", () => {
     expect(logs.join("\n")).toContain("re-run");
   });
 
-  test("install spawn uses npm install -g free-pi-cli@latest with a bounded timeout, no sudo", async () => {
+  test("install spawn uses npm install -g qronos-cli@latest with a bounded timeout, no sudo", async () => {
     const { spawn, calls } = spawnRecorder(happyPathSpawn());
     await maybeSelfUpdate("notice", "0.3.0", baseDeps({ spawn }));
     const install = calls.find((c) => c.args[0] === "install");
     expect(install?.cmd).toBe("npm");
-    expect(install?.args).toEqual(["install", "-g", "free-pi-cli@latest"]);
+    expect(install?.args).toEqual(["install", "-g", "qronos-cli@latest"]);
   });
 });
 

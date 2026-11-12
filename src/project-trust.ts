@@ -1,18 +1,18 @@
-// Decide, before the TUI starts, whether free-pi may load the current folder's
+// Decide, before the TUI starts, whether qronos may load the current folder's
 // project resources (.pi/mcp.json MCP servers, .pi/extensions, .pi/settings.json,
 // .agents/skills ...). They can run code, so a cloned repo must not get that
 // by default. pi's own CLI does the same check; the SDK path does not, and
 // SettingsManager defaults to "trusted" unless told otherwise.
 //
-// The answer is saved in pi's ProjectTrustStore under free-pi's agent dir,
-// the same store `free-pi-cli mcp` reads, so "start free-pi-cli in the project
+// The answer is saved in pi's ProjectTrustStore under qronos's agent dir,
+// the same store `qronos-cli mcp` reads, so "start qronos-cli in the project
 // to trust it" is true.
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 
 export const PROJECT_TRUST_PROMPT =
-  "This folder has project settings for free-pi (.pi/ or .agents/skills), which can run code such as MCP servers and extensions. Trust this folder? [y/N] ";
+  "This folder has project settings for qronos (.pi/ or .agents/skills), which can run code such as MCP servers and extensions. Trust this folder? [y/N] ";
 
 export interface ProjectTrustDeps {
   hasTrustRequiringResources?: (cwd: string) => boolean;

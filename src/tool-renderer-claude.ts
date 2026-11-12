@@ -52,9 +52,9 @@ function truncationHint(remaining: number, expanded: boolean | undefined): strin
 export function createClaudeToolRendererExtension(): InlineExtension {
   return {
     name: "qronos-claude-tool-renderer",
-    factory(pi: ExtensionAPI) {
+    factory(qronos: ExtensionAPI) {
       // 1. Markdown transformer: format prompt chevrons and ensure headings/sections are separated
-      pi.registerMarkdownTransformer((markdown, context) => {
+      qronos.registerMarkdownTransformer((markdown, context) => {
         if (context.messageType === "user") {
           const trimmed = markdown.trim();
           if (trimmed.startsWith("> ") || trimmed.startsWith("​> ") || trimmed.startsWith("› ")) {
@@ -78,7 +78,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
       });
 
       // 3. Register Claude Code style tool renderers
-      pi.registerToolRenderer((toolName, _next) => {
+      qronos.registerToolRenderer((toolName, _next) => {
         return {
           renderShell: "self", // Disables Box container and full-width colored background fills
 

@@ -13,8 +13,8 @@
     "types": ["bun", "node"],
     "baseUrl": ".",
     "paths": {
-      "@freepi/shared": ["./src/vendor/shared/index.ts"],
-      "@freepi/pi-ads": ["./src/vendor/pi-ads/index.ts"]
+      "@qronos/shared": ["./src/vendor/shared/index.ts"],
+      "@qronos/pi-ads": ["./src/vendor/pi-ads/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

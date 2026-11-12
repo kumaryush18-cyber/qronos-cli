@@ -15,7 +15,7 @@ import {
   FUSION_PLANNER_ID,
 } from "../src/fusion";
 import { PROVIDER_NAME } from "../src/provider";
-import { resolveFreePiScope } from "../src/provider-lock";
+import { resolveQronosScope } from "../src/provider-lock";
 
 const CATALOG_MODELS = [
   { id: FUSION_EXECUTOR_ID, name: "DeepSeek V4 Flash" },
@@ -95,7 +95,7 @@ async function createFusionSession(baseUrl: string, cwd: string, sessionId: stri
   const opts: LaunchOptions = {
     baseUrl,
     jwt: "test-jwt",
-    agentDir: tempDir("free-pi-fusion-agentdir-"),
+    agentDir: tempDir("qronos-fusion-agentdir-"),
     models: CATALOG_MODELS,
   };
   const { settingsManager, resourceLoaderOptions, tools } = buildRuntimeOptions(opts, sessionId);
@@ -105,7 +105,7 @@ async function createFusionSession(baseUrl: string, cwd: string, sessionId: stri
     settingsManager,
     resourceLoaderOptions,
   });
-  const scopedModels = resolveFreePiScope(
+  const scopedModels = resolveQronosScope(
     services.modelRuntime,
     PROVIDER_NAME,
     CATALOG_MODELS.map((model) => model.id),
@@ -130,7 +130,7 @@ describe("Fusion production session routing", () => {
     let openStreams = 0;
     let maxOpenStreams = 0;
     const requestModels: string[] = [];
-    const cwd = tempDir("free-pi-fusion-cwd-");
+    const cwd = tempDir("qronos-fusion-cwd-");
     const filePath = join(cwd, "fusion-output.txt");
 
     const stub = Bun.serve({
@@ -201,7 +201,7 @@ describe("Fusion production session routing", () => {
     const requestModels: string[] = [];
     const retryStarts: number[] = [];
     const retryEnds: boolean[] = [];
-    const cwd = tempDir("free-pi-fusion-retry-cwd-");
+    const cwd = tempDir("qronos-fusion-retry-cwd-");
 
     const stub = Bun.serve({
       port: 0,

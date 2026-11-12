@@ -22,7 +22,7 @@ export const HOOKS_EXTENSION_NAME = "qronos-hooks";
 export function createHooksExtension(opts: CreateHooksOptions): InlineExtension {
   return {
     name: HOOKS_EXTENSION_NAME,
-    factory(pi: ExtensionAPI) {
+    factory(qronos: ExtensionAPI) {
       const config = opts.config;
       const has = (event: keyof HookConfig) => (config[event]?.length ?? 0) > 0;
 
@@ -38,7 +38,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
         const text = warnings.map((w) => `Hook warning: ${w}`).join("\n");
         opts.notify?.(text, "warning");
         try {
-          pi.sendMessage({
+          qronos.sendMessage({
             customType: "qronos-hook-warning",
             content: text,
             display: true,
@@ -53,7 +53,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
         session_id: opts.sessionId?.(),
       });
 
-      pi.on("tool_call", async (event, ctx) => {
+      qronos.on("tool_call", async (event, ctx) => {
         if (!has("PreToolUse")) return undefined;
         const { blocked, warnings } = await runEventHooks(
           config,
@@ -73,7 +73,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
         return undefined;
       });
 
-      pi.on("tool_execution_end", async (event) => {
+      qronos.on("tool_execution_end", async (event) => {
         if (!has("PostToolUse")) return;
         const { warnings } = await runEventHooks(
           config,
@@ -91,7 +91,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
         reportWarnings(warnings);
       });
 
-      pi.on("session_start", async (event, ctx) => {
+      qronos.on("session_start", async (event, ctx) => {
         if (!has("SessionStart")) return;
         const { warnings } = await runEventHooks(
           config,
@@ -107,7 +107,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
         for (const w of warnings) opts.notify?.(`Hook warning: ${w}`, "warning");
       });
 
-      pi.on("turn_end", async () => {
+      qronos.on("turn_end", async () => {
         // "Stop" fires when the agent finishes a turn, matching Claude Code's
         // Stop hook. It cannot block by design; there is nothing to block.
         if (!has("Stop")) return;
@@ -120,7 +120,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
         reportWarnings(warnings);
       });
 
-      pi.on("turn_start", async (event) => {
+      qronos.on("turn_start", async (event) => {
         // UserPromptSubmit fires per user turn; the prompt text is not exposed
         // on turn_start, so the payload carries the turn index only.
         if (!has("UserPromptSubmit")) return;

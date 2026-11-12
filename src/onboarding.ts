@@ -16,7 +16,7 @@ Set ${INTRO_ENV_SKIP}=1 to skip this intro on future runs.
 
 /** True when the user opted out of the first-run intro via env. */
 export function introSkipped(env: NodeJS.ProcessEnv = process.env): boolean {
-  const v = env[INTRO_ENV_SKIP] || env.FREEPI_NO_INTRO;
+  const v = env[INTRO_ENV_SKIP] || env.QRONOS_NO_INTRO;
   return v === "1" || v === "true";
 }
 

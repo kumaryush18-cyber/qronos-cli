@@ -5,7 +5,7 @@
 // characters (CJK, emoji) take 2 cells each; tiny widths must not overflow.
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { AdCreative } from "@freepi/shared";
+import type { AdCreative } from "@qronos/shared";
 import { adWidget } from "./style";
 
 const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };

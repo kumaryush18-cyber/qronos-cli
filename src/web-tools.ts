@@ -64,9 +64,9 @@ const done = (o: Out) => ({ content: [{ type: "text" as const, text: o.text }], 
 
 export function createWebToolsExtension(opts: CreateWebToolsOptions): InlineExtension {
   return {
-    name: "free-pi-web-tools",
-    factory(pi: ExtensionAPI) {
-      pi.registerTool({
+    name: "qronos-web-tools",
+    factory(qronos: ExtensionAPI) {
+      qronos.registerTool({
         name: WEB_SEARCH_TOOL_NAME,
         label: "Web Search",
         description:
@@ -87,7 +87,7 @@ export function createWebToolsExtension(opts: CreateWebToolsOptions): InlineExte
           return done({ text, details: { ok: true, cost_usd: r.data.cost_usd } });
         },
       });
-      pi.registerTool({
+      qronos.registerTool({
         name: DOCS_LOOKUP_TOOL_NAME,
         label: "Docs Lookup",
         description:

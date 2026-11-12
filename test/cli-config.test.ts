@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { readAutoUpdate } from "../src/cli-config";
 
 function tempConfigPath(contents?: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "free-pi-cli-config-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "qronos-cli-config-test-"));
   const path = join(dir, "config.json");
   if (contents !== undefined) writeFileSync(path, contents);
   return path;
@@ -38,7 +38,7 @@ describe("readAutoUpdate (#37 R5) — fail-open to true, never throws", () => {
   });
 
   test("directory does not exist -> true, never throws", () => {
-    const missing = join(tmpdir(), "free-pi-cli-config-test-does-not-exist", "config.json");
+    const missing = join(tmpdir(), "qronos-cli-config-test-does-not-exist", "config.json");
     expect(() => readAutoUpdate(missing)).not.toThrow();
     expect(readAutoUpdate(missing)).toBe(true);
   });

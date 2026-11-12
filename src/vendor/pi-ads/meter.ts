@@ -4,7 +4,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AdsDeps } from "./api";
 import { fetchMe } from "./api";
-import { usdToCredits } from "@freepi/shared";
+import { usdToCredits } from "@qronos/shared";
 import { inferErrorFromRemainingBudget, mapErrorCode } from "./errors";
 import { osc8, renderErrorLine, renderWarningLine, sanitizeText, type ThemeLike } from "./style";
 

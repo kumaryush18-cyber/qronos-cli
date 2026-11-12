@@ -13,7 +13,7 @@
 //   open at once, and every tool name it ever calls is in the allowed set.
 //
 // What this does NOT prove: that a user hasn't hand-edited their own local
-// `~/.free-pi/agent/extensions/` directory (see the plan's Gap Analysis) —
+// `~/.qronos/agent/extensions/` directory (see the plan's Gap Analysis) —
 // that is a client-machine trust boundary this project doesn't claim to
 // close. R19 (the session lease, apps/server/src/agent-sessions.ts) is the
 // server-side backstop for that residual case, not this test.
@@ -43,7 +43,7 @@ function tempDir(prefix: string): string {
 }
 
 function baseOpts(baseUrl: string): LaunchOptions {
-  return { baseUrl, jwt: "test-jwt", agentDir: tempDir("free-pi-agentdir-") };
+  return { baseUrl, jwt: "test-jwt", agentDir: tempDir("qronos-agentdir-") };
 }
 
 describe("closed extension list (#28 R20, SB1)", () => {
@@ -58,12 +58,12 @@ describe("closed extension list (#28 R20, SB1)", () => {
 
   test("buildRuntimeOptions registers exactly the twenty-one known extensions — no more, no less", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-a");
-    // #226: the closed set deliberately grew to six with free-pi-buy-tool;
-    // 2026-09-01: to seven with free-pi-error-notice (one readable line on a
-    // 429); 2026-09-03: to eight with free-pi-header (the startup header,
-    // U1/U2); 2026-09-03: to nine with free-pi-docs-tool (the free_pi_docs
+    // #226: the closed set deliberately grew to six with qronos-buy-tool;
+    // 2026-09-01: to seven with qronos-error-notice (one readable line on a
+    // 429); 2026-09-03: to eight with qronos-header (the startup header,
+    // U1/U2); 2026-09-03: to nine with qronos-docs-tool (the free_pi_docs
     // tool, U2). Any further addition must be a reviewed, deliberate edit —
-    // never accidental. 2026-10-20: to sixteen with free-pi-web-tools (web_search, docs_lookup); to seventeen with free-pi-image-tool (generate_image).
+    // never accidental. 2026-10-20: to sixteen with qronos-web-tools (web_search, docs_lookup); to seventeen with qronos-image-tool (generate_image).
     // 0.5.0: to eighteen with qronos-exit-plan (plan mode's exit_plan_mode).
     // To nineteen with qronos-file-completion (@file completion fallback for
     // machines where fd cannot be resolved; it adds no tool and no model call).
@@ -77,17 +77,17 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // tool and makes no model call.
     expect([...opts.extensionNames].sort()).toEqual(
       [
-        "free-pi-ads",
-        "free-pi-buy-tool",
-        "free-pi-commands",
-        "free-pi-docs-tool",
-        "free-pi-error-notice",
-        "free-pi-fusion",
-        "free-pi-image-tool",
-        "free-pi-tool-aliases",
-        "free-pi-todo",
-        "free-pi-usage-tool",
-        "free-pi-web-tools",
+        "qronos-ads",
+        "qronos-buy-tool",
+        "qronos-commands",
+        "qronos-docs-tool",
+        "qronos-error-notice",
+        "qronos-fusion",
+        "qronos-image-tool",
+        "qronos-tool-aliases",
+        "qronos-todo",
+        "qronos-usage-tool",
+        "qronos-web-tools",
         "pi-codemode",
         "pi-mcp",
         "pi-tool-search",
@@ -152,7 +152,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
       resolveModelName({
         baseUrl: "http://example.test",
         jwt: "t",
-        agentDir: tempDir("free-pi-agentdir-"),
+        agentDir: tempDir("qronos-agentdir-"),
         models: [{ id: "x", name: "Nice Name" }],
       }),
     ).toBe("Nice Name");
@@ -160,7 +160,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
       resolveModelName({
         baseUrl: "http://example.test",
         jwt: "t",
-        agentDir: tempDir("free-pi-agentdir-"),
+        agentDir: tempDir("qronos-agentdir-"),
         models: [],
         model: "deepseek/deepseek-v4-flash",
       }),
@@ -169,7 +169,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
       resolveModelName({
         baseUrl: "http://example.test",
         jwt: "t",
-        agentDir: tempDir("free-pi-agentdir-"),
+        agentDir: tempDir("qronos-agentdir-"),
       }),
     ).toBe(MODEL_ID);
   });
@@ -193,7 +193,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SB2: stub upstream shaped like the free-pi provider's own baseUrl
+// SB2: stub upstream shaped like the qronos provider's own baseUrl
 // (completionsBaseUrl appends /v1; the openai SDK inside pi-ai appends
 // /chat/completions to that) — a raw OpenAI-completions-shaped streaming
 // endpoint, scripted for exactly one tool call.
@@ -298,8 +298,8 @@ describe("dynamic: a real multi-turn tool-calling AgentSession never opens a 2nd
 
     try {
       const baseUrl = stub.url.toString().replace(/\/$/, "");
-      const cwd = tempDir("free-pi-cwd-");
-      const opts: LaunchOptions = { baseUrl, jwt: "test-jwt", agentDir: tempDir("free-pi-agentdir-") };
+      const cwd = tempDir("qronos-cwd-");
+      const opts: LaunchOptions = { baseUrl, jwt: "test-jwt", agentDir: tempDir("qronos-agentdir-") };
       const { settingsManager, resourceLoaderOptions, tools } = buildRuntimeOptions(opts, "session-dyn-1");
 
       const services = await createAgentSessionServices({
@@ -401,8 +401,8 @@ describe("dynamic: codemode calling a user-added MCP server stays one request at
 
     try {
       const baseUrl = stub.url.toString().replace(/\/$/, "");
-      const cwd = tempDir("free-pi-cwd-");
-      const opts: LaunchOptions = { baseUrl, jwt: "test-jwt", agentDir: tempDir("free-pi-agentdir-") };
+      const cwd = tempDir("qronos-cwd-");
+      const opts: LaunchOptions = { baseUrl, jwt: "test-jwt", agentDir: tempDir("qronos-agentdir-") };
       const server = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "stub-mcp-server.mjs");
       writeFileSync(
         join(opts.agentDir, "mcp.json"),

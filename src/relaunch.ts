@@ -1,6 +1,6 @@
 // Required-update relaunch: when the server says this CLI is below its minimum
 // version (typically a stale npx cache), re-run ourselves as
-// `npx --yes free-pi-cli@<latest> <same args>` instead of telling the user to.
+// `npx --yes qronos-cli@<latest> <same args>` instead of telling the user to.
 // The caller (run.ts) only invokes this for a REQUIRED update, before any ad,
 // banner or model request; optional updates keep the notice / `/update` path.
 import { mkdtempSync, existsSync, rmSync } from "node:fs";
@@ -39,13 +39,13 @@ const WIN_SAFE_ARG = /^[A-Za-z0-9._:=\/@+,-]+$/;
 /**
  * Returns the relaunched process's exit code, or undefined when no relaunch
  * happened or it failed before the CLI started (caller prints the manual
- * "update with: npx free-pi-cli@latest" message and exits non-zero).
+ * "update with: npx qronos-cli@latest" message and exits non-zero).
  */
 export async function relaunchViaNpx(latest: string | undefined, deps: RelaunchDeps): Promise<number | undefined> {
   const { env } = deps;
-  if ("FREEPI_NO_AUTO_UPDATE" in env || !deps.autoUpdateEnabled()) return undefined;
+  if ("QRONOS_NO_AUTO_UPDATE" in env || !deps.autoUpdateEnabled()) return undefined;
   // Loop guard: we ARE the relaunched process and are still below minimum.
-  if (env.FREEPI_AUTO_UPDATED) return undefined;
+  if (env.QRONOS_AUTO_UPDATED) return undefined;
 
   const win = deps.platform === "win32";
   // A .cmd can only be spawned through a shell on Windows (Node's CVE-2024-27980
@@ -56,17 +56,17 @@ export async function relaunchViaNpx(latest: string | undefined, deps: RelaunchD
   // The relaunched CLI touches this file as soon as it starts, so a non-zero
   // exit with no file means npx itself failed (offline, bad install) and we
   // should fall back to the manual message rather than pass that code on.
-  const readyDir = mkdtempSync(join(tmpdir(), "free-pi-relaunch-"));
+  const readyDir = mkdtempSync(join(tmpdir(), "qronos-relaunch-"));
   const readyFile = join(readyDir, "started");
 
   try {
-    deps.log(`Updating free-pi to ${target}…`);
+    deps.log(`Updating qronos to ${target}…`);
     return await new Promise<number | undefined>((resolve) => {
       let child: RelaunchChild;
       try {
-        child = deps.spawn(win ? "npx.cmd" : "npx", ["--yes", `free-pi-cli@${target}`, ...deps.argv], {
+        child = deps.spawn(win ? "npx.cmd" : "npx", ["--yes", `qronos-cli@${target}`, ...deps.argv], {
           stdio: "inherit",
-          env: { ...env, FREEPI_AUTO_UPDATED: target, FREEPI_RELAUNCH_READY: readyFile },
+          env: { ...env, QRONOS_AUTO_UPDATED: target, QRONOS_RELAUNCH_READY: readyFile },
           shell: win,
         });
       } catch {

@@ -31,14 +31,14 @@ const MARKER = "ACME-SANDBOX-MARKER-9f3a";
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
 function createFakePi(): {
-  pi: ExtensionAPI;
+  qronos: ExtensionAPI;
   handlers: Map<string, Handler[]>;
   calls: Array<{ method: string; args: unknown[] }>;
 } {
   const handlers = new Map<string, Handler[]>();
   const calls: Array<{ method: string; args: unknown[] }> = [];
 
-  const pi = new Proxy(
+  const qronos = new Proxy(
     {},
     {
       get(_target, prop: string) {
@@ -57,7 +57,7 @@ function createFakePi(): {
     },
   ) as unknown as ExtensionAPI;
 
-  return { pi, handlers, calls };
+  return { qronos, handlers, calls };
 }
 
 function fakeCtx(): { ctx: ExtensionContext; widgetCalls: unknown[] } {
@@ -99,7 +99,7 @@ function stubFetch(): typeof fetch {
 
 describe("sandbox gate (KTD9 / R5) — ad content must never enter model context", () => {
   test("registers only UI-lifecycle hooks, and no ad content reaches a captured model request", async () => {
-    const { pi, handlers, calls } = createFakePi();
+    const { qronos, handlers, calls } = createFakePi();
     const { ctx, widgetCalls } = fakeCtx();
 
     const ext = createAdsExtension({
@@ -107,8 +107,8 @@ describe("sandbox gate (KTD9 / R5) — ad content must never enter model context
       getToken: () => "jwt",
       sessionId: "session-test",
       fetchImpl: stubFetch(),
-    }) as { name: string; factory: (pi: ExtensionAPI) => void };
-    ext.factory(pi);
+    }) as { name: string; factory: (qronos: ExtensionAPI) => void };
+    ext.factory(qronos);
 
     // --- 1. Structural: exact hook surface ---
     expect([...handlers.keys()].sort()).toEqual(["session_shutdown", "session_start", "turn_end"]);

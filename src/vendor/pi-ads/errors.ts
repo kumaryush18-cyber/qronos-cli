@@ -27,36 +27,36 @@
 // combining `status` with the meter's last-known remaining budget to
 // disambiguate the shared 429 (remaining <= 0 -> daily_cap, else ->
 // concurrent). Deferred rather than guessed.
-import { assertExhaustiveErrorCode, type ErrorCode } from "@freepi/shared";
+import { assertExhaustiveErrorCode, type ErrorCode } from "@qronos/shared";
 
 export function mapErrorCode(code: ErrorCode): string {
   switch (code) {
     case "daily_cap":
       return "out of free credits today — refills at UTC midnight";
     case "queue_wait":
-      return "free-pi is near its daily budget — wait and retry";
+      return "qronos is near its daily budget — wait and retry";
     case "rolling_cap":
       return "over the rolling spend cap on the free tier — wait for the Retry-After window";
     case "concurrent":
       return "only one request at a time on the free tier — wait for the current one to finish";
     case "concurrent_session":
-      return "another free-pi session for your account is already active";
+      return "another qronos session for your account is already active";
     case "context_ceiling":
-      return "this conversation is too large for free-pi's context limit";
+      return "this conversation is too large for qronos's context limit";
     case "upstream_error":
       return "upstream model provider had an issue — retry";
     case "global_cap":
-      return "free-pi is over its daily budget — back tomorrow";
+      return "qronos is over its daily budget — back tomorrow";
     case "consent_required":
-      return "consent required — restart free-pi to review the terms";
+      return "consent required — restart qronos to review the terms";
     case "upgrade_required":
-      return "your free-pi-cli is out of date — run `npx free-pi-cli@latest`";
+      return "your qronos-cli is out of date — run `npx qronos-cli@latest`";
     case "hourly_ceiling":
       return "too many requests this hour on the free tier — wait for the Retry-After window";
     case "account_review":
       return "this account is under review — contact support";
     case "ads_required":
-      return "ads aren't displaying for this account, so free completions are paused — run free-pi through `npx free-pi-cli`, then retry";
+      return "ads aren't displaying for this account, so free completions are paused — run qronos through `npx qronos-cli`, then retry";
     default:
       return assertExhaustiveErrorCode(code);
   }

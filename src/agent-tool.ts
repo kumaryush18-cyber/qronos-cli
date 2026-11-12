@@ -397,8 +397,8 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
 
   return {
     name: "qronos-agent",
-    factory(pi: ExtensionAPI) {
-      pi.registerTool({
+    factory(qronos: ExtensionAPI) {
+      qronos.registerTool({
         name: AGENT_TOOL_NAME,
         label: "Subagent",
         description: DESCRIPTION,

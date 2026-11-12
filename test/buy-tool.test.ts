@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { MeResponse } from "@freepi/shared";
+import type { MeResponse } from "@qronos/shared";
 import { createBuyToolExtension } from "../src/buy-tool";
 
 // Mirrors usage-tool.test.ts's fake-ExtensionAPI Proxy harness: a Proxy that

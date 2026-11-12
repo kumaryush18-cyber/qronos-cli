@@ -4,6 +4,10 @@
   "description": "Qronos CLI - Autonomous AI coding agent in your terminal powered by Qronos AI.",
   "license": "MIT",
   "type": "module",
+  "piConfig": {
+    "name": "qronos",
+    "configDir": ".qronos"
+  },
   "bin": {
     "qronos-cli": "./dist/index.js",
     "qronos": "./dist/index.js"

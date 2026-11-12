@@ -14,7 +14,7 @@ import {
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
-import { createAdsExtension } from "@freepi/pi-ads";
+import { createAdsExtension } from "@qronos/pi-ads";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildProviderConfig, MODEL_ID, PROVIDER_NAME, SAFE_TOOLS, type CatalogModel } from "./provider";
@@ -43,7 +43,7 @@ import { mergeHookConfigs, parseHookConfig } from "./hooks";
 import { initExecutionMode, isExecutionMode, setExecutionModePersistence } from "./execution-modes";
 import { createFreePiCommandsExtension } from "./commands";
 import { createHeaderExtension } from "./header";
-import { resolveFreePiScope } from "./provider-lock";
+import { resolveQronosScope } from "./provider-lock";
 import { createFusionExtension, resolveFusionIds } from "./fusion";
 import { patchResumeLine } from "./resume-line";
 import { CLAUDE_THEME_NAME, ensureQronosTheme } from "./theme-claude";
@@ -66,9 +66,9 @@ export interface LaunchOptions {
   models?: CatalogModel[];
   /** Server-chosen Fusion planner/executor ids (from /client-version). */
   fusion?: { planner: string; executor: string };
-  /** A newer free-pi-cli version, when /client-version reported one and the
+  /** A newer qronos-cli version, when /client-version reported one and the
    * self-update fell back to notifying. Renders the header's update banner —
-   * free-pi's replacement for pi's own (suppressed) `pi update` banner. */
+   * qronos's replacement for pi's own (suppressed) `pi update` banner. */
   updateLatest?: string;
   /** Base64url Gravity context for the ads extension's /ads/next header; undefined when the pixel is off or not ready. */
   getGravityContext?: () => string | undefined;
@@ -150,7 +150,7 @@ export interface RuntimeBuildOptions {
 }
 
 /**
- * Pure construction of the pi runtime free-pi-cli ships: which extensions
+ * Pure construction of the pi runtime qronos-cli ships: which extensions
  * load, which tools are enabled, and the settings pinning `packages: []`
  * (no pi-package registry, so no subagent package can be pulled in). Extracted from launchPi() as a test seam (#28 SB1) —
  * launchPi() itself drives the real interactive TUI and is only exercised
@@ -205,8 +205,8 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const providerName = opts.provider || PROVIDER_NAME;
   const providerExtension: InlineExtension = {
     name: "qronos-provider",
-    factory: (pi: ExtensionAPI) => {
-      pi.registerProvider(
+    factory: (qronos: ExtensionAPI) => {
+      qronos.registerProvider(
         providerName,
         buildProviderConfig({
           providerName,
@@ -254,7 +254,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     getToken: () => opts.jwt,
   });
 
-  // U2 (2026-09-03): read-only "about free-pi" docs tool. Outside
+  // U2 (2026-09-03): read-only "about qronos" docs tool. Outside
   // packages/pi-ads on the same grounds as the usage/buy tools (KTD4) —
   // see docs-tool.ts's header comment.
   const docsToolExtension: InlineExtension = createDocsToolExtension();
@@ -283,7 +283,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     allowedTools: ALLOWED_TOOL_NAMES,
   });
 
-  // 0.2.6: free-pi's slash commands — /close-other-session, /whats-new, /update.
+  // 0.2.6: qronos's slash commands — /close-other-session, /whats-new, /update.
   // A dedicated extension rather than folding into usage-tool (which stays
   // read-only).
   const commandsExtension: InlineExtension = createFreePiCommandsExtension({
@@ -295,7 +295,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     getAdvertiserUrl: () => advertiserUrl,
   });
 
-  // U1/U2 (2026-09-03): free-pi's own startup header, replacing pi's
+  // U1/U2 (2026-09-03): qronos's own startup header, replacing pi's
   // built-in one (hidden via quietStartup below). KTD1, KTD6.
   const headerExtension: InlineExtension = createHeaderExtension({
     modelName: resolveModelName(opts),
@@ -303,9 +303,9 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   });
 
   // 2026-10-13: a task list for the model, and pi's own MCP support so users
-  // can add their own MCP servers (`free-pi-cli mcp add`, ~/.free-pi/agent/mcp.json).
+  // can add their own MCP servers (`qronos-cli mcp add`, ~/.qronos/agent/mcp.json).
   // The pi factories are bare functions with no name, so wrap them to keep
-  // extensionNames stable. free-pi bundles no MCP servers. Codemode runs with
+  // extensionNames stable. qronos bundles no MCP servers. Codemode runs with
   // `models: false`: scripts get no `models` global, so a script can never
   // start a model request of its own (one agent per user, SB2).
   const todoToolExtension: InlineExtension = createTodoToolExtension();
@@ -388,7 +388,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
 }
 
 /**
- * Launch the real pi TUI wired to the free-pi provider. This is the seam
+ * Launch the real pi TUI wired to the qronos provider. This is the seam
  * `run.ts` calls through `RunDeps.launchPi` so tests can stub it out — the
  * real pi SDK integration below is exercised only when the bin is actually
  * run, never in `bun test` (starting the real TUI needs a real terminal).
@@ -430,12 +430,12 @@ export async function createSessionManager(
 }
 
 /**
- * free-pi-cli users installed `free-pi-cli` (via npx), never `pi` directly —
+ * qronos-cli users installed `qronos-cli` (via npx), never `pi` directly —
  * pi's own interactive mode otherwise shows a "New version available, run
  * `pi update`" banner (checkForNewPiVersion in the SDK, gated only by this
- * env var) that names a command our users don't have. free-pi-cli already
+ * env var) that names a command our users don't have. qronos-cli already
  * has its own correctly-branded update check (update-check.ts / run.ts,
- * "run `npx free-pi-cli@latest`"), so pi's own banner is pure noise here —
+ * "run `npx qronos-cli@latest`"), so pi's own banner is pure noise here —
  * suppress it. Does not affect pi's separate model-catalog refresh (gated by
  * PI_OFFLINE instead), which stays on.
  */
@@ -486,9 +486,9 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
       settingsManager: settingsForRuntime(opts, rtCwd, launchTrust),
       resourceLoaderOptions,
     });
-    // Lock the model picker to just the free-pi catalog models — pi's own
+    // Lock the model picker to just the qronos catalog models — pi's own
     // model-scope, no env vars touched. See provider-lock.ts.
-    const scopedModels = resolveFreePiScope(services.modelRuntime, PROVIDER_NAME, scopeIds);
+    const scopedModels = resolveQronosScope(services.modelRuntime, PROVIDER_NAME, scopeIds);
     return {
       ...(await createAgentSessionFromServices({
         services,

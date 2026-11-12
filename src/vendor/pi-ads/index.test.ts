@@ -55,7 +55,7 @@ async function setup(bannerGate?: () => Promise<void> | undefined) {
     return 0;
   }) as unknown as typeof setInterval;
   const ext = createAdsExtension({ baseUrl: "https://api.test", getToken: () => "jwt", sessionId: "s", fetchImpl }) as {
-    factory: (pi: ExtensionAPI) => void;
+    factory: (qronos: ExtensionAPI) => void;
   };
   ext.factory(pi);
   let now = 1_000_000;

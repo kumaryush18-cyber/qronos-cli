@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   checkToolExecutionPermission,
   cycleExecutionMode,
@@ -10,6 +10,14 @@ import {
   setExecutionModePersistence,
   setExecutionMode,
 } from "../src/execution-modes";
+
+// currentMode is module-level state shared by every test file in this process.
+// Without this reset the plan-mode block below leaves writes blocked for any
+// later session (fusion-session.test.ts writes a real file and saw ENOENT).
+afterEach(() => {
+  setExecutionModePersistence(undefined);
+  setExecutionMode("auto");
+});
 
 describe("execution-modes", () => {
   test("initializes to auto by default, or dangerously-skip-permissions if flag passed", () => {

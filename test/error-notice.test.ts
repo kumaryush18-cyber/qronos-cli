@@ -8,7 +8,7 @@ import {
 } from "../src/error-notice";
 
 const MSG = "out of free usage today (young tier). Buy more at https://api.test/buy/t — $5 or $10, card or USDC. Free usage resets at 00:00 UTC.";
-// Exactly the shape pi 0.84.4 puts in message.errorMessage for a free-pi 429 (observed live 2026-09-01).
+// Exactly the shape pi 0.84.4 puts in message.errorMessage for a qronos 429 (observed live 2026-09-01).
 const ERR = `429: ${JSON.stringify({ message: MSG, code: "daily_cap", error: { message: MSG, code: "daily_cap", type: "free_pi_error" } })}`;
 
 describe("parseErrorEnvelope", () => {
@@ -24,7 +24,7 @@ describe("parseErrorEnvelope", () => {
   });
 });
 
-describe("free-pi-error-notice extension", () => {
+describe("qronos-error-notice extension", () => {
   function harness(nowValues: number[]) {
     const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
     const notes: Array<{ m: string; t?: string }> = [];

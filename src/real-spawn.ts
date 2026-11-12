@@ -11,7 +11,7 @@
 //
 // `shell: true` on win32 is safe here by construction: the only commands
 // self-update.ts ever issues are fixed literals ("npm root -g" /
-// "npm install -g free-pi-cli@latest") — no user input, no quoting surface.
+// "npm install -g qronos-cli@latest") — no user input, no quoting surface.
 import { spawnSync } from "node:child_process";
 import type { SpawnResult } from "./self-update";
 

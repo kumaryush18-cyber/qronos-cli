@@ -1,5 +1,5 @@
 // U5 (#17 client side): a read-only pi tool that reports the caller's own
-// free-pi usage (spend, remaining budget, token counts, account tier) by
+// qronos usage (spend, remaining budget, token counts, account tier) by
 // calling GET /me/stats with the CLI's own JWT.
 //
 // Deliberately a new module in packages/cli, never added to packages/pi-ads
@@ -16,7 +16,7 @@
 // in this file.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { formatCreditsLeftLine, SLOW_LANE_METER_LINE, type MeStatsResponse } from "@freepi/shared";
+import { formatCreditsLeftLine, SLOW_LANE_METER_LINE, type MeStatsResponse } from "@qronos/shared";
 
 export interface CreateUsageToolOptions {
   baseUrl: string;
@@ -90,14 +90,14 @@ export async function fetchUsageText(opts: CreateUsageToolOptions): Promise<{ ok
 
 export function createUsageToolExtension(opts: CreateUsageToolOptions): InlineExtension {
   return {
-    name: "free-pi-usage-tool",
-    factory(pi: ExtensionAPI) {
-      pi.registerTool({
+    name: "qronos-usage-tool",
+    factory(qronos: ExtensionAPI) {
+      qronos.registerTool({
         name: USAGE_TOOL_NAME,
         label: "My Usage",
         description:
           "Reports how much of the caller's free daily allowance is used (as a percentage), purchased credit, token counts, and account tier. Read-only, takes no arguments, makes no changes.",
-        promptSnippet: "Check your own free-pi usage and remaining daily allowance",
+        promptSnippet: "Check your own qronos usage and remaining daily allowance",
         parameters: PARAMS,
         async execute() {
           const r = await fetchUsageText(opts);

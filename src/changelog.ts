@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.0",
+    highlights: [
+      "Qronos CLI 1.0: the whole tool now carries one name. Config lives in ~/.qronos, and the help, errors and prompts all say qronos.",
+      "First run offers two choices: sign in to the Qronos Gateway, or bring your own API key from any OpenAI-compatible provider.",
+      "Plan mode writes an artifact you can read and approve before any file changes.",
+    ],
+  },
+  {
     version: "0.4.10",
     highlights: [
       "Images you generate now show right in your terminal (iTerm2, Kitty, Ghostty, WezTerm, Warp). Other terminals still get the saved file path.",
@@ -32,14 +40,14 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
     version: "0.4.7",
     highlights: [
-      "free-pi now updates itself when a new version is required: no more running npx free-pi-cli@latest.",
+      "qronos now updates itself when a new version is required: no more running npx qronos-cli@latest.",
       "The ad box redraws at your terminal's width after a resize, and never overflows with wide characters.",
     ],
   },
   {
     version: "0.4.6",
     highlights: [
-      "Free web search and documentation lookup: the agent can now search the web (web_search) and look up current library docs (docs_lookup). Both run on the free-pi server and count toward your daily allowance.",
+      "Free web search and documentation lookup: the agent can now search the web (web_search) and look up current library docs (docs_lookup). Both run on the qronos server and count toward your daily allowance.",
     ],
   },
   {
@@ -52,7 +60,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
     version: "0.4.4",
     highlights: [
       "Updated terms: you'll be asked to accept them once.",
-      "Some ads now come from Gravity, measured with a small tracker. Turn it off with FREEPI_NO_GRAVITY_PIXEL=1.",
+      "Some ads now come from Gravity, measured with a small tracker. Turn it off with QRONOS_NO_GRAVITY_PIXEL=1.",
     ],
   },
   {
@@ -77,15 +85,15 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
     version: "0.4.0",
     highlights: [
       "The agent now keeps a todo list for multi-step work: it shows live above the input box, and /todos shows the full list.",
-      "Add your own MCP servers: `npx free-pi-cli mcp add`, then /mcp in a session to manage them.",
+      "Add your own MCP servers: `npx qronos-cli mcp add`, then /mcp in a session to manage them.",
     ],
   },
   {
     version: "0.3.0",
     highlights: [
       "Upgraded the underlying pi agent engine to 1.2.0.",
-      "/bug now sends reports to the free-pi team.",
-      "`npx free-pi-cli --session <id>` resumes a session again.",
+      "/bug now sends reports to the qronos team.",
+      "`npx qronos-cli --session <id>` resumes a session again.",
     ],
   },
   {
@@ -93,7 +101,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
     highlights: [
       "More models to pick from: Solar Pro 4, GLM 5.3 Flash, and a Groq speed lane. /model to switch.",
       "The model picker now shows how far each model stretches your daily allowance.",
-      "Update notices and the resume command now name free-pi, not pi.",
+      "Update notices and the resume command now name qronos, not pi.",
     ],
   },
   {
@@ -113,13 +121,13 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
     version: "0.2.16",
     highlights: [
       "The whole ad card is now one clickable link.",
-      "Ask the agent about free-pi: it can explain the allowance, credits, and commands.",
+      "Ask the agent about qronos: it can explain the allowance, credits, and commands.",
     ],
   },
   {
     version: "0.2.15",
     highlights: [
-      "New startup screen: the model, a welcome line, and the five free-pi commands.",
+      "New startup screen: the model, a welcome line, and the five qronos commands.",
       "/support opens today's advertiser in your browser. It grants nothing.",
     ],
   },
@@ -154,7 +162,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
     version: "0.2.10",
     highlights: [
-      "free-pi now installs an exact, tested version of the underlying agent — an upstream release can no longer change your CLI without us testing it first.",
+      "qronos now installs an exact, tested version of the underlying agent — an upstream release can no longer change your CLI without us testing it first.",
     ],
   },
   {
@@ -162,7 +170,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
     highlights: [
       "Windows: self-update and browser sign-in actually work now — both had been broken since they shipped.",
       "Running without a terminal (CI, piped input) now says so and exits, instead of hanging or quietly doing nothing.",
-      "New: `free-pi-cli logout`, `--version` and `--help`.",
+      "New: `qronos-cli logout`, `--version` and `--help`.",
     ],
   },
   {
@@ -174,7 +182,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
     version: "0.2.7",
     highlights: [
-      "The model list now reliably shows just the free-pi model — including HuggingFace, AWS, and Vertex — while leaving every credential in your shell untouched.",
+      "The model list now reliably shows just the qronos model — including HuggingFace, AWS, and Vertex — while leaving every credential in your shell untouched.",
     ],
   },
   {
@@ -182,7 +190,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
     highlights: [
       "New: /close-other-session clears a stuck session so you're never locked out waiting.",
       "New: /whats-new and /update commands.",
-      "The model list now shows just the free-pi model (add your own keys with /login).",
+      "The model list now shows just the qronos model (add your own keys with /login).",
       "This 'what's new' note, shown once after an update.",
     ],
   },

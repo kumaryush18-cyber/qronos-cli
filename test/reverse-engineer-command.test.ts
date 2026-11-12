@@ -113,13 +113,13 @@ afterEach(() => {
 
 describe("/reverse-engineer-anything in a real pi session", () => {
   test("rea is absent until the command runs, then connects and exposes its tools through codemode", async () => {
-    const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "free-pi-rea-agent-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "free-pi-rea-cwd-")));
+    const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "qronos-rea-agent-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "qronos-rea-cwd-")));
     const baseUrl = "http://127.0.0.1:9"; // never contacted: the command is not a model turn
     const { settingsManager, resourceLoaderOptions, tools } = buildRuntimeOptions({ baseUrl, jwt: "t", agentDir }, "rea");
     // Same extension list as production; only the rea launch command points at the stub server.
     resourceLoaderOptions.extensionFactories = resourceLoaderOptions.extensionFactories.map((e) =>
-      (e as { name: string }).name === "free-pi-commands"
+      (e as { name: string }).name === "qronos-commands"
         ? createFreePiCommandsExtension({
             baseUrl,
             getToken: () => "t",
@@ -160,8 +160,8 @@ describe("/reverse-engineer-anything in a real pi session", () => {
 
 describe("regression: users who never run /reverse-engineer-anything", () => {
   test("the production extension list offers the command but rea stays out of the tools and the system prompt", async () => {
-    const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "free-pi-rea-agent-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "free-pi-rea-cwd-")));
+    const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "qronos-rea-agent-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "qronos-rea-cwd-")));
     const { settingsManager, resourceLoaderOptions, tools } = buildRuntimeOptions(
       { baseUrl: "http://127.0.0.1:9", jwt: "t", agentDir },
       "rea-regression",

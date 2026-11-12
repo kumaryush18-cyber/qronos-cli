@@ -1,12 +1,12 @@
-// 0.3.0: /bug sends a text-only report to the free-pi server (POST /bug-reports)
+// 0.3.0: /bug sends a text-only report to the qronos server (POST /bug-reports)
 // instead of pi's built-in /bug (which uploads to the pi developers). Pi cannot
 // disable or override a built-in, so pi-launch.ts replaces its handler method.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { BugReportResponseSchema, type BugReportRequest } from "@freepi/shared";
+import { BugReportResponseSchema, type BugReportRequest } from "@qronos/shared";
 import { CLI_VERSION } from "./version";
 
 export const BUG_USAGE = "Usage: /bug <what went wrong>";
-export const BUG_DESCRIPTION = "Report a bug to free-pi";
+export const BUG_DESCRIPTION = "Report a bug to qronos";
 
 export type BugCommand = { kind: "none" } | { kind: "usage" } | { kind: "report"; description: string };
 
@@ -28,7 +28,7 @@ export function buildBugRequest(
 export type BugResult = { ok: true; id: string } | { ok: false; message: string };
 
 export function mapBugFailure(status: number): string {
-  if (status === 401) return "Couldn't send the bug report: you're signed out. Restart free-pi-cli to sign in again.";
+  if (status === 401) return "Couldn't send the bug report: you're signed out. Restart qronos-cli to sign in again.";
   if (status === 429) return "Couldn't send the bug report: you've reached today's limit of 20 reports. Try again tomorrow.";
   if (status === 413) return "Couldn't send the bug report: it is too large.";
   if (status === 400) return "Couldn't send the bug report: the description is too long (4000 characters max).";
@@ -55,7 +55,7 @@ export async function sendBugReport(opts: SendBugOptions, body: BugReportRequest
     if (!parsed.success) return { ok: false, message: mapBugFailure(res.status) };
     return { ok: true, id: parsed.data.id };
   } catch {
-    return { ok: false, message: "Couldn't reach free-pi to send the bug report — check your connection." };
+    return { ok: false, message: "Couldn't reach qronos to send the bug report — check your connection." };
   }
 }
 
@@ -93,9 +93,9 @@ export function installBugHandler(mode: object, opts: SendBugOptions): void {
   (mode as { handleBugCommand: unknown }).handleBugCommand = makeBugHandler(mode as BugMode, opts);
 }
 
-/** Autocomplete: keep /bug listed, with a free-pi description. */
-export function registerBugAutocomplete(pi: ExtensionAPI): void {
-  pi.on("session_start", (_event, ctx) => {
+/** Autocomplete: keep /bug listed, with a qronos description. */
+export function registerBugAutocomplete(qronos: ExtensionAPI): void {
+  qronos.on("session_start", (_event, ctx) => {
     ctx.ui.addAutocompleteProvider((cur) => ({
       // Explicit delegation: the current provider is a class instance, so spreading it would drop its prototype methods.
       triggerCharacters: cur.triggerCharacters,

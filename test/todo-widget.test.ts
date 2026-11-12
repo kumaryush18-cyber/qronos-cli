@@ -139,7 +139,7 @@ describe("live todo widget", () => {
 
   test("replay on session_start shows an open list and hides a finished one", async () => {
     const s = setup();
-    const snap = (todos: unknown[]) => ({ type: "custom", customType: "free-pi-todo", data: { todos, nextId: 9 } });
+    const snap = (todos: unknown[]) => ({ type: "custom", customType: "qronos-todo", data: { todos, nextId: 9 } });
     await s.handlers.get("session_start")!({}, { ...s.ctx, sessionManager: { getBranch: () => [snap([{ id: 1, text: "a", done: false }])] } });
     expect(s.lastLines()).toEqual([" Todos 0/1  ▸ a"]);
     await s.handlers.get("session_tree")!({}, { ...s.ctx, sessionManager: { getBranch: () => [snap([{ id: 1, text: "a", done: true }])] } });

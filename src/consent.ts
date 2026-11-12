@@ -26,7 +26,7 @@ export const CONSENT_VERSION = "qronos-v1";
  */
 export const NON_INTERACTIVE_CONSENT_TEXT =
   "Qronos CLI first-run consent requires an interactive terminal. " +
-  "Run `qronos-cli` in a terminal once to review and accept; " +
+  "Run `npx qronos-cli` in a terminal once to review and accept; " +
   "after that, non-interactive runs work.";
 
 export const CONSENT_PROMPT = "Accept? [y/N] ";

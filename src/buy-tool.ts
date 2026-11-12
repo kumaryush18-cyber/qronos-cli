@@ -19,7 +19,7 @@
 // in this file.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { MeResponse } from "@freepi/shared";
+import type { MeResponse } from "@qronos/shared";
 import { openBrowser } from "./browser";
 
 /** One place resolves "where do I buy": shared by the free_pi_buy_credits tool and the /buy-credits slash command. Never throws. */
@@ -71,14 +71,14 @@ const PARAMS = Type.Object({});
 
 export function createBuyToolExtension(opts: CreateBuyToolOptions): InlineExtension {
   return {
-    name: "free-pi-buy-tool",
-    factory(pi: ExtensionAPI) {
-      pi.registerTool({
+    name: "qronos-buy-tool",
+    factory(qronos: ExtensionAPI) {
+      qronos.registerTool({
         name: BUY_TOOL_NAME,
         label: "Buy Credits",
         description:
-          "Opens the free-pi buy-credits page in your browser (and prints the URL, for SSH sessions with no browser). Read-only against the server, takes no arguments.",
-        promptSnippet: "Buy more free-pi credits",
+          "Opens the qronos buy-credits page in your browser (and prints the URL, for SSH sessions with no browser). Read-only against the server, takes no arguments.",
+        promptSnippet: "Buy more qronos credits",
         parameters: PARAMS,
         async execute() {
           const page = await resolveBuyPage(opts);

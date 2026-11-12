@@ -3,7 +3,7 @@ import {
   GithubDeviceResponseSchema,
   type AuthTokenResponse,
   type GithubDeviceResponse,
-} from "@freepi/shared";
+} from "@qronos/shared";
 
 export class UnauthorizedError extends Error {
   constructor() {

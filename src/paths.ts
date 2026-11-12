@@ -5,16 +5,16 @@ import { join } from "node:path";
 // its credentials/settings/sessions) is never touched by qronos-cli.
 const QRONOS_DIR_NAME = ".qronos";
 
-export function getFreePiAgentDir(): string {
+export function getQronosAgentDir(): string {
   return join(homedir(), QRONOS_DIR_NAME, "agent");
 }
 
-export function getCredentialsPath(agentDir: string = getFreePiAgentDir()): string {
+export function getCredentialsPath(agentDir: string = getQronosAgentDir()): string {
   return join(agentDir, "credentials.json");
 }
 
 /** The last CLI version whose "what's new" the user has already seen. */
-export function getLastSeenVersionPath(agentDir: string = getFreePiAgentDir()): string {
+export function getLastSeenVersionPath(agentDir: string = getQronosAgentDir()): string {
   return join(agentDir, "last-seen-version");
 }
 

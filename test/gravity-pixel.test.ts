@@ -50,7 +50,7 @@ describe("startGravityPixel", () => {
 
   test("kill switch: nothing loaded, no getter", () => {
     let loaded = false;
-    const get = startGravityPixel(jwtFor("u"), "/x", { FREEPI_NO_GRAVITY_PIXEL: "1" }, async () => {
+    const get = startGravityPixel(jwtFor("u"), "/x", { QRONOS_NO_GRAVITY_PIXEL: "1" }, async () => {
       loaded = true;
       return fakeSdk().sdk;
     });
@@ -148,7 +148,7 @@ describe("run(): pixel starts only after consent for the current version", () =>
         return () => "ctx";
       },
     };
-    const code = await run(deps, ["node", "free-pi"]);
+    const code = await run(deps, ["node", "qronos"]);
     server.stop(true);
     return { code, started, launchedCtx };
   }

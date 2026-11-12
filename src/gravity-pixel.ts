@@ -3,7 +3,7 @@
 // accepted the consent version that discloses it (run.ts) — never from the ad
 // extension's pi hooks. It must never block or crash startup.
 import { createHash } from "node:crypto";
-import { GRAVITY_CONTEXT_MAX_BYTES } from "@freepi/shared";
+import { GRAVITY_CONTEXT_MAX_BYTES } from "@qronos/shared";
 
 /** Public identifier of our Gravity pixel (not a secret). */
 export const GRAVITY_PIXEL_ID = "6cd74804-0541-4d9b-899d-d7fceb465b6f";
@@ -46,7 +46,7 @@ function dropPixelSignalHandlers(): () => void {
  * Starts the pixel in the background and returns a getter for the
  * base64url-encoded Gravity context (undefined until the pixel has a session,
  * if it failed, or if the result is over the header size cap). Returns
- * undefined when disabled via FREEPI_NO_GRAVITY_PIXEL=1. Never throws.
+ * undefined when disabled via QRONOS_NO_GRAVITY_PIXEL=1. Never throws.
  */
 export function startGravityPixel(
   jwt: string,
@@ -54,7 +54,7 @@ export function startGravityPixel(
   env: NodeJS.ProcessEnv = process.env,
   load: () => Promise<GravitySdk> = () => import("@gravity-ai/api"),
 ): (() => string | undefined) | undefined {
-  if (env.FREEPI_NO_GRAVITY_PIXEL === "1") return undefined;
+  if (env.QRONOS_NO_GRAVITY_PIXEL === "1") return undefined;
   const userId = userIdFromJwt(jwt);
   if (!userId) return undefined;
   const userHash = createHash("sha256").update(userId).digest("hex");

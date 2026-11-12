@@ -39,8 +39,8 @@ test("rules, skill, user APPEND_SYSTEM.md and the cmd alias all work in a real s
     },
   });
   try {
-    const cwd = mkdtempSync(join(tmpdir(), "free-pi-cwd-"));
-    const agentDir = mkdtempSync(join(tmpdir(), "free-pi-agentdir-"));
+    const cwd = mkdtempSync(join(tmpdir(), "qronos-cwd-"));
+    const agentDir = mkdtempSync(join(tmpdir(), "qronos-agentdir-"));
     writeFileSync(join(agentDir, "APPEND_SYSTEM.md"), "USER-APPEND-MARKER");
     const opts: LaunchOptions = { baseUrl: stub.url.toString().replace(/\/$/, ""), jwt: "t", agentDir };
     const { settingsManager, resourceLoaderOptions, tools } = buildRuntimeOptions(opts, "s-eff");

@@ -7,9 +7,9 @@ import { readAutoUpdate } from "./cli-config";
 import { clearJwt, loadJwt } from "./credentials";
 import { resolveBaseUrl } from "./env";
 import { runLogout } from "./logout";
-import { runFreePiMcp } from "./mcp-command";
+import { runQronosMcp } from "./mcp-command";
 import { runInitCli } from "./init-cmd";
-import { getConfigPath, getConnectionsPath, getCredentialsPath, getFreePiAgentDir } from "./paths";
+import { getConfigPath, getConnectionsPath, getCredentialsPath, getQronosAgentDir } from "./paths";
 import { startGravityPixel } from "./gravity-pixel";
 import { launchPi } from "./pi-launch";
 import { promptApiKeyInteractive, promptConsentInteractive } from "./prompt";
@@ -33,9 +33,9 @@ function resolveCliRealpath(): string {
 async function main(): Promise<void> {
   // Handshake for a parent that relaunched us after a required update: proves
   // the CLI actually started (see relaunch.ts). Best-effort, never fatal.
-  if (process.env.FREEPI_RELAUNCH_READY) {
+  if (process.env.QRONOS_RELAUNCH_READY) {
     try {
-      writeFileSync(process.env.FREEPI_RELAUNCH_READY, "");
+      writeFileSync(process.env.QRONOS_RELAUNCH_READY, "");
     } catch {}
   }
 
@@ -69,16 +69,16 @@ async function main(): Promise<void> {
   }
 
   if (command.kind === "mcp") {
-    const mcpCode = await runFreePiMcp(command.args, {
+    const mcpCode = await runQronosMcp(command.args, {
       cwd: process.cwd(),
-      agentDir: getFreePiAgentDir(),
+      agentDir: getQronosAgentDir(),
       log: (line) => console.log(line),
       error: (line) => console.error(line),
     });
     process.exit(mcpCode);
   }
 
-  const agentDir = getFreePiAgentDir();
+  const agentDir = getQronosAgentDir();
   const runOptions = command.kind === "run" ? command.options : {};
   const code = await run(
     {

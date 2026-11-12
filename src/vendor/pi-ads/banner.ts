@@ -4,7 +4,7 @@
 // fetch failure both clear the widget outright — never a stale or half-drawn
 // frame, never anything that blocks the chat turn.
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Config } from "@freepi/shared";
+import type { Config } from "@qronos/shared";
 import type { AdsDeps } from "./api";
 import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";

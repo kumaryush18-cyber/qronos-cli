@@ -56,6 +56,8 @@ Environment Variables:
   OPENROUTER_API_KEY         direct OpenRouter API key (sk-or-...)
   GROQ_API_KEY               direct Groq API key (gsk_...)
   QRONOS_BASE_URL            override Qronos backend URL (default https://api.qronos.me)
+  QRONOS_NO_AUTO_UPDATE      skip the self-update check on start
+  QRONOS_NO_INTRO            skip the first-run intro banner
 `.trim();
 
 export function versionLine(): string {
@@ -70,7 +72,9 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
   if (first === "init") return { kind: "init" };
   if (first === "--help" || first === "-h" || first === "help") return { kind: "help" };
   if (first === "--version" || first === "-v" || first === "version") return { kind: "version" };
-  if (first === "logout") return { kind: "logout" };
+  // Reject trailing args rather than silently ignoring them ("logout --force"
+  // would otherwise drop the flag and look like it worked).
+  if (first === "logout") return rest.length > 0 ? { kind: "unknown", arg: rest[0]! } : { kind: "logout" };
 
   const options: RunOptions = {};
   let i = 0;

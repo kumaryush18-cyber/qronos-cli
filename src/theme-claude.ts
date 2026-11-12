@@ -4,7 +4,7 @@ import { join } from "node:path";
 export const CLAUDE_THEME_NAME = "qronos-claude";
 
 export const CLAUDE_THEME_JSON = {
-  "$schema": "https://pi.dev/schemas/theme.schema.json",
+  "$schema": "https://qronos.dev/schemas/theme.schema.json",
   "name": CLAUDE_THEME_NAME,
   "appearance": "dark",
   "vars": {

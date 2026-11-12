@@ -4,30 +4,30 @@ import { patchResumeLine, rewriteResumeLine, type WritableLike } from "../src/re
 describe("rewriteResumeLine", () => {
   test("rebrands pi's plain resume line", () => {
     expect(rewriteResumeLine("To resume this session: pi --session abc-123\n")).toBe(
-      "To resume this session: npx free-pi-cli --session abc-123\n",
+      "To resume this session: npx qronos-cli --session abc-123\n",
     );
   });
 
-  test("drops a plain --session-dir (free-pi derives it from the cwd and rejects the flag)", () => {
-    const line = "To resume this session: pi --session-dir /home/u/.free-pi/agent/sessions/--proj-- --session abc-123\n";
-    expect(rewriteResumeLine(line)).toBe("To resume this session: npx free-pi-cli --session abc-123\n");
+  test("drops a plain --session-dir (qronos derives it from the cwd and rejects the flag)", () => {
+    const line = "To resume this session: pi --session-dir /home/u/.qronos/agent/sessions/--proj-- --session abc-123\n";
+    expect(rewriteResumeLine(line)).toBe("To resume this session: npx qronos-cli --session abc-123\n");
   });
 
   test("drops a quoted --session-dir, including embedded quotes", () => {
     const spaced = "To resume this session: pi --session-dir '/tmp/my sessions' --session abc-123\n";
-    expect(rewriteResumeLine(spaced)).toBe("To resume this session: npx free-pi-cli --session abc-123\n");
+    expect(rewriteResumeLine(spaced)).toBe("To resume this session: npx qronos-cli --session abc-123\n");
     const quoted = "To resume this session: pi --session-dir '/tmp/it'\\''s here' --session abc-123\n";
-    expect(rewriteResumeLine(quoted)).toBe("To resume this session: npx free-pi-cli --session abc-123\n");
+    expect(rewriteResumeLine(quoted)).toBe("To resume this session: npx qronos-cli --session abc-123\n");
   });
 
   test("drops --session-dir behind pi's dim ANSI label", () => {
     const styled = "\u001b[2mTo resume this session:\u001b[22m pi --session-dir '/a b' --session abc\n";
-    expect(rewriteResumeLine(styled)).toBe("\u001b[2mTo resume this session:\u001b[22m npx free-pi-cli --session abc\n");
+    expect(rewriteResumeLine(styled)).toBe("\u001b[2mTo resume this session:\u001b[22m npx qronos-cli --session abc\n");
   });
 
   test("rewrites through the dim ANSI styling pi wraps the label in", () => {
     const styled = "\u001b[2mTo resume this session:\u001b[22m pi --session abc-123\n";
-    expect(rewriteResumeLine(styled)).toContain("npx free-pi-cli --session abc-123");
+    expect(rewriteResumeLine(styled)).toContain("npx qronos-cli --session abc-123");
     expect(rewriteResumeLine(styled)).not.toMatch(/:\[22m pi /);
   });
 
@@ -40,7 +40,7 @@ describe("rewriteResumeLine", () => {
     // The word must directly follow the label to be treated as the command.
     const chunk = "To resume this session: pi --session x\nlater: pi is the harness\n";
     expect(rewriteResumeLine(chunk)).toBe(
-      "To resume this session: npx free-pi-cli --session x\nlater: pi is the harness\n",
+      "To resume this session: npx qronos-cli --session x\nlater: pi is the harness\n",
     );
   });
 });
@@ -61,7 +61,7 @@ describe("patchResumeLine", () => {
     const { stream, written } = fakeStream();
     patchResumeLine(stream);
     stream.write("To resume this session: pi --session abc\n");
-    expect(written[0]).toBe("To resume this session: npx free-pi-cli --session abc\n");
+    expect(written[0]).toBe("To resume this session: npx qronos-cli --session abc\n");
   });
 
   test("passes non-string chunks through untouched (never corrupts TUI bytes)", () => {

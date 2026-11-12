@@ -82,10 +82,10 @@ export function recallInto(
 export function createPromptHistoryExtension(): InlineExtension {
   return {
     name: "qronos-prompt-history",
-    factory(pi: ExtensionAPI) {
+    factory(qronos: ExtensionAPI) {
       // "input" fires once per submission (before the agent runs), which is
       // exactly the prompt worth remembering.
-      pi.on("input", (event) => {
+      qronos.on("input", (event) => {
         if (event.text) recordPrompt(event.text);
         return { action: "continue" };
       });

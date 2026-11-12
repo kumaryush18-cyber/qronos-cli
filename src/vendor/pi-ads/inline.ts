@@ -5,7 +5,7 @@
 // cadence check runs, which is "visible for one turn" without adding a
 // second hook to the extension's registered surface.
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Config } from "@freepi/shared";
+import type { Config } from "@qronos/shared";
 import type { AdsDeps } from "./api";
 import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";

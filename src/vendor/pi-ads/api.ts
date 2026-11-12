@@ -2,7 +2,7 @@
 // budget fetch failure resolves to `undefined` so the caller can clear the
 // widget and move on — nothing here may block or delay the chat turn (KTD9 /
 // U7 requirement).
-import { GRAVITY_CONTEXT_HEADER, type AdNextResponse, type AdSlot, type MeResponse } from "@freepi/shared";
+import { GRAVITY_CONTEXT_HEADER, type AdNextResponse, type AdSlot, type MeResponse } from "@qronos/shared";
 
 export interface AdsDeps {
   baseUrl: string;
@@ -63,7 +63,7 @@ function isGravityImpUrl(raw: string | undefined): raw is string {
 
 /**
  * Fires Gravity's impression pixel from this machine (their requirement: the
- * impression is measured where the ad is shown). Plain GET with no free-pi
+ * impression is measured where the ad is shown). Plain GET with no qronos
  * credentials. Fire-and-forget: never awaited, errors swallowed, so it cannot
  * delay a render. Returns true when the fire was ATTEMPTED (not whether it
  * succeeded): the caller then tells the server imp_fired, because a lost

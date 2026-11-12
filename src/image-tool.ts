@@ -116,9 +116,9 @@ const fail = (text: string) => done(text, { ok: false });
 
 export function createImageToolExtension(opts: CreateImageToolOptions): InlineExtension {
   return {
-    name: "free-pi-image-tool",
-    factory(pi: ExtensionAPI) {
-      pi.registerTool({
+    name: "qronos-image-tool",
+    factory(qronos: ExtensionAPI) {
+      qronos.registerTool({
         name: IMAGE_TOOL_NAME,
         label: "Generate Image",
         description:

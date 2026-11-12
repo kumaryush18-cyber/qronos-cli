@@ -12,8 +12,8 @@ export interface CreateFileCompletionOptions {
 export function createFileCompletionExtension(opts: CreateFileCompletionOptions = {}): InlineExtension {
   return {
     name: "qronos-file-completion",
-    factory(pi: ExtensionAPI) {
-      pi.on("session_start", (_event, ctx) => {
+    factory(qronos: ExtensionAPI) {
+      qronos.on("session_start", (_event, ctx) => {
         // Read the cwd lazily rather than capturing it: after /tree, resume or
         // fork the provider is asked for suggestions under a new root, and the
         // context object handed to this handler does not update.

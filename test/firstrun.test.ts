@@ -85,7 +85,7 @@ function startStub(opts: StubOptions = {}): StubServer {
 }
 
 function tempDir(): string {
-  return mkdtempSync(join(tmpdir(), "free-pi-cli-test-"));
+  return mkdtempSync(join(tmpdir(), "qronos-cli-test-"));
 }
 
 function baseDeps(overrides: Partial<RunDeps> & Pick<RunDeps, "baseUrl" | "agentDir" | "credentialsPath">): RunDeps {
@@ -166,10 +166,10 @@ describe("#63 first-run onboarding intro", () => {
 
     expect(code).toBe(0);
     const combined = logs.join("\n");
-    expect(combined).toContain("Welcome to free-pi");
+    expect(combined).toContain("Welcome to Qronos CLI");
     // Must appear BEFORE the device-login line the user has to read, so it
     // survives the pi TUI taking over the screen.
-    const introIdx = combined.indexOf("Welcome to free-pi");
+    const introIdx = combined.indexOf("Welcome to Qronos CLI");
     const loginIdx = combined.indexOf(USER_CODE);
     expect(introIdx).toBeGreaterThanOrEqual(0);
     expect(loginIdx).toBeGreaterThan(introIdx);
@@ -190,16 +190,16 @@ describe("#63 first-run onboarding intro", () => {
         launchPi: async () => "final-session",
         log: (m) => logs.push(m),
       }),
-      ["node", "free-pi-cli"],
+      ["node", "qronos-cli"],
     );
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).not.toContain("Welcome to free-pi");
+    expect(logs.join("\n")).not.toContain("Welcome to qronos");
   });
 
-  test("FREEPI_NO_INTRO suppresses it; default shows the full text (unit)", () => {
+  test("QRONOS_NO_INTRO suppresses it; default shows the full text (unit)", () => {
     const skipped: string[] = [];
-    showIntro((m) => skipped.push(m), { FREEPI_NO_INTRO: "1" } as unknown as NodeJS.ProcessEnv);
+    showIntro((m) => skipped.push(m), { QRONOS_NO_INTRO: "1" } as unknown as NodeJS.ProcessEnv);
     expect(skipped).toHaveLength(0);
 
     const shown: string[] = [];
@@ -208,10 +208,10 @@ describe("#63 first-run onboarding intro", () => {
   });
 
   test("introSkipped reads the env flag", () => {
-    expect(introSkipped({ FREEPI_NO_INTRO: "1" } as unknown as NodeJS.ProcessEnv)).toBe(true);
-    expect(introSkipped({ FREEPI_NO_INTRO: "true" } as unknown as NodeJS.ProcessEnv)).toBe(true);
+    expect(introSkipped({ QRONOS_NO_INTRO: "1" } as unknown as NodeJS.ProcessEnv)).toBe(true);
+    expect(introSkipped({ QRONOS_NO_INTRO: "true" } as unknown as NodeJS.ProcessEnv)).toBe(true);
     expect(introSkipped({} as unknown as NodeJS.ProcessEnv)).toBe(false);
-    expect(introSkipped({ FREEPI_NO_INTRO: "0" } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(introSkipped({ QRONOS_NO_INTRO: "0" } as unknown as NodeJS.ProcessEnv)).toBe(false);
   });
 });
 
@@ -232,7 +232,7 @@ describe("--session parsing", () => {
           return "final-session";
         },
       }),
-      ["node", "free-pi-cli", "--session", "session-1"],
+      ["node", "qronos-cli", "--session", "session-1"],
     );
 
     expect(code).toBe(0);
@@ -251,7 +251,7 @@ describe("--session parsing", () => {
           throw new Error("must not launch");
         },
       }),
-      ["node", "free-pi-cli", "--session", "bad session"],
+      ["node", "qronos-cli", "--session", "bad session"],
     );
 
     expect(code).toBe(1);
@@ -268,7 +268,7 @@ describe("--session parsing", () => {
         credentialsPath: join(tempDir(), "credentials.json"),
         log: (message) => logs.push(message),
       }),
-      ["node", "free-pi-cli", "--session"],
+      ["node", "qronos-cli", "--session"],
     );
 
     expect(code).toBe(1);
@@ -291,7 +291,7 @@ describe("--session parsing", () => {
           return "final-session";
         },
       }),
-      ["node", "free-pi-cli"],
+      ["node", "qronos-cli"],
     );
 
     expect(code).toBe(0);
@@ -673,7 +673,7 @@ describe("consent re-prompt for existing users", () => {
   test("outdated version + decline -> same decline exit, no POST, pi not launched", async () => {
     const r = await runWith("1", false);
     expect(r.code).toBe(1);
-    expect(r.logs).toContain("Declined. free-pi needs you to accept the updated terms to continue; you will be asked again next time.");
+    expect(r.logs).toContain("Declined. qronos needs you to accept the updated terms to continue; you will be asked again next time.");
     expect(r.posted).toBe(false);
     expect(r.launched).toBe(false);
     expect(r.versionChecks).toBe(0);
@@ -683,7 +683,7 @@ describe("consent re-prompt for existing users", () => {
   test("re-prompt passes the re-prompt text variant", async () => {
     const r = await runWith("1", true);
     expect(r.promptTexts).toEqual([REPROMPT_CONSENT_TEXT]);
-    expect(REPROMPT_CONSENT_TEXT).not.toContain("nothing is sent to the free-pi server");
+    expect(REPROMPT_CONSENT_TEXT).not.toContain("nothing is sent to the qronos server");
     expect(REPROMPT_CONSENT_TEXT).toContain("you will be asked again next time");
   });
 
@@ -716,7 +716,7 @@ describe("consent re-prompt for existing users", () => {
 });
 
 describe("required-update relaunch wiring in run.ts", () => {
-  const BELOW_MIN_MSG = "free-pi-cli is below the required minimum version; update with: npx free-pi-cli@latest";
+  const BELOW_MIN_MSG = "qronos-cli is below the required minimum version; update with: npx qronos-cli@latest";
 
   async function runBlocked(opts: {
     relaunch?: RunDeps["relaunchLatest"];
@@ -829,7 +829,7 @@ describe("trial: server-reported model + notice (run.ts)", () => {
           return "final-session";
         },
       }),
-      ["node", "free-pi-cli"],
+      ["node", "qronos-cli"],
     );
 
     expect(code).toBe(0);
@@ -854,7 +854,7 @@ describe("trial: server-reported model + notice (run.ts)", () => {
         checkClientVersion: async () => ({ action: "ok" }),
         launchPi: async () => "final-session",
       }),
-      ["node", "free-pi-cli"],
+      ["node", "qronos-cli"],
     );
 
     expect(logs.some((l) => l.includes("third-party preview model"))).toBe(false);
@@ -862,7 +862,7 @@ describe("trial: server-reported model + notice (run.ts)", () => {
 });
 
 describe("provider registration", () => {
-  test("points at the configured base URL with the free-pi model", () => {
+  test("points at the configured base URL with the qronos model", () => {
     const config = buildProviderConfig({
       baseUrl: "http://example.test:4321",
       apiKey: "jwt-abc",
@@ -913,9 +913,9 @@ describe("provider registration", () => {
   });
 });
 
-describe("FREEPI_BASE_URL override", () => {
+describe("QRONOS_BASE_URL override", () => {
   test("resolveBaseUrl honors the env var and falls back to the default", () => {
-    expect(resolveBaseUrl({ FREEPI_BASE_URL: "http://stub.local:9999" })).toBe("http://stub.local:9999");
+    expect(resolveBaseUrl({ QRONOS_BASE_URL: "http://stub.local:9999" })).toBe("http://stub.local:9999");
     expect(resolveBaseUrl({})).toBe(DEFAULT_BASE_URL);
   });
 });

@@ -20,7 +20,7 @@ interface Harness {
 function harness(
   over: Partial<RelaunchDeps> = {},
   behavior: (h: Harness, opts: SpawnOpts) => void = (h, opts) => {
-    const ready = opts.env.FREEPI_RELAUNCH_READY;
+    const ready = opts.env.QRONOS_RELAUNCH_READY;
     if (ready) writeFileSync(ready, "");
     queueMicrotask(() => h.child.emit("exit", 0, null));
   },
@@ -56,36 +56,36 @@ function harness(
 }
 
 describe("relaunchViaNpx", () => {
-  test("re-executes via npx --yes free-pi-cli@<latest> with the original argv, inherited stdio and the loop-guard env", async () => {
+  test("re-executes via npx --yes qronos-cli@<latest> with the original argv, inherited stdio and the loop-guard env", async () => {
     const h = harness();
     const code = await relaunchViaNpx("0.4.6", h.deps);
     expect(code).toBe(0);
     expect(h.calls).toHaveLength(1);
     expect(h.calls[0]!.cmd).toBe("npx");
-    expect(h.calls[0]!.args).toEqual(["--yes", "free-pi-cli@0.4.6", "--session", "abc"]);
+    expect(h.calls[0]!.args).toEqual(["--yes", "qronos-cli@0.4.6", "--session", "abc"]);
     expect(h.calls[0]!.opts.stdio).toBe("inherit");
     expect(h.calls[0]!.opts.shell).toBe(false);
-    expect(h.calls[0]!.opts.env.FREEPI_AUTO_UPDATED).toBe("0.4.6");
+    expect(h.calls[0]!.opts.env.QRONOS_AUTO_UPDATED).toBe("0.4.6");
     expect(h.calls[0]!.opts.env.HOME).toBe("/h"); // env otherwise preserved
-    expect(h.logs).toEqual(["Updating free-pi to 0.4.6…"]);
+    expect(h.logs).toEqual(["Updating qronos to 0.4.6…"]);
   });
 
   test("falls back to the 'latest' tag when the server reported no latest version", async () => {
     const h = harness();
     await relaunchViaNpx(undefined, h.deps);
-    expect(h.calls[0]!.args.slice(0, 2)).toEqual(["--yes", "free-pi-cli@latest"]);
-    expect(h.calls[0]!.opts.env.FREEPI_AUTO_UPDATED).toBe("latest");
+    expect(h.calls[0]!.args.slice(0, 2)).toEqual(["--yes", "qronos-cli@latest"]);
+    expect(h.calls[0]!.opts.env.QRONOS_AUTO_UPDATED).toBe("latest");
   });
 
   test("a non-semver latest from the server is never put on a command line", async () => {
     const h = harness();
     await relaunchViaNpx("1.0.0; rm -rf ~", h.deps);
-    expect(h.calls[0]!.args[1]).toBe("free-pi-cli@latest");
+    expect(h.calls[0]!.args[1]).toBe("qronos-cli@latest");
   });
 
   test("passes the child's exit code through", async () => {
     const h = harness({}, (hh, opts) => {
-      writeFileSync(opts.env.FREEPI_RELAUNCH_READY!, "");
+      writeFileSync(opts.env.QRONOS_RELAUNCH_READY!, "");
       hh.child.emit("exit", 7, null);
     });
     expect(await relaunchViaNpx("0.4.6", h.deps)).toBe(7);
@@ -93,7 +93,7 @@ describe("relaunchViaNpx", () => {
 
   test("a child killed by a signal exits 128+signal", async () => {
     const h = harness({}, (hh, opts) => {
-      writeFileSync(opts.env.FREEPI_RELAUNCH_READY!, "");
+      writeFileSync(opts.env.QRONOS_RELAUNCH_READY!, "");
       hh.child.emit("exit", null, "SIGTERM");
     });
     expect(await relaunchViaNpx("0.4.6", h.deps)).toBe(143);
@@ -101,7 +101,7 @@ describe("relaunchViaNpx", () => {
 
   test("POSIX: SIGINT is NOT forwarded (the terminal already signals the whole foreground group); SIGTERM and SIGHUP are; all handlers removed after exit", async () => {
     const h = harness({}, (hh, opts) => {
-      writeFileSync(opts.env.FREEPI_RELAUNCH_READY!, "");
+      writeFileSync(opts.env.QRONOS_RELAUNCH_READY!, "");
       expect(h.signals.has("SIGINT")).toBe(true); // no-op so the parent survives until the child exits
       h.signals.get("SIGINT")?.();
       h.signals.get("SIGTERM")?.();
@@ -115,7 +115,7 @@ describe("relaunchViaNpx", () => {
 
   test("win32: no signal handlers are installed at all (console delivers Ctrl+C to the whole group)", async () => {
     const h = harness({ platform: "win32" }, (hh, opts) => {
-      writeFileSync(opts.env.FREEPI_RELAUNCH_READY!, "");
+      writeFileSync(opts.env.QRONOS_RELAUNCH_READY!, "");
       expect(h.signals.size).toBe(0);
       hh.child.emit("exit", 0, null);
     });
@@ -143,15 +143,15 @@ describe("relaunchViaNpx", () => {
     expect(await relaunchViaNpx("0.4.6", h.deps)).toBe(143);
   });
 
-  test("loop guard: already relaunched (FREEPI_AUTO_UPDATED set) -> no spawn, caller falls back", async () => {
-    const h = harness({ env: { PATH: "/bin", FREEPI_AUTO_UPDATED: "0.4.6" } });
+  test("loop guard: already relaunched (QRONOS_AUTO_UPDATED set) -> no spawn, caller falls back", async () => {
+    const h = harness({ env: { PATH: "/bin", QRONOS_AUTO_UPDATED: "0.4.6" } });
     expect(await relaunchViaNpx("0.4.6", h.deps)).toBeUndefined();
     expect(h.calls).toHaveLength(0);
     expect(h.logs).toEqual([]);
   });
 
-  test("FREEPI_NO_AUTO_UPDATE=1 -> no spawn", async () => {
-    const h = harness({ env: { PATH: "/bin", FREEPI_NO_AUTO_UPDATE: "1" } });
+  test("QRONOS_NO_AUTO_UPDATE=1 -> no spawn", async () => {
+    const h = harness({ env: { PATH: "/bin", QRONOS_NO_AUTO_UPDATE: "1" } });
     expect(await relaunchViaNpx("0.4.6", h.deps)).toBeUndefined();
     expect(h.calls).toHaveLength(0);
     expect(h.logs).toEqual([]);
@@ -185,7 +185,7 @@ describe("relaunchViaNpx", () => {
 
   test("non-zero exit AFTER the CLI started is the CLI's own exit code, not a fallback", async () => {
     const h = harness({}, (hh, opts) => {
-      writeFileSync(opts.env.FREEPI_RELAUNCH_READY!, "");
+      writeFileSync(opts.env.QRONOS_RELAUNCH_READY!, "");
       hh.child.emit("exit", 1, null);
     });
     expect(await relaunchViaNpx("0.4.6", h.deps)).toBe(1);
@@ -196,7 +196,7 @@ describe("relaunchViaNpx", () => {
     await relaunchViaNpx("0.4.6", h.deps);
     expect(h.calls[0]!.cmd).toBe("npx.cmd");
     expect(h.calls[0]!.opts.shell).toBe(true);
-    expect(h.calls[0]!.args).toEqual(["--yes", "free-pi-cli@0.4.6", "--session", "abc"]);
+    expect(h.calls[0]!.args).toEqual(["--yes", "qronos-cli@0.4.6", "--session", "abc"]);
   });
 
   test.each([
@@ -220,7 +220,7 @@ describe("relaunchViaNpx", () => {
   test("win32 with ordinary args (--session abc-1) still relaunches", async () => {
     const h = harness({ platform: "win32", argv: ["--session", "abc-1"] });
     expect(await relaunchViaNpx("0.4.6", h.deps)).toBe(0);
-    expect(h.calls[0]!.args).toEqual(["--yes", "free-pi-cli@0.4.6", "--session", "abc-1"]);
+    expect(h.calls[0]!.args).toEqual(["--yes", "qronos-cli@0.4.6", "--session", "abc-1"]);
   });
 });
 
@@ -236,8 +236,8 @@ describe("relaunchViaNpx with a real child process (posix)", () => {
     writeFileSync(
       script,
       `#!/usr/bin/env node
-require("fs").writeFileSync(process.env.REC, JSON.stringify({ argv: process.argv.slice(2), guard: process.env.FREEPI_AUTO_UPDATED }));
-require("fs").writeFileSync(process.env.FREEPI_RELAUNCH_READY, "");
+require("fs").writeFileSync(process.env.REC, JSON.stringify({ argv: process.argv.slice(2), guard: process.env.QRONOS_AUTO_UPDATED }));
+require("fs").writeFileSync(process.env.QRONOS_RELAUNCH_READY, "");
 process.exit(5);
 `,
     );
@@ -253,8 +253,8 @@ process.exit(5);
       log: (m) => logs.push(m),
     });
     expect(code).toBe(5);
-    expect(JSON.parse(readFileSync(record, "utf8"))).toEqual({ argv: ["--yes", "free-pi-cli@9.9.9", "--session", "s1"], guard: "9.9.9" });
-    expect(logs).toEqual(["Updating free-pi to 9.9.9…"]);
+    expect(JSON.parse(readFileSync(record, "utf8"))).toEqual({ argv: ["--yes", "qronos-cli@9.9.9", "--session", "s1"], guard: "9.9.9" });
+    expect(logs).toEqual(["Updating qronos to 9.9.9…"]);
   });
 
   test.skipIf(process.platform === "win32")("real child killed by SIGINT before it starts -> 130 and a SIGINT sent to the parent group does not kill the parent", async () => {

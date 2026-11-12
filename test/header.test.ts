@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createHeaderExtension, headerLines, type ThemeLike, type TuiLike } from "../src/header";
+import { createHeaderExtension, headerLines, LOGO_BLOCKS, type ThemeLike, type TuiLike } from "../src/header";
 
 /** InlineExtension is a union (bare factory fn | {name, factory}); our
  * factory always returns the object form. */
@@ -16,91 +16,126 @@ function fakeTheme(): ThemeLike {
   };
 }
 
+/** The collapsed header paints the logo with raw truecolor escapes, so strip
+ * real ANSI (not the fake-theme markers) before measuring visible width. */
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
+
 const MODEL = "DeepSeek V4 Flash";
 
-describe("headerLines (R1-R3, R6)", () => {
-  test("collapsed: exactly 16 lines in R1 order", () => {
-    const lines = headerLines(fakeTheme(), MODEL, false);
-    expect(lines).toHaveLength(16);
-    expect(lines[0]).toBe(""); // blank
-    expect(lines[1]).toContain("free-pi");
-    expect(lines[1]).toContain(MODEL);
-    expect(lines[1]).toContain("ctrl+o for help");
-    expect(lines[2]).toBe(""); // blank
-    expect(lines[3]).toContain("Welcome to Free Pi, ad-supported inference. Please visit our advertisers to support us.");
-    expect(lines[4]).toBe(""); // blank
-    expect(lines[5]).toContain("Usage is funded by ads and training. By using free-pi you consent.");
-    expect(lines[6]).toContain("See /tos and /privacy-policy.");
-    expect(lines[7]).toBe(""); // blank
-    // seven command lines
-    expect(lines[8]).toContain("/usage");
-    expect(lines[9]).toContain("/support");
-    expect(lines[10]).toContain("/tos");
-    expect(lines[11]).toContain("/privacy-policy");
-    expect(lines[12]).toContain("/buy-credits");
-    expect(lines[13]).toContain("/close-other-session");
-    expect(lines[14]).toContain("/update");
-    expect(lines[15]).toBe(""); // trailing blank
+describe("headerLines — block-art header", () => {
+  const theme = fakeTheme();
+
+  test("collapsed is exactly one line per logo row", () => {
+    const lines = headerLines(theme, MODEL, false);
+    expect(lines).toHaveLength(LOGO_BLOCKS.length);
   });
 
-  test("R2: command lines are in order with descriptions, each starting at the same column", () => {
-    const lines = headerLines(fakeTheme(), MODEL, false);
-    const commandLines = lines.slice(8, 15);
-    const expectedNames = ["/usage", "/support", "/tos", "/privacy-policy", "/buy-credits", "/close-other-session", "/update"];
-    const expectedDescriptions = [
-      "credits left today and refill time",
-      "visit today's advertiser",
-      "terms of service",
-      "privacy policy",
-      "get more usage",
-      "free a stuck session on another machine",
-      "get the latest free-pi",
-    ];
-    for (const [i, line] of commandLines.entries()) {
-      expect(line.startsWith(`   ${expectedNames[i]}`)).toBe(true);
-      expect(line).toContain(expectedDescriptions[i]);
-    }
-    // Same column: the description marker `<fg:dim>` starts at the same index in every line.
-    const columns = commandLines.map((l) => l.indexOf("<fg:dim>"));
-    expect(new Set(columns).size).toBe(1);
-  });
-
-  test("R3: style markers — free-pi is bold+accent, welcome/descriptions dim, command names unstyled", () => {
-    const lines = headerLines(fakeTheme(), MODEL, false);
-    expect(lines[1]).toContain("<b><fg:accent>free-pi</fg></b>");
-    expect(lines[3]).toBe(` <fg:dim>Welcome to Free Pi, ad-supported inference. Please visit our advertisers to support us.</fg>`);
-    for (const line of lines.slice(8, 15)) {
-      expect(line).toContain("<fg:dim>");
-      // the command name itself (before the dim-wrapped description) carries no marker
-      const namePart = line.slice(0, line.indexOf("<fg:dim>"));
-      expect(namePart).not.toContain("<fg:");
-      expect(namePart).not.toContain("<b>");
+  test("every row is indented and carries the logo blocks", () => {
+    const lines = headerLines(theme, MODEL, false);
+    for (const [i, line] of lines.entries()) {
+      expect(line.startsWith(" ")).toBe(true);
+      const blocks = (LOGO_BLOCKS[i]!.match(/█/g) ?? []).length;
+      expect(stripAnsi(line).split("█").length - 1).toBe(blocks);
     }
   });
 
-  test("R6: expanded appends one dim hint line; collapsed omits it", () => {
-    const collapsed = headerLines(fakeTheme(), MODEL, false);
-    const expanded = headerLines(fakeTheme(), MODEL, true);
-    expect(expanded).toHaveLength(collapsed.length + 1);
-    expect(expanded.at(-1)).toBe(
-      " <fg:dim>esc interrupt · ctrl+c clear / exit · / commands · ! bash</fg>",
-    );
+  test("names the product and version", () => {
+    const lines = headerLines(theme, MODEL, false);
+    expect(stripAnsi(lines[1]!)).toContain("Qronos AI v1.0.0");
   });
 
-  test("model name appears verbatim", () => {
-    const lines = headerLines(fakeTheme(), "Custom Model Name", false);
-    expect(lines[1]).toContain("Custom Model Name");
+  test("shows the gateway label", () => {
+    const lines = headerLines(theme, MODEL, false);
+    expect(stripAnsi(lines[2]!)).toContain("API Gateway");
+  });
+
+  test("shows the working directory", () => {
+    const lines = headerLines(theme, MODEL, false, 200);
+    expect(stripAnsi(lines[3]!)).toContain(process.cwd());
+  });
+
+  test("shows the active model beside a status dot", () => {
+    const lines = headerLines(theme, MODEL, false);
+    expect(stripAnsi(lines[4]!)).toContain("●");
+    expect(stripAnsi(lines[4]!)).toContain(MODEL);
+  });
+
+  test("strips a provider prefix from the model name", () => {
+    const lines = headerLines(theme, "openai/gpt-4o", false);
+    expect(stripAnsi(lines[4]!)).toContain("gpt-4o");
+    expect(stripAnsi(lines[4]!)).not.toContain("openai/");
   });
 
   test("R7: no line contains ad creative markers", () => {
-    const lines = headerLines(fakeTheme(), MODEL, true);
-    for (const line of lines) {
+    for (const line of headerLines(theme, MODEL, true)) {
       expect(line).not.toContain("AD ░▒▓");
     }
   });
 });
 
-describe("createHeaderExtension (registration, R1/R6)", () => {
+describe("headerLines — expanded (ctrl+o)", () => {
+  const theme = fakeTheme();
+
+  test("expanded adds a blank line, the command list, a blank and the hint", () => {
+    const collapsed = headerLines(theme, MODEL, false);
+    const expanded = headerLines(theme, MODEL, true);
+    const commandCount = expanded.filter((l) => l.includes("▸")).length;
+    expect(commandCount).toBe(6);
+    // 1 blank + commands + 1 blank + 1 hint
+    expect(expanded).toHaveLength(collapsed.length + commandCount + 3);
+  });
+
+  test("the hint line comes last", () => {
+    const expanded = headerLines(theme, MODEL, true);
+    expect(expanded.at(-1)).toContain("esc interrupt");
+    expect(expanded.at(-1)).toContain("<fg:dim>");
+  });
+
+  test("each command line is an accent-padded name plus a dim description", () => {
+    const commands = headerLines(theme, MODEL, true).filter((l) => l.includes("▸"));
+    for (const line of commands) {
+      expect(line).toMatch(/^<fg:accent> {2}▸ \/\S+/);
+      expect(line).toContain("<fg:dim>");
+    }
+  });
+
+  test("command names start at one column", () => {
+    const commands = headerLines(theme, MODEL, true).filter((l) => l.includes("▸"));
+    const columns = commands.map((l) => l.indexOf("<fg:dim>"));
+    expect(new Set(columns).size).toBe(1);
+  });
+
+  test("the leading part of a command line carries no description text", () => {
+    for (const line of headerLines(theme, MODEL, true).filter((l) => l.includes("▸"))) {
+      expect(line.slice(0, line.indexOf("<fg:dim>"))).not.toContain("<fg:dim>");
+    }
+  });
+});
+
+describe("headerLines — width safety", () => {
+  const theme = fakeTheme();
+
+  test.each([20, 30, 40, 60, 100])("no line exceeds %i visible columns", (width) => {
+    for (const expanded of [false, true]) {
+      for (const line of headerLines(theme, MODEL, expanded, width)) {
+        expect(stripAnsi(line).length).toBeLessThanOrEqual(width);
+      }
+    }
+  });
+
+  test("a long working directory is truncated rather than wrapped", () => {
+    const lines = headerLines(theme, MODEL, false, 40);
+    expect(stripAnsi(lines[3]!).length).toBeLessThanOrEqual(40);
+  });
+
+  test("survives a pathologically narrow terminal without going negative", () => {
+    const lines = headerLines(theme, MODEL, false, 1);
+    for (const line of lines) expect(stripAnsi(line).length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("createHeaderExtension (registration)", () => {
   function stubPi() {
     const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
     return {
@@ -164,33 +199,6 @@ describe("createHeaderExtension (registration, R1/R6)", () => {
   });
 });
 
-describe("headerLines width", () => {
-  const theme = { fg: (c: string, t: string) => `<${c}>${t}</${c}>`, bold: (t: string) => `<b>${t}</b>` };
-  test("styled lines are never truncated by their escape bytes at 100 columns", () => {
-    const lines = headerLines(theme, "DeepSeek V4 Flash", true, 100);
-    expect(lines[3]).toBe(` <dim>${"Welcome to Free Pi, ad-supported inference. Please visit our advertisers to support us."}</dim>`);
-    expect(lines.some((l) => l.includes("…"))).toBe(false);
-  });
-  test("a line wider than the terminal is shown dim and truncated on plain text", () => {
-    const lines = headerLines(theme, "DeepSeek V4 Flash", false, 40);
-    expect(lines[3]).toBe(` <dim>${"Welcome to Free Pi, ad-supported infer…"}</dim>`);
-    expect(lines[3].replace(/<\/?dim>/g, "").length).toBe(40);
-  });
-});
-
-describe("consent lines at 100 columns", () => {
-  const theme = { fg: (c: string, t: string) => `<${c}>${t}</${c}>`, bold: (t: string) => `<b>${t}</b>` };
-  test("neither consent line is truncated at width 100", () => {
-    const lines = headerLines(theme, "DeepSeek V4 Flash", false, 100);
-    const consent = lines.filter((l) => l.includes("you consent") || l.includes("/privacy-policy."));
-    expect(consent).toHaveLength(2);
-    for (const l of consent) {
-      expect(l.includes("…")).toBe(false);
-      expect(l.replace(/<\/?dim>/g, "").length).toBeLessThan(100);
-    }
-  });
-});
-
 describe("update banner (replaces pi's own suppressed `pi update` banner)", () => {
   const theme = fakeTheme();
 
@@ -200,17 +208,17 @@ describe("update banner (replaces pi's own suppressed `pi update` banner)", () =
   });
 
   test("banner appears, names the version, and points at /update (never `pi update`)", () => {
-    const lines = headerLines(theme, MODEL, false, 100, "0.2.19");
-    const text = lines.join("\n");
+    const text = headerLines(theme, MODEL, false, 100, "0.2.19").join("\n");
     expect(text).toContain("Update Available");
     expect(text).toContain("New version 0.2.19 is available. Run /update");
     expect(text).not.toContain("pi update");
-    expect(text).not.toContain("npx free-pi-cli@latest");
+    expect(text).not.toContain("npx qronos-cli@latest");
   });
 
   test("banner is bordered above and below in the warning color", () => {
-    const lines = headerLines(theme, MODEL, false, 100, "0.2.19");
-    const borders = lines.filter((l) => l.includes("<fg:warning>─"));
+    const borders = headerLines(theme, MODEL, false, 100, "0.2.19").filter((l) =>
+      l.includes("<fg:warning>─"),
+    );
     expect(borders).toHaveLength(2);
   });
 
@@ -222,10 +230,8 @@ describe("update banner (replaces pi's own suppressed `pi update` banner)", () =
   });
 
   test("does not overflow a narrow terminal", () => {
-    const lines = headerLines(theme, MODEL, false, 30, "0.2.19");
-    for (const line of lines) {
-      const plain = line.replace(/<\/?b>|<fg:[a-z]+>|<\/fg>/g, "");
-      expect(plain.length).toBeLessThanOrEqual(30);
+    for (const line of headerLines(theme, MODEL, false, 30, "0.2.19")) {
+      expect(stripAnsi(line).replace(/<\/?(b|fg:[a-z]+)>/g, "").length).toBeLessThanOrEqual(30);
     }
   });
 });

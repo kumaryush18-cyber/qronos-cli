@@ -15,8 +15,8 @@ import { decideProjectTrust, PROJECT_TRUST_PROMPT, projectTrustForCwd } from "..
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
 function setup(opts: { resources: boolean; tty: boolean; answer?: string }) {
-  const agentDir = tmp("free-pi-trust-agent-");
-  const cwd = tmp("free-pi-trust-cwd-");
+  const agentDir = tmp("qronos-trust-agent-");
+  const cwd = tmp("qronos-trust-cwd-");
   const asked: string[] = [];
   const logs: string[] = [];
   const run = () =>
@@ -69,7 +69,7 @@ describe("decideProjectTrust", () => {
 });
 
 describe("buildRuntimeOptions projectTrusted", () => {
-  const base = () => ({ baseUrl: "http://example.test", jwt: "t", agentDir: tmp("free-pi-trust-agent-") });
+  const base = () => ({ baseUrl: "http://example.test", jwt: "t", agentDir: tmp("qronos-trust-agent-") });
 
   test("false and true are carried into the settings manager; absent means untrusted", () => {
     expect(buildRuntimeOptions({ ...base(), projectTrusted: false }, "s").settingsManager.isProjectTrusted()).toBe(false);
@@ -82,8 +82,8 @@ describe("an untrusted project's code does not load", () => {
   const server = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "stub-mcp-server.mjs");
 
   async function loadedFor(projectTrusted: boolean): Promise<{ names: string[]; extensionPaths: string[] }> {
-    const agentDir = tmp("free-pi-trust-agent-");
-    const cwd = tmp("free-pi-trust-cwd-");
+    const agentDir = tmp("qronos-trust-agent-");
+    const cwd = tmp("qronos-trust-cwd-");
     mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
     writeFileSync(
       join(cwd, ".pi", "mcp.json"),
@@ -134,20 +134,20 @@ describe("an untrusted project's code does not load", () => {
 });
 
 describe("trust is decided per runtime folder (P1: resume/switch into another folder)", () => {
-  const agentDir = () => tmp("free-pi-trust-agent-");
+  const agentDir = () => tmp("qronos-trust-agent-");
   const opts = (dir: string) => ({ baseUrl: "http://example.test", jwt: "t", agentDir: dir });
 
   test("the launch folder keeps the answer it was asked for", () => {
     const dir = agentDir();
-    const launch = tmp("free-pi-trust-a-");
+    const launch = tmp("qronos-trust-a-");
     expect(projectTrustForCwd(launch, { cwd: launch, trusted: true }, dir, () => true)).toBe(true);
     expect(projectTrustForCwd(launch, { cwd: launch, trusted: false }, dir, () => true)).toBe(false);
   });
 
   test("another folder with protected resources: saved false and no decision are untrusted, saved true is trusted", () => {
     const dir = agentDir();
-    const a = tmp("free-pi-trust-a-");
-    const b = tmp("free-pi-trust-b-");
+    const a = tmp("qronos-trust-a-");
+    const b = tmp("qronos-trust-b-");
     expect(projectTrustForCwd(b, { cwd: a, trusted: true }, dir, () => true)).toBe(false);
     new ProjectTrustStore(dir).set(b, false);
     expect(projectTrustForCwd(b, { cwd: a, trusted: true }, dir, () => true)).toBe(false);
@@ -157,19 +157,19 @@ describe("trust is decided per runtime folder (P1: resume/switch into another fo
 
   test("another folder with nothing to protect is trusted", () => {
     const dir = agentDir();
-    expect(projectTrustForCwd(tmp("free-pi-trust-b-"), { cwd: tmp("free-pi-trust-a-"), trusted: false }, dir, () => false)).toBe(true);
+    expect(projectTrustForCwd(tmp("qronos-trust-b-"), { cwd: tmp("qronos-trust-a-"), trusted: false }, dir, () => false)).toBe(true);
   });
 
   test("settingsForRuntime: trusted launch folder, untrusted second folder with a project .pi dir", () => {
     const dir = agentDir();
-    const a = tmp("free-pi-trust-a-");
-    const b = tmp("free-pi-trust-b-");
+    const a = tmp("qronos-trust-a-");
+    const b = tmp("qronos-trust-b-");
     mkdirSync(join(b, ".pi"), { recursive: true });
     writeFileSync(join(b, ".pi", "mcp.json"), "{}");
     const launch = { cwd: a, trusted: true };
     expect(settingsForRuntime(opts(dir), a, launch).isProjectTrusted()).toBe(true);
     expect(settingsForRuntime(opts(dir), b, launch).isProjectTrusted()).toBe(false);
-    const plain = tmp("free-pi-trust-c-");
+    const plain = tmp("qronos-trust-c-");
     expect(settingsForRuntime(opts(dir), plain, launch).isProjectTrusted()).toBe(true);
   });
 });

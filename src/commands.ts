@@ -1,10 +1,10 @@
-// 0.2.6: free-pi's slash commands — /close-other-session (self-service lease
+// 0.2.6: qronos's slash commands — /close-other-session (self-service lease
 // reset), /whats-new (bundled changelog), /update (self-update trigger), and
 // 0.2.12: /buy-credits (opens the buy page; epic #221). One inline extension
-// (free-pi-commands) registers all four. Grouped here rather than in
+// (qronos-commands) registers all four. Grouped here rather than in
 // usage-tool, which stays read-only.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
-import { SessionResetResponseSchema } from "@freepi/shared";
+import { SessionResetResponseSchema } from "@qronos/shared";
 import { registerBugAutocomplete } from "./bug-report";
 import { CHANGELOG_HIGHLIGHTS } from "./changelog";
 import { openBrowser } from "./browser";
@@ -77,7 +77,7 @@ export async function closeOtherSession(opts: CreateCommandsOptions, ctx: Notify
       "info",
     );
   } catch {
-    ctx.ui.notify("Couldn't reach free-pi to reset your session — check your connection.", "error");
+    ctx.ui.notify("Couldn't reach qronos to reset your session — check your connection.", "error");
   }
 }
 
@@ -86,7 +86,7 @@ export async function closeOtherSession(opts: CreateCommandsOptions, ctx: Notify
 /** Shows the bundled changelog highlights for the most recent versions. */
 export function showWhatsNew(ctx: NotifyContext): void {
   const lines = CHANGELOG_HIGHLIGHTS.slice(0, 3).flatMap((e) => [
-    `free-pi ${e.version}:`,
+    `qronos ${e.version}:`,
     ...e.highlights.map((h) => `  • ${h}`),
   ]);
   ctx.ui.notify(lines.join("\n"), "info");
@@ -96,7 +96,7 @@ export function showWhatsNew(ctx: NotifyContext): void {
 
 export interface UpdateDeps {
   env?: Record<string, string | undefined>;
-  /** Installs free-pi-cli@latest globally; injected in tests. */
+  /** Installs qronos-cli@latest globally; injected in tests. */
   installLatest?: () => Promise<{ ok: boolean }>;
 }
 
@@ -221,13 +221,13 @@ function reaSupportsNode(version: string): boolean {
  * startup would spawn it for every user and add a line to every system prompt,
  * so it happens only here. Never throws.
  */
-export function loadRea(pi: Pick<ExtensionAPI, "registerMcpServer" | "getMcpServers">, opts: CreateCommandsOptions, ctx: NotifyContext): void {
+export function loadRea(qronos: Pick<ExtensionAPI, "registerMcpServer" | "getMcpServers">, opts: CreateCommandsOptions, ctx: NotifyContext): void {
   const nodeVersion = opts.nodeVersion ?? process.versions.node;
   if (!reaSupportsNode(nodeVersion)) {
-    ctx.ui.notify(`REA needs Node ${REA_NODE_RANGE}; you are on Node ${nodeVersion}. Update Node and restart free-pi-cli.`, "error");
+    ctx.ui.notify(`REA needs Node ${REA_NODE_RANGE}; you are on Node ${nodeVersion}. Update Node and restart qronos-cli.`, "error");
     return;
   }
-  if (pi.getMcpServers().some((s) => s.name === "rea")) {
+  if (qronos.getMcpServers().some((s) => s.name === "rea")) {
     ctx.ui.notify("REA is already loaded in this session.", "info");
     return;
   }
@@ -235,7 +235,7 @@ export function loadRea(pi: Pick<ExtensionAPI, "registerMcpServer" | "getMcpServ
   const server = opts.reaServer ?? (win ? { command: "cmd.exe", args: ["/d", "/c", "npx", ...REA_ARGS] } : { command: "npx", args: REA_ARGS });
   try {
     // 300 s per request: the first npx download and native decompiles can outlast pi's 60 s default.
-    pi.registerMcpServer("rea", { ...server, exposure: "codemode", description: REA_DESCRIPTION, timeout: 300 });
+    qronos.registerMcpServer("rea", { ...server, exposure: "codemode", description: REA_DESCRIPTION, timeout: 300 });
   } catch {
     ctx.ui.notify("Couldn't load REA in this session.", "error");
     return;
@@ -459,7 +459,7 @@ async function showDoctor(ctx: any, opts: CreateCommandsOptions): Promise<void> 
   ctx.ui.notify(checks.join("\n"), "info");
 }
 
-async function runReview(ctx: any, pi: ExtensionAPI): Promise<void> {
+async function runReview(ctx: any, qronos: ExtensionAPI): Promise<void> {
   let diff = "";
   try {
     diff = execSync("git diff HEAD", { encoding: "utf8", maxBuffer: 1024 * 1024 }).trim();
@@ -485,90 +485,90 @@ async function runReview(ctx: any, pi: ExtensionAPI): Promise<void> {
     "```",
   ].join("\n");
 
-  pi.sendUserMessage(prompt);
+  qronos.sendUserMessage(prompt);
 }
 
 export function createFreePiCommandsExtension(opts: CreateCommandsOptions): InlineExtension {
   return {
-    name: "free-pi-commands",
-    factory(pi: ExtensionAPI) {
-      // 0.3.0: keep /bug listed with a free-pi description (the handler itself is installed in pi-launch.ts).
-      registerBugAutocomplete(pi);
-      pi.registerCommand("init", {
+    name: "qronos-commands",
+    factory(qronos: ExtensionAPI) {
+      // 0.3.0: keep /bug listed with a qronos description (the handler itself is installed in pi-launch.ts).
+      registerBugAutocomplete(qronos);
+      qronos.registerCommand("init", {
         description: "Initialize project instructions for Qronos AI (creates QRONOS.md).",
         handler: async (_args, ctx) => runInit(ctx as any),
       });
-      pi.registerCommand("cost", {
+      qronos.registerCommand("cost", {
         description: "Show detailed session token usage and PAYG / Token Plan billing status.",
         handler: async (_args, ctx) => runCost(ctx as any, opts),
       });
-      pi.registerCommand("close-other-session", {
+      qronos.registerCommand("close-other-session", {
         description: "Clear your other running Qronos session (use if a previous one is stuck).",
         handler: (_args, ctx) => closeOtherSession(opts, ctx),
       });
-      pi.registerCommand("whats-new", {
+      qronos.registerCommand("whats-new", {
         description: "Show what's new in recent Qronos CLI releases.",
         handler: async (_args, ctx) => showWhatsNew(ctx),
       });
-      pi.registerCommand("update", {
+      qronos.registerCommand("update", {
         description: "Update qronos-cli to the latest version.",
         handler: (_args, ctx) => runUpdate(ctx),
       });
-      pi.registerCommand("usage", {
+      qronos.registerCommand("usage", {
         description: "Show credits left today, refill time, and purchased credit.",
         handler: (_args, ctx) => showUsage(opts, ctx),
       });
-      pi.registerCommand("buy-credits", {
+      qronos.registerCommand("buy-credits", {
         description: "Buy more usage packs or top up balance on qronos.me.",
         handler: (_args, ctx) => buyCredits(opts, ctx),
       });
-      pi.registerCommand("support", {
+      qronos.registerCommand("support", {
         description: "Open today's advertiser in your browser to support Qronos CLI.",
         handler: (_args, ctx) => openAdvertiser(opts, ctx),
       });
-      pi.registerCommand("tos", {
+      qronos.registerCommand("tos", {
         description: "Open the Qronos Terms of Service in your browser.",
         handler: (_args, ctx) => openTos(opts, ctx),
       });
-      pi.registerCommand("privacy-policy", {
+      qronos.registerCommand("privacy-policy", {
         description: "Open the Qronos Privacy Policy in your browser.",
         handler: (_args, ctx) => openPrivacyPolicy(opts, ctx),
       });
-      pi.registerCommand("reverse-engineer-anything", {
+      qronos.registerCommand("reverse-engineer-anything", {
         description: "Load reverse-engineering tools (REA: binaries, apps, APKs, websites) for this session.",
-        handler: async (_args, ctx) => loadRea(pi, opts, ctx),
+        handler: async (_args, ctx) => loadRea(qronos, opts, ctx),
       });
-      pi.registerCommand("permissions", {
+      qronos.registerCommand("permissions", {
         description: "Show the active execution mode and what it will ask you to approve.",
         handler: (_args, ctx) => showPermissions(ctx as any),
       });
-      pi.registerCommand("recall", {
+      qronos.registerCommand("recall", {
         description: "Put a previous prompt back in the editor (/recall, /recall 2 for older).",
         handler: (args, ctx) => runRecall(args, ctx as any),
       });
-      pi.registerCommand("memory", {
+      qronos.registerCommand("memory", {
         description: "Show which QRONOS.md memory files are loaded for this project.",
         handler: (_args, ctx) => showMemory(ctx as any),
       });
-      pi.registerCommand("hooks", {
+      qronos.registerCommand("hooks", {
         description: "Show the lifecycle hooks configured for this session.",
         handler: (_args, ctx) => showHooks(ctx as any),
       });
-      pi.registerCommand("context", {
+      qronos.registerCommand("context", {
         description: "Show current context window token usage, remaining headroom, and auto-compact limit.",
         handler: (_args, ctx) => showContext(ctx as any, opts),
       });
-      pi.registerCommand("status", {
+      qronos.registerCommand("status", {
         description: "Show current session info, active model, execution mode, and working directory.",
         handler: (_args, ctx) => showStatus(ctx as any, opts),
       });
-      pi.registerCommand("doctor", {
+      qronos.registerCommand("doctor", {
         description: "Run diagnostics on your environment, API provider, git repo, memory, and hooks.",
         handler: (_args, ctx) => showDoctor(ctx as any, opts),
       });
-      pi.registerCommand("review", {
+      qronos.registerCommand("review", {
         description: "Review current git diff changes for correctness, bugs, and code quality.",
-        handler: (_args, ctx) => runReview(ctx as any, pi),
+        handler: (_args, ctx) => runReview(ctx as any, qronos),
       });
     },
   };

@@ -3,7 +3,7 @@
 // ($3.75 -> 50,000 and $7.50 -> 100,000). DISPLAY-ONLY: it never re-enters
 // billing or a cap comparison — the ledger (users.credit_usd) and every burn
 // stay in USD. The 40000/3 form is exact for both packs. Lives here in
-// @freepi/shared so the server (stripe/auth) and the client (meter, CLI) share
+// @qronos/shared so the server (stripe/auth) and the client (meter, CLI) share
 // one definition and can never drift.
 import { usdToMicros } from "./lane";
 

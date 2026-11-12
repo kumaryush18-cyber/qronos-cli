@@ -7,7 +7,7 @@ import { clearJwt, loadJwt, saveJwt } from "../src/credentials";
 import { runLogout, type LogoutDeps } from "../src/logout";
 
 function tempCredentialsPath(): string {
-  return join(mkdtempSync(join(tmpdir(), "free-pi-cli-logout-")), "credentials.json");
+  return join(mkdtempSync(join(tmpdir(), "qronos-cli-logout-")), "credentials.json");
 }
 
 /** Real credential fns against a temp dir (the firstrun.test approach) plus a log recorder. */

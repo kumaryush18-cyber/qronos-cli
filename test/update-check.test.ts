@@ -26,7 +26,7 @@ describe("checkClientVersion (#37)", () => {
 
   test("ok: cli version at or above latest", async () => {
     const fetchImpl = fakeFetch(() => Response.json({ min: "0.1.0", latest: "0.3.0" }));
-    expect(await checkClientVersion("https://api.test", "0.3.0", fetchImpl)).toEqual({ action: "ok" });
+    expect(await checkClientVersion("https://api.test", "0.3.0", fetchImpl)).toEqual({ action: "ok", latest: "0.3.0" });
   });
 
   test("boundary: exactly at min is not a block", async () => {
@@ -62,7 +62,7 @@ describe("checkClientVersion (#37)", () => {
 
     test("non-semver min/latest values", async () => {
       const fetchImpl = fakeFetch(() => Response.json({ min: "not-a-version", latest: "also-not" }));
-      expect(await checkClientVersion("https://api.test", "0.0.1", fetchImpl)).toEqual({ action: "ok" });
+      expect(await checkClientVersion("https://api.test", "0.0.1", fetchImpl)).toEqual({ action: "ok", latest: "also-not" });
     });
   });
 
@@ -73,6 +73,7 @@ describe("checkClientVersion (#37)", () => {
       );
       expect(await checkClientVersion("https://api.test", "0.3.0", fetchImpl)).toEqual({
         action: "ok",
+        latest: "0.3.0",
         model: "Ox Alpha",
         notice: "trial notice",
       });
@@ -90,9 +91,9 @@ describe("checkClientVersion (#37)", () => {
       });
     });
 
-    test("plain {min,latest} stays exactly {action} — no undefined keys leak", async () => {
+    test("plain {min,latest} carries latest but leaks no undefined keys", async () => {
       const fetchImpl = fakeFetch(() => Response.json({ min: "0.1.0", latest: "0.3.0" }));
-      expect(await checkClientVersion("https://api.test", "0.3.0", fetchImpl)).toEqual({ action: "ok" });
+      expect(await checkClientVersion("https://api.test", "0.3.0", fetchImpl)).toEqual({ action: "ok", latest: "0.3.0" });
     });
   });
 });

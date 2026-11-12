@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth as piVisibleWidth } from "@earendil-works/pi-tui";
-import { loadConfig } from "@freepi/shared";
+import { loadConfig } from "@qronos/shared";
 import type { AdsDeps } from "./api";
 import { BANNER_WIDGET_ID, createBannerRenderer } from "./banner";
 import { createInlineRenderer, INLINE_WIDGET_ID } from "./inline";

@@ -1,4 +1,4 @@
-// Built via `pi.registerProvider(name, config)` per
+// Built via `qronos.registerProvider(name, config)` per
 // https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/custom-provider.md
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import type { Api } from "@earendil-works/pi-ai";

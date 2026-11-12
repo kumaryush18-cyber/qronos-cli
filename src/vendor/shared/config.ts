@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // Client-only configuration.
 //
-// The free-pi SERVER owns all economic and abuse-control tuning — the daily
+// The qronos SERVER owns all economic and abuse-control tuning — the daily
 // spend caps, the account tiers, the rate ceilings and the abuse classifier
 // thresholds. None of that lives in the client, and none of it is published
 // here. The terminal ad extension needs exactly two display knobs, and both

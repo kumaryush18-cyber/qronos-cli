@@ -102,7 +102,7 @@ export async function run(
     process.env.OPENAI_API_KEY ||
     process.env.ANTHROPIC_API_KEY;
 
-  let jwt = apiKey || (await loadJwt(deps.credentialsPath));
+  let jwt: string | null | undefined = apiKey || (await loadJwt(deps.credentialsPath));
   let consentCurrent = Boolean(apiKey || isDirectThirdParty);
 
   // 3. Resolve Base URL and Model
@@ -128,6 +128,53 @@ export async function run(
         }
       }
     }
+  }
+
+  // 3c. Returning gateway users: verify the stored token and re-prompt when the
+  // consent text has moved on. Both checks were dropped from this path at some
+  // point, so a revoked token or a changed policy was never noticed on startup.
+  // Direct third-party keys have no Qronos account to check against.
+  if (jwt && !isDirectThirdParty) {
+    let seenConsent: string | null | undefined;
+    try {
+      seenConsent = await checkToken(baseUrl, jwt);
+    } catch (err) {
+      if (!(err instanceof UnauthorizedError)) {
+        // Offline or a 5xx: we cannot verify the token right now. Never block
+        // startup on that — the session proceeds and asks again next time.
+        seenConsent = undefined;
+      } else {
+        await clearJwt(deps.credentialsPath);
+        jwt = undefined;
+      }
+    }
+
+    if (jwt && seenConsent === CONSENT_VERSION) {
+      // Server confirms the current terms: the pixel may start.
+      consentCurrent = true;
+    } else if (jwt && seenConsent !== undefined) {
+      // null (never recorded) or an older version: both mean "ask again".
+      const accepted = await deps.promptConsent(REPROMPT_CONSENT_TEXT);
+      if (!accepted) {
+        deps.log(
+          "Declined. qronos needs you to accept the updated terms to continue; you will be asked again next time.",
+        );
+        return 1;
+      }
+      try {
+        await submitUserConsent(baseUrl, jwt, CONSENT_VERSION);
+        consentCurrent = true;
+      } catch (err) {
+        // A 5xx or network blip must not block the session; the server asks
+        // again next start. A 401 means the token itself is dead, so drop it.
+        if (err instanceof UnauthorizedError) {
+          await clearJwt(deps.credentialsPath);
+          jwt = undefined;
+        }
+      }
+    }
+    // `seenConsent === undefined` means the server did not report a version at
+    // all (old server, offline, 5xx). We cannot prove consent, so no pixel.
   }
 
   // If using Qronos default gateway and no key was passed in env or credentials, set the user up.
@@ -211,7 +258,7 @@ export async function run(
         if (outcome === "blocked") {
           const relaunched = await deps.relaunchLatest?.(versionCheck.latest);
           if (relaunched !== undefined) return relaunched;
-          deps.log("qronos-cli is below the required minimum version; update with: npm i -g qronos-cli@latest");
+          deps.log("qronos-cli is below the required minimum version; update with: npx qronos-cli@latest");
           return 1;
         }
         if (outcome === "notice") {
@@ -236,7 +283,7 @@ export async function run(
     }
   }
 
-  const activeModel = selectedModel || versionCheck.model || "claude-sonnet-5.5";
+  const activeModel = options.model || versionCheck.model || selectedModel || "claude-sonnet-5.5";
   const catalogModels = versionCheck.models && versionCheck.models.length > 0
     ? versionCheck.models
     : (selectedModel ? [{ id: selectedModel, name: selectedModel }] : undefined);

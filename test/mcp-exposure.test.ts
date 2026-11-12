@@ -28,8 +28,8 @@ async function declaredTools(stubConfig: Record<string, unknown>): Promise<strin
     },
   });
   try {
-    const agentDir = mkdtempSync(join(tmpdir(), "free-pi-exposure-agent-"));
-    const cwd = mkdtempSync(join(tmpdir(), "free-pi-exposure-cwd-"));
+    const agentDir = mkdtempSync(join(tmpdir(), "qronos-exposure-agent-"));
+    const cwd = mkdtempSync(join(tmpdir(), "qronos-exposure-cwd-"));
     writeFileSync(
       join(agentDir, "mcp.json"),
       JSON.stringify({ mcpServers: { stub: { command: process.execPath, args: [server], ...stubConfig } } }),

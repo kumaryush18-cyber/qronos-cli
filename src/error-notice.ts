@@ -11,7 +11,7 @@
 //
 // Lives in packages/cli, not packages/pi-ads: the ads package's structural
 // gate pins its hook surface; this is a separate, closed-listed extension.
-import { formatLimitNotice } from "@freepi/shared";
+import { formatLimitNotice } from "@qronos/shared";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 
 export interface CreateErrorNoticeOptions {
@@ -113,9 +113,9 @@ export function createErrorNoticeExtension(opts: CreateErrorNoticeOptions = {}):
   const now = opts.now ?? Date.now;
   const timeZone = opts.timeZone;
   return {
-    name: "free-pi-error-notice",
-    factory(pi: ExtensionAPI) {
-      pi.on("turn_end", (event, ctx) => {
+    name: "qronos-error-notice",
+    factory(qronos: ExtensionAPI) {
+      qronos.on("turn_end", (event, ctx) => {
         const msg = event.message as { stopReason?: string; errorMessage?: unknown } | undefined;
         if (!msg || msg.stopReason !== "error") return;
         const env = parseErrorEnvelope(msg.errorMessage);

@@ -6,7 +6,7 @@ import { maybeWhatsNew } from "../src/whats-new";
 import { getLastSeenVersionPath } from "../src/paths";
 
 function tmpAgentDir(): string {
-  return mkdtempSync(join(tmpdir(), "free-pi-wn-"));
+  return mkdtempSync(join(tmpdir(), "qronos-wn-"));
 }
 function marker(dir: string): string {
   return readFileSync(getLastSeenVersionPath(dir), "utf-8").trim();
@@ -24,7 +24,7 @@ describe("maybeWhatsNew", () => {
     writeFileSync(getLastSeenVersionPath(dir), "0.2.5", "utf-8");
 
     const banner = maybeWhatsNew("0.2.6", dir);
-    expect(banner).toContain("What's new in free-pi 0.2.6");
+    expect(banner).toContain("What's new in qronos 0.2.6");
     expect(banner).toContain("/close-other-session");
     expect(marker(dir)).toBe("0.2.6");
 

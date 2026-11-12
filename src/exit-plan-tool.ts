@@ -34,8 +34,8 @@ export interface CreateExitPlanToolOptions {
 export function createExitPlanToolExtension(opts: CreateExitPlanToolOptions): InlineExtension {
   return {
     name: "qronos-exit-plan",
-    factory(pi: ExtensionAPI) {
-      pi.registerTool({
+    factory(qronos: ExtensionAPI) {
+      qronos.registerTool({
         name: EXIT_PLAN_TOOL_NAME,
         label: "Exit Plan Mode",
         description: DESCRIPTION,
@@ -76,7 +76,7 @@ export function createExitPlanToolExtension(opts: CreateExitPlanToolOptions): In
                 ? `The user rejected this plan. Do not act on it. Stay in plan mode and propose a different approach.`
                 : `The user is still reviewing the plan. Do not edit anything yet; wait for approval.`;
 
-          pi.appendEntry(PLAN_ENTRY_TYPE, {
+          qronos.appendEntry(PLAN_ENTRY_TYPE, {
             path: written.relativePath,
             title: doc.title,
             decision,

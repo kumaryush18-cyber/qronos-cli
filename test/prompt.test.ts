@@ -28,7 +28,7 @@ describe("promptConsent — non-TTY stdin declines instead of hanging", () => {
   });
 
   test("the non-TTY message tells the user the interactive way forward", () => {
-    expect(NON_INTERACTIVE_CONSENT_TEXT).toContain("npx free-pi-cli");
+    expect(NON_INTERACTIVE_CONSENT_TEXT).toContain("npx qronos-cli");
     expect(NON_INTERACTIVE_CONSENT_TEXT).toContain("terminal");
   });
 });
@@ -46,20 +46,19 @@ describe("promptConsent — interactive path unchanged", () => {
   });
 });
 
-describe("CONSENT_VERSION and CONSENT_TEXT (v4: adds the Gravity pixel line)", () => {
-  test("version is 4", () => {
-    expect(CONSENT_VERSION).toBe("4");
+describe("CONSENT_VERSION and CONSENT_TEXT (qronos-v1: adds the Gravity pixel line)", () => {
+  test("version is the branded qronos-v1", () => {
+    expect(CONSENT_VERSION).toBe("qronos-v1");
   });
 
-  test("text covers training, sharing/selling, no opt-out, alpha status, and links to the legal pages", () => {
+  test("text covers privacy stance, sponsored inference, and the legal pages", () => {
     for (const fragment of [
-      "used to train models",
-      "share or sell",
-      "no opt-out",
-      "alpha",
-      "https://freepi.ai/terms",
-      "https://freepi.ai/privacy",
-      "Gravity",
+      "We do NOT log, store, or inspect your source code",
+      "never sell, share, or trade",
+      "Developer-Sponsored Inference",
+      "never enters your AI model context",
+      "https://qronos.me/terms",
+      "https://qronos.me/privacy",
     ]) {
       expect(CONSENT_TEXT).toContain(fragment);
     }

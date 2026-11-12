@@ -1,4 +1,4 @@
-// #28 R20a: defense-in-depth. free-pi-cli's closed extension list (see
+// #28 R20a: defense-in-depth. qronos-cli's closed extension list (see
 // pi-launch.ts's buildRuntimeOptions) and the SDK's strict `tools` allowlist
 // are the real reasons no subagent-shaped tool ever reaches the model
 // (SB1). This extension is the belt to that braces: if a tool outside the
@@ -62,8 +62,8 @@ function isAllowed(opts: CreateToolGuardOptions, name: string): boolean {
 export function createToolGuardExtension(opts: CreateToolGuardOptions): InlineExtension {
   return {
     name: "qronos-tool-guard",
-    factory(pi: ExtensionAPI) {
-      pi.on("tool_call", async (event, ctx): Promise<ToolCallEventResult | undefined> => {
+    factory(qronos: ExtensionAPI) {
+      qronos.on("tool_call", async (event, ctx): Promise<ToolCallEventResult | undefined> => {
         if (!isAllowed(opts, event.toolName)) {
           void reportToolGuardTrigger(opts, event.toolName);
           return { block: true, reason: "tool not permitted in the Qronos distro" };

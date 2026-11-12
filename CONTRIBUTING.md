@@ -5,7 +5,7 @@ of which cost a contributor real time in August 2026.
 
 ## This repo is a mirror, and it used to go stale
 
-`free-pi-cli` is developed in a private monorepo alongside the server, and
+`qronos-cli` is developed in a private monorepo alongside the server, and
 mirrored here. From 2026-08-17 to 2026-08-28 that mirror was manual, and it
 stopped happening: this repo sat at 0.2.1 with a single commit while npm shipped
 through 0.2.8. Seven releases, no public source, no tags.
@@ -44,7 +44,7 @@ test/           tests
 ```
 
 `src/vendor/shared` and `src/vendor/pi-ads` are mirrored from the monorepo and
-resolved through the `@freepi/*` aliases in `tsconfig.json`. Edit them if a fix
+resolved through the `@qronos/*` aliases in `tsconfig.json`. Edit them if a fix
 genuinely belongs there — just say so in the PR, because those files need a
 maintainer to carry the change back by hand.
 

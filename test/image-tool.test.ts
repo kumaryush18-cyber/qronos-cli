@@ -102,7 +102,7 @@ describe("generate_image", () => {
   });
 
   test.each([
-    ["daily_cap", "freepi.ai/extra-credits"],
+    ["daily_cap", "qronos.me/account"],
     ["rolling_cap", "short-term"],
     ["rate_limited", "Too many"],
     ["not_configured", "not available"],
@@ -119,7 +119,7 @@ describe("generate_image", () => {
 
   test("top-level code (web-tools shape) also maps", async () => {
     const { tool } = setup((async () => json(429, { code: "daily_cap" })) as unknown as typeof fetch);
-    expect((await run(tool, { prompt: "p" })).content[0]!.text).toContain("extra-credits");
+    expect((await run(tool, { prompt: "p" })).content[0]!.text).toContain("qronos.me/account");
   });
 
   test("unknown error, network error and timeout return text, never throw", async () => {

@@ -9,7 +9,7 @@
 // explicit `columns` width instead of reading the terminal directly.
 import { createHash } from "node:crypto";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import type { AdCreative } from "@freepi/shared";
+import type { AdCreative } from "@qronos/shared";
 
 /** Structural subset of pi's `Theme` class actually used for styling. */
 export interface ThemeLike {

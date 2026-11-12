@@ -1,14 +1,14 @@
-// R7: the owner-approved free-pi guide, verbatim. Do not reword, reorder, or
+// R7: the owner-approved qronos guide, verbatim. Do not reword, reorder, or
 // add lines to this string — it is reviewed copy, not implementer prose.
 // 2026-10-13: added the todo and MCP sections and the /todos and /mcp command
 // lines (CLI 0.4.0); the rest is unchanged.
-export const FREE_PI_DOCS = `# free-pi
+export const QRONOS_DOCS = `# qronos
 
-## What free-pi is
-free-pi is a free, ad-supported distribution of the pi coding agent.
-You run \`npx free-pi-cli\`, sign in with GitHub, and get free inference with
+## What qronos is
+qronos is a free, ad-supported distribution of the pi coding agent.
+You run \`npx qronos-cli\`, sign in with GitHub, and get free inference with
 exciting models. Ads shown in the terminal pay for it. You never handle a
-model API key. Config and the sign-in token live under \`~/.free-pi/agent\`,
+model API key. Config and the sign-in token live under \`~/.qronos/agent\`,
 separate from any \`~/.pi/agent\` install.
 
 ## Ads and your data
@@ -36,7 +36,7 @@ first. Purchased credits cover use beyond it and do not expire.
 - \`/privacy-policy\` — open the Privacy Policy
 - \`/buy-credits\` — get more usage
 - \`/close-other-session\` — free a stuck session on another machine
-- \`/update\` — get the latest free-pi
+- \`/update\` — get the latest qronos
 - \`/whats-new\` — what changed in recent releases
 - \`/todos\` — show the agent's todo list
 - \`/mcp\` — manage your MCP servers (connect, sign in, turn on or off)

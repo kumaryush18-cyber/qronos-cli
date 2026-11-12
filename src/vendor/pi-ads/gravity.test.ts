@@ -2,7 +2,7 @@
 // "no other ad beside a Gravity ad" rule across banner and inline widgets.
 import { describe, expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "@freepi/shared";
+import { loadConfig } from "@qronos/shared";
 import type { AdsDeps } from "./api";
 import { createBannerRenderer } from "./banner";
 import { createInlineRenderer } from "./inline";

@@ -10,7 +10,7 @@ describe("bundled long-jobs skill", () => {
 
   test("is wired as an additional skill path and the file exists", () => {
     const opts = buildRuntimeOptions(
-      { baseUrl: "http://example.test", jwt: "t", agentDir: mkdtempSync(join(tmpdir(), "free-pi-skill-")) },
+      { baseUrl: "http://example.test", jwt: "t", agentDir: mkdtempSync(join(tmpdir(), "qronos-skill-")) },
       "s",
     );
     expect(opts.resourceLoaderOptions.additionalSkillPaths).toEqual([SKILLS_DIR]);

@@ -24,12 +24,12 @@ export function zstdSupportError(
 ): string | null {
   if (typeof zlibModule.createZstdDecompress === "function") return null;
   return [
-    `free-pi-cli can't run on Node ${nodeVersion}.`,
+    `qronos-cli can't run on Node ${nodeVersion}.`,
     ``,
     `The pi agent needs Node with zstd support (Node >= 22.15, or >= 23.8 on the`,
     `Current line) — older Node crashes mid-request inside the agent. Upgrade Node:`,
     ``,
-    `  nvm install 22     # then re-run:  npx free-pi-cli`,
+    `  nvm install 22     # then re-run:  npx qronos-cli`,
     ``,
     `(or update your system Node to the latest LTS.)`,
   ].join("\n");

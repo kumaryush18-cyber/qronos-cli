@@ -17,11 +17,11 @@ import { Type } from "typebox";
 import { resultLines, widgetLines, type Todo, type TodoDetails, type TodoStyle } from "./todo-view";
 
 export const TODO_TOOL_NAME = "todo";
-export const TODO_WIDGET_ID = "freepi-todo";
+export const TODO_WIDGET_ID = "qronos-todo";
 export type { Todo };
 
 /** Custom session entry type holding a snapshot after every mutation (see appendEntry below). */
-export const TODO_ENTRY_TYPE = "free-pi-todo";
+export const TODO_ENTRY_TYPE = "qronos-todo";
 
 /** How long a finished list stays on screen before the widget clears. */
 export const ALL_DONE_LINGER_MS = 3000;
@@ -84,8 +84,8 @@ function styleFrom(theme: Theme): TodoStyle {
 export function createTodoToolExtension(options: { timers?: TodoTimers } = {}): InlineExtension {
   const timers = options.timers ?? realTimers;
   return {
-    name: "free-pi-todo",
-    factory(pi: ExtensionAPI) {
+    name: "qronos-todo",
+    factory(qronos: ExtensionAPI) {
       let todos: Todo[] = [];
       let nextId = 1;
 
@@ -163,16 +163,16 @@ export function createTodoToolExtension(options: { timers?: TodoTimers } = {}): 
         }
         refreshWidget(ctx, true);
       };
-      pi.on("session_start", async (_event, ctx) => reconstructState(ctx));
-      pi.on("session_tree", async (_event, ctx) => reconstructState(ctx));
-      pi.on("session_shutdown", async () => {
+      qronos.on("session_start", async (_event, ctx) => reconstructState(ctx));
+      qronos.on("session_tree", async (_event, ctx) => reconstructState(ctx));
+      qronos.on("session_shutdown", async () => {
         stopTimers();
         widgetCtx = undefined;
       });
 
       const result = (ctx: ExtensionContext, text: string, action: TodoDetails["action"], error?: string, item?: Todo) => {
         const snapshot = { todos: todos.map((t) => ({ ...t })), nextId };
-        if (action !== "list" && !error) pi.appendEntry(TODO_ENTRY_TYPE, snapshot);
+        if (action !== "list" && !error) qronos.appendEntry(TODO_ENTRY_TYPE, snapshot);
         if (action !== "list" && !error) refreshWidget(ctx);
         return {
           content: [{ type: "text" as const, text }],
@@ -180,7 +180,7 @@ export function createTodoToolExtension(options: { timers?: TodoTimers } = {}): 
         };
       };
 
-      pi.registerTool({
+      qronos.registerTool({
         name: TODO_TOOL_NAME,
         label: "Todo",
         description: "Manage a todo list. Actions: list, add (text), toggle (id), clear",
@@ -228,7 +228,7 @@ export function createTodoToolExtension(options: { timers?: TodoTimers } = {}): 
         },
       });
 
-      pi.registerCommand("todos", {
+      qronos.registerCommand("todos", {
         description: "Show all todos on the current branch",
         handler: async (_args, ctx) => {
           ctx.ui.notify(formatTodos(todos), "info");

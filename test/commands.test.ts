@@ -87,7 +87,7 @@ describe("/whats-new (showWhatsNew)", () => {
     const expected = CHANGELOG_HIGHLIGHTS.slice(0, 3);
     expect(expected.length).toBeGreaterThan(0);
     for (const entry of expected) {
-      expect(notes[0]?.msg).toContain(`free-pi ${entry.version}:`);
+      expect(notes[0]?.msg).toContain(`qronos ${entry.version}:`);
       for (const highlight of entry.highlights) {
         expect(notes[0]?.msg).toContain(highlight);
       }
@@ -97,7 +97,7 @@ describe("/whats-new (showWhatsNew)", () => {
   test("stops at three entries even when more exist", () => {
     const { ctx, notes } = notifyCtx();
     showWhatsNew(ctx);
-    const shown = (notes[0]?.msg ?? "").split("\n").filter((l) => l.startsWith("free-pi "));
+    const shown = (notes[0]?.msg ?? "").split("\n").filter((l) => l.startsWith("qronos "));
     expect(shown).toHaveLength(Math.min(3, CHANGELOG_HIGHLIGHTS.length));
   });
 });
@@ -128,7 +128,7 @@ describe("/update (runUpdate)", () => {
     const { ctx, notes } = notifyCtx();
     await runUpdate(ctx, { env: {}, installLatest: async () => ({ ok: false }) });
     expect(notes.at(-1)?.type).toBe("error");
-    expect(notes.at(-1)?.msg).toContain("npm install -g free-pi-cli@latest");
+    expect(notes.at(-1)?.msg).toContain("npm install -g qronos-cli@latest");
   });
 });
 
@@ -213,7 +213,7 @@ describe("/support (openAdvertiser)", () => {
     await openAdvertiser(o, ctx);
     expect(opened).toEqual([ADVERTISER_URL]);
     expect(notes).toHaveLength(1);
-    expect(notes[0]!.msg).toBe("Opening today's advertiser in your browser. Thank you for supporting free-pi.");
+    expect(notes[0]!.msg).toBe("Opening today's advertiser in your browser. Thank you for supporting Qronos CLI.");
     expect(notes[0]!.type).toBe("info");
     // R10: no fetch call of openAdvertiser's own.
     expect(requests).toEqual([]);

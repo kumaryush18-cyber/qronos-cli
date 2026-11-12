@@ -5,7 +5,7 @@
 // (same offline-safe posture as update-check.ts).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { compareVersions } from "@freepi/shared";
+import { compareVersions } from "@qronos/shared";
 import { getLastSeenVersionPath } from "./paths";
 import { highlightsFor } from "./changelog";
 
@@ -31,7 +31,7 @@ export function maybeWhatsNew(cliVersion: string, agentDir?: string): string | u
     const highlights = highlightsFor(cliVersion);
     if (!highlights || highlights.length === 0) return undefined; // nothing recorded for it
 
-    return [`What's new in free-pi ${cliVersion}:`, ...highlights.map((h) => `  • ${h}`)].join("\n");
+    return [`What's new in qronos ${cliVersion}:`, ...highlights.map((h) => `  • ${h}`)].join("\n");
   } catch {
     return undefined;
   }

@@ -104,10 +104,10 @@ export function createFusionExtension(defaultModelId: string, ids: FusionIds = r
   const name = ids.planner === FUSION_PLANNER_ID && ids.executor === FUSION_EXECUTOR_ID ? FUSION_NAME
     : ids.planner === FUSION_FALLBACK_PLANNER_ID ? FUSION_FALLBACK_NAME : "🧨 Fusion";
   return {
-    name: "free-pi-fusion",
-    factory: (pi) => {
+    name: "qronos-fusion",
+    factory: (qronos) => {
       for (const id of [FUSION_PICKER_ID, FUSION_ID]) {
-        pi.registerVirtualModel<FusionState>({
+        qronos.registerVirtualModel<FusionState>({
           provider: PROVIDER_NAME,
           id,
           name,

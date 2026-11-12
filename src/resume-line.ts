@@ -3,8 +3,8 @@
 //
 //   To resume this session: pi --session <id>
 //
-// That names `pi`, a binary free-pi-cli users do not have — they installed
-// free-pi-cli (usually via npx). pi builds the command from APP_NAME, which
+// That names `pi`, a binary qronos-cli users do not have — they installed
+// qronos-cli (usually via npx). pi builds the command from APP_NAME, which
 // only a rebranded *pi* package.json (piConfig.name) can change, and the line
 // is written straight to stdout with no env-var escape hatch. It also exits
 // the process immediately after, so run.ts's own correctly-branded closing
@@ -39,7 +39,9 @@ const OSC133_RE = /\x1b\]133;[^\x07\x1b]*(\x07|\x1b\\)/g;
 export function rewriteStreamOutput(chunk: string): string {
   let text = chunk;
   if (text.includes(RESUME_LABEL)) {
-    text = text.replace(RESUME_COMMAND_RE, "$1qronos-cli");
+    // Emit `npx qronos-cli` rather than a bare `qronos-cli`: the hint is
+    // copy-pasted by users who ran us via npx and have no global binary.
+    text = text.replace(RESUME_COMMAND_RE, "$1npx qronos-cli");
   }
   if (text.includes("\x1b]133;")) {
     text = text.replace(OSC133_RE, "");

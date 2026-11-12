@@ -1,4 +1,4 @@
-// `free-pi-cli logout`: remove the stored JWT so the next run repeats
+// `qronos-cli logout`: remove the stored JWT so the next run repeats
 // first-run consent + GitHub sign-in (consent lives server-side, keyed to
 // the sign-in — clearing the local token is what re-triggers both).
 //

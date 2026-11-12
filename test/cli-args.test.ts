@@ -26,7 +26,7 @@ describe("parseCliArgs — local command dispatch", () => {
   });
 
   test("HELP_TEXT lists the mcp command", () => {
-    expect(HELP_TEXT).toContain("free-pi-cli mcp");
+    expect(HELP_TEXT).toContain("qronos-cli mcp");
   });
 
   test("logout -> logout", () => {
@@ -66,12 +66,12 @@ describe("parseCliArgs — local command dispatch", () => {
 
 describe("help/version text", () => {
   test("help documents every command and the env overrides", () => {
-    for (const needle of ["logout", "--session", "--version", "--help", "FREEPI_BASE_URL", "FREEPI_NO_AUTO_UPDATE"]) {
+    for (const needle of ["logout", "--session", "--version", "--help", "QRONOS_BASE_URL", "QRONOS_NO_AUTO_UPDATE"]) {
       expect(HELP_TEXT).toContain(needle);
     }
   });
 
   test("version line carries the real CLI_VERSION", () => {
-    expect(versionLine()).toBe(`free-pi-cli ${CLI_VERSION}`);
+    expect(versionLine()).toBe(`qronos-cli ${CLI_VERSION}`);
   });
 });
