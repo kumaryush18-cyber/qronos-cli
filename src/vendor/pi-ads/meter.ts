@@ -8,10 +8,10 @@ import { usdToCredits } from "@qronos/shared";
 import { inferErrorFromRemainingBudget, mapErrorCode } from "./errors";
 import { osc8, renderErrorLine, renderWarningLine, sanitizeText, type ThemeLike } from "./style";
 
-export const METER_WIDGET_ID = "freepi-meter";
+export const METER_WIDGET_ID = "qronos-meter";
 // Routine credit balance lives in pi's footer status bar; the widget is kept
 // for notices and errors only.
-export const METER_STATUS_KEY = "freepi-credits";
+export const METER_STATUS_KEY = "qronos-credits";
 
 /** Standard-lane balance at or below this share of the daily allowance triggers the low-credit warning. */
 export const LOW_CREDIT_FRACTION = 0.1;

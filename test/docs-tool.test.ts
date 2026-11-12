@@ -64,10 +64,10 @@ function registerAndGetTool(): ToolCall {
 }
 
 describe("createDocsToolExtension", () => {
-  test("registers no event handlers and exactly one tool, named free_pi_docs, with the R6 prompt snippet and description", () => {
+  test("registers no event handlers and exactly one tool, named qronos_docs, with the R6 prompt snippet and description", () => {
     const tool = registerAndGetTool();
     expect(tool.name).toBe(DOCS_TOOL_NAME);
-    expect(tool.name).toBe("free_pi_docs");
+    expect(tool.name).toBe("qronos_docs");
     expect(tool.label).toBe("About qronos");
     expect(tool.description).toBe("Returns the built-in qronos guide. Read-only, takes no arguments, makes no network calls.");
     expect(tool.promptSnippet).toBe(
@@ -129,9 +129,9 @@ describe("QRONOS_DOCS content (R7, R9)", () => {
   });
 });
 
-describe("ALLOWED_TOOL_NAMES includes free_pi_docs (R8)", () => {
-  test("free_pi_docs is in the CLI's allowed tool list", () => {
-    expect(ALLOWED_TOOL_NAMES).toContain("free_pi_docs");
+describe("ALLOWED_TOOL_NAMES includes qronos_docs (R8)", () => {
+  test("qronos_docs is in the CLI's allowed tool list", () => {
+    expect(ALLOWED_TOOL_NAMES).toContain("qronos_docs");
     expect(ALLOWED_TOOL_NAMES).toContain(DOCS_TOOL_NAME);
   });
 });

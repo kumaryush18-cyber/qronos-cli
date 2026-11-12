@@ -22,7 +22,7 @@ import { Type } from "typebox";
 import type { MeResponse } from "@qronos/shared";
 import { openBrowser } from "./browser";
 
-/** One place resolves "where do I buy": shared by the free_pi_buy_credits tool and the /buy-credits slash command. Never throws. */
+/** One place resolves "where do I buy": shared by the qronos_buy_credits tool and the /buy-credits slash command. Never throws. */
 export type BuyPage = { kind: "url"; url: string } | { kind: "unavailable" } | { kind: "error"; text: string };
 
 export async function resolveBuyPage(opts: {
@@ -65,7 +65,7 @@ type BuyToolDetails = { buy_url: string } | { available: false } | { ok: false }
 // needed by pi-launch.ts's tool-guard allowlist (tool-guard.ts) and the
 // SDK's own strict `tools` allowlist so this tool isn't blocked as if it
 // were rogue.
-export const BUY_TOOL_NAME = "free_pi_buy_credits";
+export const BUY_TOOL_NAME = "qronos_buy_credits";
 
 const PARAMS = Type.Object({});
 

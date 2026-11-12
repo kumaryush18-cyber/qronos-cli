@@ -8,7 +8,7 @@ import { QRONOS_DOCS } from "./docs";
 // #28-style: the one custom tool name needed by pi-launch.ts's tool-guard
 // allowlist and the SDK's own strict `tools` allowlist so this tool isn't
 // blocked as if it were rogue.
-export const DOCS_TOOL_NAME = "free_pi_docs";
+export const DOCS_TOOL_NAME = "qronos_docs";
 
 const PARAMS = Type.Object({});
 

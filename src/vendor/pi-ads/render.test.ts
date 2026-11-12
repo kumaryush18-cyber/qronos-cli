@@ -510,7 +510,7 @@ describe("meter: low-credit and slow-lane nudges", () => {
   test("exactly 10% shows a warning-colored widget with a clickable link; footer unchanged", async () => {
     const { ctx, widgetCalls, statusCalls } = colorCtx();
     await renderMeter(deps(me(LOW_CREDIT_FRACTION * 15_000)), ctx);
-    expect(widgetCalls.at(-1)!.content).toEqual([`<warning>Low on credits: 1,500 left today · Buy more: ${link("freepi.ai/buy")}</warning>`]);
+    expect(widgetCalls.at(-1)!.content).toEqual([`<warning>Low on credits: 1,500 left today · Buy more: ${link("qronos.me/account")}</warning>`]);
     expect(statusCalls.at(-1)!.text).toBe("<muted>1,500 credits</muted>");
   });
 
@@ -534,7 +534,7 @@ describe("meter: low-credit and slow-lane nudges", () => {
     await renderMeter(deps(me(1_200, { buy_url: `${BUY}\x07\x1b[2J` })), ctx);
     const line = (widgetCalls.at(-1)!.content as string[])[0]!;
     expect(line).not.toContain("\x1b[2J");
-    expect(line).toContain(link("freepi.ai/buy"));
+    expect(line).toContain(link("qronos.me/account"));
   });
 
   test("no buy_url → warning without a link", async () => {
@@ -547,7 +547,7 @@ describe("meter: low-credit and slow-lane nudges", () => {
     const { ctx, widgetCalls, statusCalls } = colorCtx();
     await renderMeter(deps(me(0, { lane: "fallback" })), ctx);
     expect(statusCalls.at(-1)!.text).toBe("<muted>0 credits · slow lane</muted>");
-    expect(widgetCalls.at(-1)!.content).toEqual([`<warning>Out of free credits — slow lane until refill · Buy more: ${link("freepi.ai/buy")}</warning>`]);
+    expect(widgetCalls.at(-1)!.content).toEqual([`<warning>Out of free credits — slow lane until refill · Buy more: ${link("qronos.me/account")}</warning>`]);
   });
 });
 

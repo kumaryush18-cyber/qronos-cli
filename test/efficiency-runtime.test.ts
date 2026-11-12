@@ -53,7 +53,7 @@ test("rules, skill, user APPEND_SYSTEM.md and the cmd alias all work in a real s
     }
 
     const text = (c: unknown) => (typeof c === "string" ? c : JSON.stringify(c));
-    const system = bodies[0]!.messages.filter((m) => m.role === "system").map((m) => text(m.content)).join("\n");
+    const system = bodies[0]!.messages.filter((m) => m.role === "system" || m.role === "developer").map((m) => text(m.content)).join("\n");
     expect(system).toContain("## Working rules");
     expect(system).toContain("long-jobs");
     expect(system).toContain("USER-APPEND-MARKER");

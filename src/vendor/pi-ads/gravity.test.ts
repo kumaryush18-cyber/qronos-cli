@@ -154,7 +154,7 @@ describe("no other ad beside a Gravity ad", () => {
     await createBannerRenderer({ screen }).render(t.deps(), c, config);
     await turns(createInlineRenderer(screen), t, c);
     expect(t.calls.some((x) => x.url.includes("slot=inline"))).toBe(false);
-    expect([...widgets.keys()]).toEqual(["freepi-ad"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad"]);
   });
 
   test("own banner is cleared when a Gravity inline ad shows, and stays hidden until inline clears", async () => {
@@ -165,17 +165,17 @@ describe("no other ad beside a Gravity ad", () => {
     const banner = createBannerRenderer({ screen, onBannerAd: (u) => clicks.push(u) });
     const inline = createInlineRenderer(screen);
     await banner.render(t.deps(), c, config);
-    expect(widgets.has("freepi-ad")).toBe(true);
+    expect(widgets.has("qronos-ad")).toBe(true);
     await turns(inline, t, c);
-    expect([...widgets.keys()]).toEqual(["freepi-ad-inline"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad-inline"]);
     expect(clicks.at(-1)).toBeUndefined();
     // A banner refresh while the Gravity inline card is visible must not bring the own banner back.
     await banner.render(t.deps(), c, config);
-    expect([...widgets.keys()]).toEqual(["freepi-ad-inline"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad-inline"]);
     // Next turn clears the inline card; the next refresh restores the banner.
     await inline.onTurnEnd(t.deps(), c, config);
     await banner.render(t.deps(), c, config);
-    expect([...widgets.keys()]).toEqual(["freepi-ad"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad"]);
   });
 
   test("a Gravity banner clears a visible own inline card", async () => {
@@ -184,9 +184,9 @@ describe("no other ad beside a Gravity ad", () => {
     const { c, widgets } = ctx();
     const inline = createInlineRenderer(screen);
     await turns(inline, t, c);
-    expect(widgets.has("freepi-ad-inline")).toBe(true);
+    expect(widgets.has("qronos-ad-inline")).toBe(true);
     await createBannerRenderer({ screen }).render(t.deps(), c, config);
-    expect([...widgets.keys()]).toEqual(["freepi-ad"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad"]);
   });
 
   test("Gravity banner showing: no Gravity inline is fetched or shown", async () => {
@@ -196,7 +196,7 @@ describe("no other ad beside a Gravity ad", () => {
     await createBannerRenderer({ screen }).render(t.deps(), c, config);
     await turns(createInlineRenderer(screen), t, c);
     expect(t.calls.some((x) => x.url.includes("slot=inline"))).toBe(false);
-    expect([...widgets.keys()]).toEqual(["freepi-ad"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad"]);
   });
 
   test("Gravity inline showing: a Gravity banner refresh is hidden", async () => {
@@ -205,7 +205,7 @@ describe("no other ad beside a Gravity ad", () => {
     const { c, widgets } = ctx();
     await turns(createInlineRenderer(screen), t, c);
     await createBannerRenderer({ screen }).render(t.deps(), c, config);
-    expect([...widgets.keys()]).toEqual(["freepi-ad-inline"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad-inline"]);
   });
 
   test("in-flight Gravity inline arriving after a Gravity banner appeared is dropped", async () => {
@@ -223,7 +223,7 @@ describe("no other ad beside a Gravity ad", () => {
     await createBannerRenderer({ screen }).render(t.deps(), c, config);
     release();
     await pending;
-    expect([...widgets.keys()]).toEqual(["freepi-ad"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad"]);
   });
 
   test("in-flight Gravity banner arriving after a Gravity inline appeared is hidden", async () => {
@@ -239,7 +239,7 @@ describe("no other ad beside a Gravity ad", () => {
     await turns(createInlineRenderer(screen), t, c);
     release();
     await pending;
-    expect([...widgets.keys()]).toEqual(["freepi-ad-inline"]);
+    expect([...widgets.keys()]).toEqual(["qronos-ad-inline"]);
   });
 
   test("own banner beside own inline is unchanged", async () => {
@@ -248,6 +248,6 @@ describe("no other ad beside a Gravity ad", () => {
     const { c, widgets } = ctx();
     await createBannerRenderer({ screen }).render(t.deps(), c, config);
     await turns(createInlineRenderer(screen), t, c);
-    expect([...widgets.keys()].sort()).toEqual(["freepi-ad", "freepi-ad-inline"]);
+    expect([...widgets.keys()].sort()).toEqual(["qronos-ad", "qronos-ad-inline"]);
   });
 });

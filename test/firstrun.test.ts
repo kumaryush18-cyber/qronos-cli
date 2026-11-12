@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterAll } from "bun:test";
 import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,18 @@ import { CONSENT_VERSION, REPROMPT_CONSENT_TEXT } from "../src/consent";
 import { run, type RunDeps } from "../src/run";
 import { pollForToken, startDeviceFlow } from "../src/auth-flow";
 import { INTRO_TEXT, introSkipped, showIntro } from "../src/onboarding";
+
+const originalEnv = { ...process.env };
+beforeEach(() => {
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.QRONOS_API_KEY;
+  delete process.env.DEEPSEEK_API_KEY;
+});
+afterAll(() => {
+  process.env = originalEnv;
+});
 
 const USER_CODE = "ABCD-1234";
 const VERIFICATION_URI = "https://github.com/login/device";

@@ -88,7 +88,7 @@ export interface LimitNoticeFields {
   hourly_ceiling?: number;
 }
 
-export const EXTRA_CREDITS_URL = "freepi.ai/extra-credits";
+export const EXTRA_CREDITS_URL = "qronos.me/account";
 
 /** Waits at or above this many seconds are shown as a clock time, not minutes. */
 export const LIMIT_NOTICE_LOCAL_TIME_AFTER_SECONDS = 90 * 60;

@@ -74,7 +74,7 @@ describe("slow-lane hourly notice", () => {
     const env = parseErrorEnvelope(`429: ${JSON.stringify({ ...base, lane: "slow", hourly_ceiling: 10 })}`)!;
     const text = formatLimitEnvelope(env);
     expect(text).toBe(
-      "You've used today's free allowance, so you're on the slow lane (10 requests an hour). Back in 12 min \u2014 or get credits at freepi.ai/extra-credits to keep going at full speed.",
+      "You've used today's free allowance, so you're on the slow lane (10 requests an hour). Back in 12 min \u2014 or get credits at qronos.me/account to keep going at full speed.",
     );
   });
   test("the regular hourly line is unchanged without lane", () => {

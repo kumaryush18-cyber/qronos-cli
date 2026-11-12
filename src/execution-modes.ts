@@ -102,9 +102,9 @@ const READ_ONLY_TOOLS = new Set([
   "ls",
   "web_search",
   "docs_lookup",
-  "free_pi_docs",
-  "free_pi_usage",
-  "free_pi_buy_credits",
+  "qronos_docs",
+  "qronos_usage",
+  "qronos_buy_credits",
   "todo",
   "tool_search",
 ]);

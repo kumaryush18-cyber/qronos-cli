@@ -10,7 +10,7 @@ import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";
 import { adWidget } from "./style";
 
-export const BANNER_WIDGET_ID = "freepi-ad";
+export const BANNER_WIDGET_ID = "qronos-ad";
 
 export interface BannerRendererOptions {
   /** KTD7: mirrors the currently-shown banner's click URL out to /support.

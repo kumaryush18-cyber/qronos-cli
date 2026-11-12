@@ -30,7 +30,7 @@ type UsageToolDetails = MeStatsResponse | { ok: false };
 // #28 R20a: the one legitimate custom tool name outside SAFE_TOOLS — needed
 // by pi-launch.ts's tool-guard allowlist (tool-guard.ts) and the SDK's own
 // strict `tools` allowlist so this tool isn't blocked as if it were rogue.
-export const USAGE_TOOL_NAME = "free_pi_usage";
+export const USAGE_TOOL_NAME = "qronos_usage";
 
 const PARAMS = Type.Object({});
 
@@ -71,7 +71,7 @@ export function formatStats(stats: MeStatsResponse): string {
   ].join("\n");
 }
 
-/** One place fetches + formats usage: shared by the free_pi_usage tool and the /usage slash command. Never throws. */
+/** One place fetches + formats usage: shared by the qronos_usage tool and the /usage slash command. Never throws. */
 export async function fetchUsageText(opts: CreateUsageToolOptions): Promise<{ ok: true; text: string; stats: MeStatsResponse } | { ok: false; text: string }> {
   try {
     const token = await opts.getToken();

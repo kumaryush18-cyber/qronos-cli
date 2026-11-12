@@ -92,7 +92,7 @@ function catalogModelsFor(opts: LaunchOptions): CatalogModel[] {
 
 // #28 R20/R20a: the exact, closed set of tool names the shipped distro ever
 // legitimately runs — SAFE_TOOLS' built-ins, the registered custom tools
-// (free_pi_usage, U5; free_pi_buy_credits, #226; free_pi_docs; todo), and
+// (qronos_usage, U5; qronos_buy_credits, #226; qronos_docs; todo), and
 // pi's `codemode` and `tool_search` (2026-10-13, user-added MCP servers). MCP
 // tools themselves (`mcp__<server>__<tool>` and the three MCP resource tools)
 // are not listed: the user picks those servers, and tool-guard.ts admits them

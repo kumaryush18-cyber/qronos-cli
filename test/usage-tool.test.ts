@@ -88,7 +88,7 @@ const STATS: MeStatsResponse = {
 describe("createUsageToolExtension", () => {
   test("registers exactly one read-only tool (name, empty parameter schema) and no event handlers", () => {
     const tool = registerAndGetTool();
-    expect(tool.name).toBe("free_pi_usage");
+    expect(tool.name).toBe("qronos_usage");
     // R9: no argument exists that could mutate anything.
     expect(tool.parameters).toEqual({ type: "object", properties: {} });
   });

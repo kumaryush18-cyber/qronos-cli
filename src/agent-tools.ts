@@ -69,8 +69,8 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "ls",
   "web_search",
   "docs_lookup",
-  "free_pi_docs",
-  "free_pi_usage",
+  "qronos_docs",
+  "qronos_usage",
   "todo",
 ]);
 

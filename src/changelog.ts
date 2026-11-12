@@ -156,7 +156,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
     version: "0.2.11",
     highlights: [
       "Out of free usage? You can now buy more — $5 or $10 packs, card or USDC. Ask pi to \"buy credits\" or follow the link in the out-of-usage notice.",
-      "The out-of-usage notice now comes from the server, and `free_pi_usage` shows your purchased balance.",
+      "The out-of-usage notice now comes from the server, and `qronos_usage` shows your purchased balance.",
     ],
   },
   {

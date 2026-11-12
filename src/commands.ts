@@ -149,7 +149,7 @@ export async function runUpdate(ctx: NotifyContext, deps: UpdateDeps = {}): Prom
 
 /**
  * Deliberate, discoverable "I want to buy" path (epic #221): same resolver as
- * the free_pi_buy_credits tool, but a slash command needs no model turn — it
+ * the qronos_buy_credits tool, but a slash command needs no model turn — it
  * works even when the user is out of usage and every completion is a 429.
  * Never throws.
  */
@@ -197,7 +197,7 @@ export async function openPrivacyPolicy(opts: CreateCommandsOptions, ctx: Notify
 
 // ---- /usage ---------------------------------------------------------------
 
-/** Same output as the free_pi_usage tool, with no model turn — works at the wall. Never throws. */
+/** Same output as the qronos_usage tool, with no model turn — works at the wall. Never throws. */
 export async function showUsage(opts: CreateCommandsOptions, ctx: NotifyContext): Promise<void> {
   const r = await fetchUsageText(opts);
   ctx.ui.notify(r.text, r.ok ? "info" : "error");

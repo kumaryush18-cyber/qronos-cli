@@ -32,7 +32,7 @@ async function setup(bannerGate?: () => Promise<void> | undefined) {
     ui: {
       setStatus: () => {},
       setWidget: (id: string) => {
-        if (id === "freepi-ad") widgetWrites++;
+        if (id === "qronos-ad") widgetWrites++;
       },
       theme: { fg: (_c: string, t: string) => t, bold: (t: string) => t },
     },

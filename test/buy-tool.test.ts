@@ -107,7 +107,7 @@ const ME_WITHOUT_BUY_URL: MeResponse = {
 describe("createBuyToolExtension", () => {
   test("registers exactly one read-only tool (name, empty parameter schema) and no event handlers", () => {
     const tool = registerAndGetTool();
-    expect(tool.name).toBe("free_pi_buy_credits");
+    expect(tool.name).toBe("qronos_buy_credits");
     // R9: no argument exists that could mutate anything.
     expect(tool.parameters).toEqual({ type: "object", properties: {} });
   });

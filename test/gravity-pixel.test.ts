@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterAll } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,17 @@ import { GRAVITY_PIXEL_ID, startGravityPixel } from "../src/gravity-pixel";
 import { saveJwt } from "../src/credentials";
 import { CONSENT_VERSION } from "../src/consent";
 import { run, type RunDeps } from "../src/run";
+
+const originalEnv = { ...process.env };
+beforeEach(() => {
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.QRONOS_API_KEY;
+});
+afterAll(() => {
+  process.env = originalEnv;
+});
 
 const jwtFor = (sub: string) => `h.${Buffer.from(JSON.stringify({ sub })).toString("base64url")}.s`;
 const tick = () => new Promise((r) => setTimeout(r, 30));

@@ -11,7 +11,7 @@ import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";
 import { adWidget } from "./style";
 
-export const INLINE_WIDGET_ID = "freepi-ad-inline";
+export const INLINE_WIDGET_ID = "qronos-ad-inline";
 
 export interface InlineRenderer {
   onTurnEnd(deps: AdsDeps, ctx: ExtensionContext, config: Config): Promise<void>;
