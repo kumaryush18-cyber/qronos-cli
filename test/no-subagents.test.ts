@@ -70,6 +70,11 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // To twenty with qronos-hooks (lifecycle hooks; PreToolUse uses the same
     // tool_call block mechanism as tool-guard and adds no escape hatch).
     // To twenty-one with qronos-agent (task-scoped subagents strictly gated by Option B read-only start).
+    // 2026-10-27: qronos-interrupt renamed to qronos-prompt-history. The name
+    // changed because the extension NO LONGER touches Escape, which is pi's
+    // app.interrupt binding; it only records submitted prompts for /recall. The
+    // count is unchanged at twenty-one, and the extension still registers no
+    // tool and makes no model call.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "free-pi-ads",
@@ -92,7 +97,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-file-completion",
         "qronos-header",
         "qronos-hooks",
-        "qronos-interrupt",
+        "qronos-prompt-history",
         "qronos-provider",
         "qronos-tool-guard",
       ].sort(),

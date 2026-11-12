@@ -17,6 +17,13 @@ export interface AgentDefinition {
   name: string;
   description: string;
   tools?: string[];
+  /** Tools this definition forbids. Applied before `tools`, as documented. */
+  disallowedTools?: string[];
+  /**
+   * "plan" (default) keeps the subagent read-only; "acceptEdits" lets it write
+   * when the parent session is also writable. Never widens beyond the parent.
+   */
+  permissionMode?: "plan" | "acceptEdits";
   model?: string;
   systemPrompt: string;
   source: "builtin" | "project" | "user";
@@ -98,8 +105,18 @@ type AgentFrontmatter = Record<string, unknown> & {
   name?: unknown;
   description?: unknown;
   tools?: unknown;
+  disallowedTools?: unknown;
+  permissionMode?: unknown;
   model?: unknown;
 };
+
+/** Read a permissionMode field, defaulting to the read-only value. */
+function parsePermissionMode(value: unknown): "plan" | "acceptEdits" | undefined {
+  if (value === "acceptEdits") return "acceptEdits";
+  // Unknown values fall back to read-only rather than being ignored, so a typo
+  // can never silently grant write access.
+  return value === undefined ? undefined : "plan";
+}
 
 function parseToolList(value: unknown): string[] | undefined {
   const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
@@ -138,6 +155,8 @@ function loadAgentsFromDirectory(dir: string, source: "project" | "user"): Agent
         // Sanitised at parse time: a definition cannot carry a non-read-only
         // tool past this line, regardless of what its frontmatter says.
         tools: sanitizeAgentTools(parseToolList(frontmatter.tools)),
+        disallowedTools: parseToolList(frontmatter.disallowedTools),
+        permissionMode: parsePermissionMode(frontmatter.permissionMode),
         model: typeof frontmatter.model === "string" ? frontmatter.model.trim() : undefined,
         systemPrompt: body.trim(),
         source,

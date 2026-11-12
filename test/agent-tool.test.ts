@@ -5,6 +5,7 @@ import {
   createAgentToolExtension,
   defaultSubagentRunner,
   capSubagentOutput,
+  runWithConcurrency,
   resolveSubagentToolNames,
   SUBAGENT_MAX_OUTPUT_CHARS,
   SUBAGENT_READ_ONLY_TOOLS,
@@ -180,6 +181,41 @@ describe("Option B: custom agent definitions cannot escalate privileges", () => 
   test("a definition may still narrow the set to a read-only subset", () => {
     const allowed = resolveSubagentToolNames(agentWithTools(["grep", "read"]));
     expect([...allowed].sort()).toEqual(["grep", "read"]);
+  });
+});
+
+describe("parallel fan-out respects the concurrency cap", () => {
+  test("runs every item and preserves input order", async () => {
+    const out = await runWithConcurrency([1, 2, 3, 4, 5], 2, async (n) => n * 10);
+    expect(out).toEqual([10, 20, 30, 40, 50]);
+  });
+
+  test("never exceeds the limit at any instant", async () => {
+    let live = 0;
+    let peak = 0;
+    await runWithConcurrency([1, 2, 3, 4, 5, 6, 7, 8], 3, async () => {
+      live++;
+      peak = Math.max(peak, live);
+      await new Promise((r) => setTimeout(r, 5));
+      live--;
+      return null;
+    });
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(peak).toBeGreaterThan(1);
+  });
+
+  test("a limit larger than the work still completes", async () => {
+    const out = await runWithConcurrency(["a", "b"], 100, async (x) => x.toUpperCase());
+    expect(out).toEqual(["A", "B"]);
+  });
+
+  test("an invalid limit degrades to serial instead of hanging", async () => {
+    const out = await runWithConcurrency([1, 2], 0, async (n) => n);
+    expect(out).toEqual([1, 2]);
+  });
+
+  test("empty input resolves to an empty array", async () => {
+    expect(await runWithConcurrency([], 4, async () => 1)).toEqual([]);
   });
 });
 
