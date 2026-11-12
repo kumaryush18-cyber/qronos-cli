@@ -6,6 +6,38 @@ import { relative, resolve } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 
 /**
+ * How many lines a collapsed tool result shows before "ctrl+o to expand".
+ *
+ * Tight on purpose for bash: a collapsed command should be a glance, not a
+ * wall. Write/Edit use their own (larger) values because a diff needs context.
+ */
+export const COLLAPSED_BASH_LINES = 5;
+
+/**
+ * Ceiling on lines rendered when expanded.
+ *
+ * "Unlimited" in intent: 2000 covers any real test run or build log. The cap
+ * exists so a runaway command that prints 200k lines cannot freeze the TUI by
+ * asking it to lay out 200k rows. Past this, the remainder is reported as a
+ * count with a hint to toggle back.
+ */
+export const EXPANDED_SAFETY_MAX_LINES = 2000;
+
+/**
+ * The hint shown after a truncated block.
+ *
+ * When already expanded, "ctrl+o to expand" is a dead end; the useful action is
+ * to collapse again. Naming whichever direction is actually available keeps the
+ * hint honest.
+ */
+function truncationHint(remaining: number, expanded: boolean | undefined): string {
+  const key = "ctrl+o";
+  return expanded
+    ? `... (${remaining} more lines hidden, ${key} to collapse)`
+    : `... (${remaining} more lines, ${key} to expand)`;
+}
+
+/**
  * Custom tool renderer extension that styles tool execution exactly like Claude Code:
  * - Single-line header: ● ToolName(target) with dot strictly beside the name (no awkward wrapping)
  * - Tree branch connector: '  └ ' on the first line of output
@@ -105,7 +137,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
               return container;
             }
 
-            const maxLines = options?.expanded ? 120 : 8;
+            const maxLines = options?.expanded ? EXPANDED_SAFETY_MAX_LINES : COLLAPSED_BASH_LINES;
             // Dedent lines so deeply nested code snippets aren't pushed far to the right
             const dedented = dedentLines(rawLines);
             const displayLines = dedented.slice(0, maxLines);
@@ -140,7 +172,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
                   linesToDraw.push(`    ${theme.fg("dim", numPad)}   ${line}`);
                 });
                 if (rawLines.length > maxLines) {
-                  linesToDraw.push(`    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines)`)}`);
+                  linesToDraw.push(
+                    `    ${theme.fg("dim", truncationHint(rawLines.length - maxLines, options?.expanded))}`,
+                  );
                 }
               }
             }
@@ -164,7 +198,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
               const summaryLine = `Wrote ${totalLines} line${totalLines === 1 ? "" : "s"} to ${makeClickableFileLink(targetFile, rawTarget, cwd)}`;
               linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
 
-              const writeMaxLines = options?.expanded ? 120 : 8;
+              const writeMaxLines = options?.expanded ? EXPANDED_SAFETY_MAX_LINES : 8;
               const displayWriteLines = contentLines.slice(0, writeMaxLines);
 
               let writeHighlighted = displayWriteLines;
@@ -189,7 +223,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
 
               if (totalLines > writeMaxLines) {
                 const remaining = totalLines - writeMaxLines;
-                linesToDraw.push(`    ${theme.fg("dim", `... +${remaining} lines (~${sizeKb} KB) (ctrl+o to expand)`)}`);
+                linesToDraw.push(`    ${theme.fg("dim", `... +${remaining} lines (~${sizeKb} KB) ${truncationHint(remaining, options?.expanded).replace(/^\.\.\. \(/, "(").replace(/^/, "")}`)}`);
               }
             }
             // 3. Tool: Edit / Update with diffs (Claude Code behavior: Added X lines, removed Y lines + diff view)
@@ -216,7 +250,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
                 }
                 linesToDraw.push(`  ${theme.fg("dim", "└")} ${theme.fg("text", summaryLine)}`);
 
-                const editMaxLines = options?.expanded ? 120 : 12;
+                const editMaxLines = options?.expanded ? EXPANDED_SAFETY_MAX_LINES : 12;
                 const displayDiffLines = diffLines.slice(0, editMaxLines);
 
                 for (const rawLine of displayDiffLines) {
@@ -241,7 +275,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
 
                 if (diffLines.length > editMaxLines) {
                   const remaining = diffLines.length - editMaxLines;
-                  linesToDraw.push(`    ${theme.fg("dim", `... +${remaining} lines (ctrl+o to expand)`)}`);
+                  linesToDraw.push(`    ${theme.fg("dim", `... +${remaining} lines (${options?.expanded ? "ctrl+o to collapse" : "ctrl+o to expand"})`)}`);
                 }
               } else {
                 const addCount = rawLines.filter((l) => l.startsWith("+")).length;
@@ -269,7 +303,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
                 });
 
                 if (rawLines.length > maxLines) {
-                  linesToDraw.push(`    ${theme.fg("dim", `... +${rawLines.length - maxLines} lines (ctrl+o to expand)`)}`);
+                  linesToDraw.push(
+                    `    ${theme.fg("dim", truncationHint(rawLines.length - maxLines, options?.expanded))}`,
+                  );
                 }
               }
             }
@@ -287,7 +323,9 @@ export function createClaudeToolRendererExtension(): InlineExtension {
               });
 
               if (rawLines.length > maxLines) {
-                linesToDraw.push(`    ${theme.fg("dim", `... (${rawLines.length - maxLines} more lines, ctrl+o to expand)`)}`);
+                linesToDraw.push(
+                  `    ${theme.fg("dim", truncationHint(rawLines.length - maxLines, options?.expanded))}`,
+                );
               }
             }
 

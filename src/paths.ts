@@ -18,6 +18,17 @@ export function getLastSeenVersionPath(agentDir: string = getFreePiAgentDir()): 
   return join(agentDir, "last-seen-version");
 }
 
+/**
+ * Saved endpoint connections, `~/.qronos/connections.json`.
+ *
+ * Separate from credentials.json because it holds no secret by default: it
+ * records which endpoint/model the user picked, and the API key stays in the
+ * environment.
+ */
+export function getConnectionsPath(): string {
+  return join(homedir(), QRONOS_DIR_NAME, "connections.json");
+}
+
 /** The self-update opt-out config file, `~/.qronos/config.json`. Read-only — never created. */
 export function getConfigPath(): string {
   return join(homedir(), QRONOS_DIR_NAME, "config.json");

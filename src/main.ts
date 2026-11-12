@@ -9,10 +9,11 @@ import { resolveBaseUrl } from "./env";
 import { runLogout } from "./logout";
 import { runFreePiMcp } from "./mcp-command";
 import { runInitCli } from "./init-cmd";
-import { getConfigPath, getCredentialsPath, getFreePiAgentDir } from "./paths";
+import { getConfigPath, getConnectionsPath, getCredentialsPath, getFreePiAgentDir } from "./paths";
 import { startGravityPixel } from "./gravity-pixel";
 import { launchPi } from "./pi-launch";
 import { promptApiKeyInteractive, promptConsentInteractive } from "./prompt";
+import { createTerminalDeps, runFirstRun } from "./first-run";
 import { createRealSpawn } from "./real-spawn";
 import { relaunchViaNpx } from "./relaunch";
 import { run } from "./run";
@@ -86,6 +87,34 @@ async function main(): Promise<void> {
       credentialsPath: getCredentialsPath(agentDir),
       promptConsent: promptConsentInteractive,
       promptApiKey: promptApiKeyInteractive,
+      connectionsPath: getConnectionsPath(),
+      firstRun: () =>
+        runFirstRun(
+          createTerminalDeps({
+            connectionsPath: getConnectionsPath(),
+            // Reuse the real device-flow sign-in so the gateway option behaves
+            // exactly like it always did; failure returns to the menu.
+            gatewaySignIn: async () => {
+              try {
+                const { startDeviceFlow, pollForToken, submitConsent } = await import("./auth-flow");
+                const { CONSENT_VERSION } = await import("./consent");
+                const device = await startDeviceFlow(resolveBaseUrl());
+                console.log(`\n  Open ${device.verification_uri} and enter code: ${device.user_code}\n`);
+                openBrowser(device.verification_uri);
+                await submitConsent(resolveBaseUrl(), device.session_id, CONSENT_VERSION);
+                const token = await pollForToken(resolveBaseUrl(), device.session_id, device.interval, (ms) =>
+                  new Promise((r) => setTimeout(r, ms)),
+                );
+                // Stored as a credential, matching the old behaviour.
+                const { saveJwt } = await import("./credentials");
+                await saveJwt(getCredentialsPath(), token);
+                return token;
+              } catch {
+                return undefined;
+              }
+            },
+          }),
+        ),
       openBrowser,
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       launchPi,

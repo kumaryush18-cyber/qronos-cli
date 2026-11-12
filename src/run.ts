@@ -10,15 +10,25 @@ import { CLI_VERSION } from "./version";
 import { maybeWhatsNew } from "./whats-new";
 import { type RunOptions } from "./cli-args";
 import { PROVIDER_PRESETS } from "./provider";
+import type { FirstRunOutcome } from "./first-run";
+import { activeConnection, loadConnectionFile, resolveConnectionKey } from "./connection-store";
 
 export interface RunDeps {
   baseUrl: string;
   agentDir: string;
   credentialsPath: string;
+  /** Saved endpoint connections. Undefined disables silent pickup and saving. */
+  connectionsPath?: string;
   /** Shows the consent screen, returns true on accept. */
   promptConsent: (text?: string) => Promise<boolean>;
   /** Prompts interactively for API key. */
   promptApiKey?: () => Promise<string>;
+  /**
+   * First-run setup screen. When present it replaces the old "paste a key or
+   * do a device login" prompt, which had no way to reach the gateway when the
+   * gateway was down. Optional so existing callers and tests keep working.
+   */
+  firstRun?: () => Promise<FirstRunOutcome>;
   /** Best-effort browser open; must never throw or block. */
   openBrowser: (url: string) => void;
   sleep: (ms: number) => Promise<void>;
@@ -77,9 +87,11 @@ export async function run(
   }
 
   // 1. Resolve Provider
-  const providerKey = (options.provider || "qronos").toLowerCase();
-  const preset = PROVIDER_PRESETS[providerKey];
-  const isDirectThirdParty = providerKey !== "qronos";
+  // Mutable: the first-run BYOK path can switch the whole session onto a
+  // user-supplied endpoint, so these are decided below as well.
+  let providerKey = (options.provider || "qronos").toLowerCase();
+  let preset = PROVIDER_PRESETS[providerKey];
+  let isDirectThirdParty = providerKey !== "qronos";
 
   // 2. Resolve API Key / Credentials
   // Priority: CLI flag -> Provider preset env -> QRONOS_API_KEY -> Stored credentials
@@ -94,10 +106,31 @@ export async function run(
   let consentCurrent = Boolean(apiKey || isDirectThirdParty);
 
   // 3. Resolve Base URL and Model
-  const baseUrl = options.baseUrl || (preset && isDirectThirdParty ? preset.baseUrl : deps.baseUrl);
-  const selectedModel = options.model || (preset ? preset.defaultModel : undefined);
+  let baseUrl = options.baseUrl || (preset && isDirectThirdParty ? preset.baseUrl : deps.baseUrl);
+  let selectedModel = options.model || (preset ? preset.defaultModel : undefined);
 
-  // If using Qronos default gateway and no key was passed in env or credentials, run sign-in flow
+  // 3b. A connection saved by the first-run screen takes effect silently, so a
+  // returning user never sees setup again. Explicit flags still win.
+  if (deps.connectionsPath && !options.provider && !options.baseUrl) {
+    const saved = activeConnection(await loadConnectionFile(deps.connectionsPath));
+    if (saved) {
+      providerKey = saved.provider;
+      preset = PROVIDER_PRESETS[providerKey];
+      isDirectThirdParty = true;
+      baseUrl = saved.baseUrl;
+      selectedModel = options.model || saved.model || selectedModel;
+      if (!jwt) {
+        const savedKey = resolveConnectionKey(saved);
+        if (savedKey) {
+          jwt = savedKey;
+          apiKey = savedKey;
+          consentCurrent = true;
+        }
+      }
+    }
+  }
+
+  // If using Qronos default gateway and no key was passed in env or credentials, set the user up.
   if (!jwt && !isDirectThirdParty) {
     const accepted = await deps.promptConsent();
     if (!accepted) {
@@ -106,21 +139,50 @@ export async function run(
     }
     showIntro(deps.log);
 
-    // Interactive key input
-    const enteredKey = await deps.promptApiKey?.();
-    if (enteredKey) {
-      await saveJwt(deps.credentialsPath, enteredKey);
-      jwt = enteredKey;
-      consentCurrent = true;
-      deps.log("✓ API key saved to ~/.qronos/agent/credentials.json\n");
-    } else {
-      try {
-        jwt = await loginFlow(deps);
-        consentCurrent = true;
-      } catch {
-        deps.log("Device login unreached. You can supply an API key directly:");
-        deps.log('  export QRONOS_API_KEY="sk_live_..." && qronos-cli');
+    if (deps.firstRun) {
+      // The setup screen owns the gateway/byok decision. It never dead-ends: a
+      // failed gateway sign-in returns the user to the menu instead of exiting,
+      // which is what the old flow did and why a dead backend blocked new users.
+      const outcome = await deps.firstRun();
+
+      if (outcome.kind === "quit") {
+        deps.log("\nNothing selected. Run `qronos` again when you're ready.\n");
         return 1;
+      }
+
+      if (outcome.kind === "gateway") {
+        jwt = outcome.token;
+        consentCurrent = true;
+      } else {
+        // BYOK: switch the whole session onto the user's endpoint. The key is
+        // held in memory only unless the user asked for it to be stored.
+        const conn = outcome.connection;
+        providerKey = conn.provider;
+        preset = PROVIDER_PRESETS[providerKey];
+        isDirectThirdParty = true;
+        baseUrl = conn.baseUrl;
+        selectedModel = conn.model || selectedModel;
+        jwt = outcome.apiKey;
+        apiKey = outcome.apiKey;
+        consentCurrent = true;
+      }
+    } else {
+      // Legacy path for callers that do not supply the setup screen.
+      const enteredKey = await deps.promptApiKey?.();
+      if (enteredKey) {
+        await saveJwt(deps.credentialsPath, enteredKey);
+        jwt = enteredKey;
+        consentCurrent = true;
+        deps.log("✓ API key saved to ~/.qronos/agent/credentials.json\n");
+      } else {
+        try {
+          jwt = await loginFlow(deps);
+          consentCurrent = true;
+        } catch {
+          deps.log("Device login unreached. You can supply an API key directly:");
+          deps.log('  export QRONOS_API_KEY="sk_live_..." && qronos-cli');
+          return 1;
+        }
       }
     }
   }

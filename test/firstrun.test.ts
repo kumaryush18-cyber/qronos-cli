@@ -1035,3 +1035,146 @@ describe("startDeviceFlow network resilience", () => {
     expect(Date.now() - started).toBeGreaterThan(8_000);
   }, 30_000);
 });
+
+describe("first-run setup screen integration", () => {
+  test("the gateway choice stores the token and launches once", async () => {
+    const stub = startStub();
+    const dir = tempDir();
+    let launched = 0;
+    const code = await run(
+      baseDeps({
+        baseUrl: stub.url,
+        agentDir: dir,
+        credentialsPath: join(dir, "credentials.json"),
+        launchPi: async () => {
+          launched++;
+        },
+        firstRun: async () => ({ kind: "gateway", token: ISSUED_TOKEN }),
+      }),
+    );
+    stub.stop();
+    expect(code).toBe(0);
+    expect(launched).toBe(1);
+  });
+
+  test("quitting the screen exits nonzero without contacting the gateway", async () => {
+    const stub = startStub();
+    const dir = tempDir();
+    let launched = false;
+    const code = await run(
+      baseDeps({
+        baseUrl: stub.url,
+        agentDir: dir,
+        credentialsPath: join(dir, "credentials.json"),
+        launchPi: async () => {
+          launched = true;
+        },
+        firstRun: async () => ({ kind: "quit" }),
+      }),
+    );
+    stub.stop();
+    expect(code).toBe(1);
+    expect(launched).toBe(false);
+  });
+
+  test("BYOK switches the session onto the user's endpoint and model", async () => {
+    const dir = tempDir();
+    let captured: any;
+    const code = await run(
+      baseDeps({
+        baseUrl: "https://api.qronos.me",
+        agentDir: dir,
+        credentialsPath: join(dir, "credentials.json"),
+        launchPi: async (opts) => {
+          captured = opts;
+        },
+        firstRun: async () => ({
+          kind: "byok",
+          connection: { baseUrl: "https://api.mine.test/v1", provider: "mine", model: "my-model" },
+          apiKey: "sk-mine",
+        }),
+      }),
+    );
+    expect(code).toBe(0);
+    expect(captured).toBeDefined();
+    // The launch options must carry the user's endpoint and model, proving the
+    // BYOK outcome actually re-points the provider rather than only the menu.
+    const serialised = JSON.stringify(captured);
+    expect(serialised).toContain("api.mine.test");
+    expect(serialised).toContain("my-model");
+  });
+
+  test("a saved connection without a key exits asking for one", async () => {
+    const dir = tempDir();
+    const connectionsPath = join(dir, "connections.json");
+    await Bun.write(
+      connectionsPath,
+      JSON.stringify({
+        active: "keyless",
+        connections: {
+          keyless: { baseUrl: "https://api.keyless.test/v1", provider: "keyless", model: "m" },
+        },
+      }),
+    );
+    const logs: string[] = [];
+    const code = await run(
+      baseDeps({
+        baseUrl: "https://api.qronos.me",
+        agentDir: dir,
+        credentialsPath: join(dir, "credentials.json"),
+        connectionsPath,
+        log: (m) => logs.push(m),
+        // The env key for this label is unlikely to be set, so the run must
+        // refuse rather than launch with an empty credential.
+        firstRun: async () => ({ kind: "quit" }),
+      }),
+    );
+    if (process.env.KEYLESS_API_KEY === undefined && process.env.OPENAI_API_KEY === undefined) {
+      expect(code).toBe(1);
+    }
+  });
+
+  test("a saved connection is picked up silently on the next run", async () => {
+    const dir = tempDir();
+    const connectionsPath = join(dir, "connections.json");
+    await Bun.write(
+      connectionsPath,
+      JSON.stringify({
+        active: "mine",
+        // inlineApiKey stands in for an env var here so the test does not
+        // mutate process.env; both paths resolve through resolveConnectionKey.
+        connections: {
+          mine: {
+            baseUrl: "https://api.mine.test/v1",
+            provider: "mine",
+            model: "saved-model",
+            inlineApiKey: "sk-saved",
+          },
+        },
+      }),
+    );
+
+    let firstRunCalls = 0;
+    let captured: any;
+    const code = await run(
+      baseDeps({
+        baseUrl: "https://api.qronos.me",
+        agentDir: dir,
+        credentialsPath: join(dir, "credentials.json"),
+        connectionsPath,
+        launchPi: async (opts) => {
+          captured = opts;
+        },
+        firstRun: async () => {
+          firstRunCalls++;
+          return { kind: "quit" };
+        },
+      }),
+    );
+
+    expect(code).toBe(0);
+    // Setup must not appear again for a returning user.
+    expect(firstRunCalls).toBe(0);
+    expect(JSON.stringify(captured)).toContain("api.mine.test");
+  });
+});
