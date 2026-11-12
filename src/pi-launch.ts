@@ -25,6 +25,7 @@ import { createBuyToolExtension, BUY_TOOL_NAME } from "./buy-tool";
 import { createDocsToolExtension, DOCS_TOOL_NAME } from "./docs-tool";
 import { createTodoToolExtension, TODO_TOOL_NAME } from "./todo-tool";
 import { createExitPlanToolExtension, EXIT_PLAN_TOOL_NAME } from "./exit-plan-tool";
+import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
 import { AGENT_RULES } from "./agent-rules";
@@ -304,6 +305,8 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // Tier 1 item 2: plan mode's ExitPlanMode tool. It is refused outside plan
   // mode (see exit-plan-tool.ts), so it cannot be used to skip review.
   const exitPlanToolExtension: InlineExtension = createExitPlanToolExtension({});
+  // Tier 3 item 9: @file completion fallback for when fd is unavailable.
+  const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
   const toolAliasesExtension: InlineExtension = createToolAliasesExtension();
   const mcpExtension: InlineExtension = { name: "pi-mcp", factory: createMcpExtension() };
   const codemodeExtension: InlineExtension = { name: "pi-codemode", factory: createCodemodeExtension({ models: false }) };
@@ -331,6 +334,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     headerExtension,
     todoToolExtension,
     exitPlanToolExtension,
+    fileCompletionExtension,
     toolAliasesExtension,
     mcpExtension,
     codemodeExtension,

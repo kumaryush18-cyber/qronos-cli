@@ -55,7 +55,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(opts.settingsManager.getThemeSetting()).toBe("light/dark");
   });
 
-  test("buildRuntimeOptions registers exactly the eighteen known extensions — no more, no less", () => {
+  test("buildRuntimeOptions registers exactly the nineteen known extensions — no more, no less", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-a");
     // #226: the closed set deliberately grew to six with free-pi-buy-tool;
     // 2026-09-01: to seven with free-pi-error-notice (one readable line on a
@@ -66,6 +66,8 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // 0.5.0: to eighteen with qronos-exit-plan (plan mode's exit_plan_mode).
     // It is not a subagent: it writes a markdown plan and asks the user to
     // approve, and it is refused unless the execution mode is "plan".
+    // To nineteen with qronos-file-completion (@file completion fallback for
+    // machines where fd cannot be resolved; it adds no tool and no model call).
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "free-pi-ads",
@@ -86,6 +88,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "pi-mcp",
         "pi-tool-search",
         "qronos-exit-plan",
+        "qronos-file-completion",
       ].sort(),
     );
   });
