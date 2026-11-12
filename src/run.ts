@@ -190,6 +190,7 @@ export async function run(
     fusion: versionCheck.fusion,
     updateLatest,
     getGravityContext,
+    dangerouslySkipPermissions: options.dangerouslySkipPermissions,
   });
 
   deps.log(

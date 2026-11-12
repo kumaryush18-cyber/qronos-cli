@@ -8,6 +8,7 @@ export interface RunOptions {
   model?: string;
   apiKey?: string;
   baseUrl?: string;
+  dangerouslySkipPermissions?: boolean;
 }
 
 export type CliCommand =
@@ -32,6 +33,7 @@ Usage:
   qronos-cli --api-key <key>             supply direct API key (or set via env var)
   qronos-cli --base-url <url>            supply custom OpenAI-compatible endpoint
   qronos-cli --model <model>             use specific model (e.g. deepseek-v4-flash, gpt-4o, claude-3-7-sonnet)
+  qronos-cli --dangerously-skip-permissions  skip all permission confirmation prompts
   qronos-cli logout                      remove stored sign-in credentials
   qronos-cli mcp <command>               manage Model Context Protocol tools (qronos-cli mcp --help)
   qronos-cli --version                   print CLI version
@@ -104,6 +106,8 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
       const val = argv[++i];
       if (!val || val.startsWith("-")) return { kind: "unknown", arg: arg };
       options.model = val;
+    } else if (arg === "--dangerously-skip-permissions") {
+      options.dangerouslySkipPermissions = true;
     } else {
       return { kind: "unknown", arg: arg ?? "" };
     }

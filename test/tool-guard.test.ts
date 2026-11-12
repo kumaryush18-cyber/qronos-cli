@@ -41,7 +41,7 @@ describe("createToolGuardExtension (#28 R20a)", () => {
       allowedTools: ["bash", "read"],
     }) as { name: string; factory: (pi: ExtensionAPI) => void };
 
-    expect(ext.name).toBe("free-pi-tool-guard");
+    expect(ext.name).toBe("qronos-tool-guard");
     ext.factory(pi);
     expect([...handlers.keys()]).toEqual(["tool_call"]);
   });
@@ -85,7 +85,7 @@ describe("createToolGuardExtension (#28 R20a)", () => {
     // tool under an unlisted name).
     expect(result).toEqual({
       block: true,
-      reason: "tool not permitted in the free-pi distro",
+      reason: "tool not permitted in the Qronos distro",
     });
 
     // Reporting is fire-and-forget (void), so give the microtask queue a turn.

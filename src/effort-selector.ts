@@ -1,4 +1,5 @@
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { cycleExecutionMode, getModeToast } from "./execution-modes";
 
 export interface EffortSelectorOptions {
   currentLevel: string;
@@ -248,8 +249,11 @@ export function installEffortHandler(mode: any): void {
     });
   };
 
-  // Intercept Shift+Tab (app.thinking.cycle) so it no longer cycles thinking
+  // Intercept Shift+Tab (app.thinking.cycle) to cycle execution modes
   mode.cycleThinkingLevel = function () {
-    this.showStatus?.("Mode: Edit automatically (Shift+Tab to toggle)");
+    const nextMode = cycleExecutionMode();
+    this.footer?.invalidate?.();
+    this.ui?.requestRender?.();
+    this.showStatus?.(getModeToast(nextMode));
   };
 }

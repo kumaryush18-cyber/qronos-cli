@@ -8,6 +8,7 @@
 // execute it, and report the occurrence. A real report is a should-never-
 // fire, high-signal event, never a normal one.
 import type { ExtensionAPI, InlineExtension, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
+import { checkToolExecutionPermission } from "./execution-modes";
 
 export interface CreateToolGuardOptions {
   baseUrl: string;
@@ -66,6 +67,21 @@ export function createToolGuardExtension(opts: CreateToolGuardOptions): InlineEx
         if (!isAllowed(opts, event.toolName)) {
           void reportToolGuardTrigger(opts, event.toolName);
           return { block: true, reason: "tool not permitted in the Qronos distro" };
+        }
+
+        // Check execution mode permissions (Auto / Edit automatically / Plan / Manual / Dangerously Skip)
+        const perm = await checkToolExecutionPermission(
+          event.toolName,
+          event.input,
+          async (title, msg) => {
+            if (ctx?.ui?.confirm) {
+              return ctx.ui.confirm(title, msg);
+            }
+            return true;
+          },
+        );
+        if (perm.block) {
+          return { block: true, reason: perm.reason || "Action blocked by execution mode permission" };
         }
 
         // Destructive command safety confirmation gate

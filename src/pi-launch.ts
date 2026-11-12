@@ -31,6 +31,7 @@ import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
 import { installEffortHandler } from "./effort-selector";
 import { installFooterRightAlign } from "./footer-align";
+import { initExecutionMode } from "./execution-modes";
 import { createFreePiCommandsExtension } from "./commands";
 import { createHeaderExtension } from "./header";
 import { resolveFreePiScope } from "./provider-lock";
@@ -61,6 +62,7 @@ export interface LaunchOptions {
   updateLatest?: string;
   /** Base64url Gravity context for the ads extension's /ads/next header; undefined when the pixel is off or not ready. */
   getGravityContext?: () => string | undefined;
+  dangerouslySkipPermissions?: boolean;
   /**
    * Whether the current folder's project resources (.pi/mcp.json, .pi/extensions,
    * .pi/settings.json, .agents/skills) may load. launchPi() decides this before
@@ -469,6 +471,7 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
     initialImages: [],
     initialMessages: [],
   });
+  initExecutionMode(opts.dangerouslySkipPermissions);
   installBugHandler(mode, { baseUrl: opts.baseUrl, getToken: () => opts.jwt });
   installEffortHandler(mode);
   installFooterRightAlign(mode);
