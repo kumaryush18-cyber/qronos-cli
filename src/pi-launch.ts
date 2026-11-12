@@ -33,8 +33,10 @@ import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
 import { installEffortHandler } from "./effort-selector";
 import { installFooterRightAlign } from "./footer-align";
-import { readConfigObject, writeConfigPatch } from "./cli-config";
-import { getConfigPath } from "./paths";
+import { readConfigObject, readHooksFile, writeConfigPatch } from "./cli-config";
+import { getConfigPath, getHooksPath, getProjectHooksPath } from "./paths";
+import { createHooksExtension } from "./hooks-extension";
+import { mergeHookConfigs, parseHookConfig } from "./hooks";
 import { initExecutionMode, isExecutionMode, setExecutionModePersistence } from "./execution-modes";
 import { createFreePiCommandsExtension } from "./commands";
 import { createHeaderExtension } from "./header";
@@ -307,6 +309,16 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const exitPlanToolExtension: InlineExtension = createExitPlanToolExtension({});
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
+  // Tier 2 item 6: lifecycle hooks. User-level hooks.json first, then project
+  // hooks; both are merged so a project can add to (not silently replace) the
+  // user's hooks. Parsed per runtime build so an edit takes effect on reload.
+  const hooksExtension: InlineExtension = createHooksExtension({
+    config: mergeHookConfigs(
+      parseHookConfig(readHooksFile(getHooksPath())),
+      parseHookConfig(readHooksFile(getProjectHooksPath(process.cwd()))),
+    ),
+    cwd: () => process.cwd(),
+  });
   const toolAliasesExtension: InlineExtension = createToolAliasesExtension();
   const mcpExtension: InlineExtension = { name: "pi-mcp", factory: createMcpExtension() };
   const codemodeExtension: InlineExtension = { name: "pi-codemode", factory: createCodemodeExtension({ models: false }) };
@@ -335,6 +347,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     todoToolExtension,
     exitPlanToolExtension,
     fileCompletionExtension,
+    hooksExtension,
     toolAliasesExtension,
     mcpExtension,
     codemodeExtension,

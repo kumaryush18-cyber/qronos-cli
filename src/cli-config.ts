@@ -67,3 +67,15 @@ export function writeConfigPatch(configPath: string, patch: ConfigRecord): boole
     return false;
   }
 }
+
+/**
+ * Read a hooks file and parse it into a HookConfig. Missing or corrupt files
+ * yield an empty config rather than throwing: a broken hooks.json must never
+ * stop the CLI from starting. Loader is separate from the parser so tests can
+ * exercise both halves independently.
+ */
+export function readHooksFile(configPath: string): Record<string, unknown> {
+  const parsed = readConfigObject(configPath);
+  if (!parsed) return {};
+  return parsed;
+}

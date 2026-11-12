@@ -13,6 +13,9 @@ import { fetchUsageText } from "./usage-tool";
 import { runInit } from "./init-cmd";
 import { runCost } from "./cost-cmd";
 import { getExecutionMode, type ExecutionMode } from "./execution-modes";
+import { HOOK_EVENTS, mergeHookConfigs, parseHookConfig } from "./hooks";
+import { readHooksFile } from "./cli-config";
+import { getHooksPath, getProjectHooksPath } from "./paths";
 
 export interface CreateCommandsOptions {
   baseUrl: string;
@@ -255,6 +258,41 @@ function describeMode(mode: ExecutionMode): string {
   }
 }
 
+/** /hooks: list what is configured, from both hook sources. */
+async function showHooks(ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }): Promise<void> {
+  const user = parseHookConfig(readHooksFile(getHooksPath()));
+  const project = parseHookConfig(readHooksFile(getProjectHooksPath(process.cwd())));
+  const merged = mergeHookConfigs(user, project);
+
+  const lines: string[] = [];
+  for (const event of HOOK_EVENTS) {
+    const matchers = merged[event];
+    if (!matchers || matchers.length === 0) continue;
+    lines.push(`${event}:`);
+    for (const m of matchers) {
+      const scope = m.matcher ? ` (matcher: ${m.matcher})` : "";
+      for (const h of m.hooks) lines.push(`  $ ${h.command}${scope}`);
+    }
+  }
+
+  if (lines.length === 0) {
+    ctx.ui.notify(
+      [
+        "No hooks configured.",
+        "",
+        `Add them to ${getHooksPath()} (all projects) or .qronos/hooks.json (this project).`,
+        "",
+        "Example:",
+        '{ "PreToolUse": [ { "matcher": "bash", "hooks": [ { "type": "command",',
+        '    "command": "grep -q \"rm -rf\" && exit 2 || exit 0" } ] } ] }',
+      ].join("\n"),
+      "info",
+    );
+    return;
+  }
+  ctx.ui.notify(lines.join("\n"), "info");
+}
+
 async function showPermissions(ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }): Promise<void> {
   const mode = getExecutionMode();
   const lines = [
@@ -321,6 +359,10 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
       pi.registerCommand("permissions", {
         description: "Show the active execution mode and what it will ask you to approve.",
         handler: (_args, ctx) => showPermissions(ctx as any),
+      });
+      pi.registerCommand("hooks", {
+        description: "Show the lifecycle hooks configured for this session.",
+        handler: (_args, ctx) => showHooks(ctx as any),
       });
     },
   };

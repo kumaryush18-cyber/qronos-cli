@@ -22,3 +22,18 @@ export function getLastSeenVersionPath(agentDir: string = getFreePiAgentDir()): 
 export function getConfigPath(): string {
   return join(homedir(), QRONOS_DIR_NAME, "config.json");
 }
+
+/** User-level lifecycle hooks, `~/.qronos/hooks.json`. Read-only — never created. */
+export function getHooksPath(): string {
+  return join(homedir(), QRONOS_DIR_NAME, "hooks.json");
+}
+
+/** Project-level hooks, `<cwd>/.qronos/hooks.json`. */
+export function getProjectHooksPath(cwd: string): string {
+  return join(cwd, ".qronos", "hooks.json");
+}
+
+/** User-level memory, `~/.qronos/QRONOS.md`. */
+export function getUserMemoryPath(): string {
+  return join(homedir(), QRONOS_DIR_NAME, "QRONOS.md");
+}
