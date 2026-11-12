@@ -1,124 +1,93 @@
-// Prompt recall for the terminal, Claude-Code style.
+// Prompt history for the terminal.
 //
-// What pi already does (verified in its InteractiveMode.setupKeyHandlers):
-//   Escape, edited text empty, twice within 500ms -> the *doubleEscapeAction*
-//   setting decides between the tree selector and the user-message selector.
-//   So pi owns the Esc window; an extension must not register Escape itself.
+// Design decision, corrected after review: **Escape is interrupt only.**
 //
-// The first implementation here registered  pi.registerShortcut("escape")  and
-// its recall callback only called ctx.ui.notify(). Two bugs: Escape is pi's
-// app.interrupt binding, so the registration either shadowed interrupt or did
-// nothing; and the prompt was never put back into the editor.
+// pi binds Escape to app.interrupt ("Cancel or abort") and Claude Code uses it
+// the same way — one press aborts the current generation. An earlier version
+// here wrapped editor.onEscape so a second rapid press also restored the last
+// prompt. That made one key mean two things: press twice to abort a long turn
+// and you would silently get your old prompt back in the box, and mid-edit an
+// Esc could either abandon the edit or restore an older one depending on timing.
+// Both are surprising, so that wrap is gone: nothing in this module touches
+// Escape.
 //
-// This version does not claim the key. It wraps `editor.onEscape` the same way
-// footer-align wraps `footer.render`, and on the second rapid Esc it puts the
-// last submitted prompt back into the editor via setText. pi's own handler still
-// runs, so tree/selector behaviour is preserved.
+// Recall now lives on its own explicit gesture — the /recall command — so the
+// two actions never compete for one keystroke.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 
-export const DOUBLE_ESC_THRESHOLD_MS = 500;
+/** How many submitted prompts are remembered. */
+export const HISTORY_LIMIT = 50;
 
-export interface InterruptState {
-  lastUserPrompt?: string;
-  lastEscTimestamp: number;
-}
+const history: string[] = [];
 
-const state: InterruptState = {
-  lastUserPrompt: undefined,
-  lastEscTimestamp: 0,
-};
-
-export function setLastUserPrompt(prompt: string): void {
-  const trimmed = prompt.trim();
-  if (trimmed.length > 0) state.lastUserPrompt = trimmed;
-}
-
-export function getLastUserPrompt(): string | undefined {
-  return state.lastUserPrompt;
-}
-
-/** Test seam: forget everything between tests. */
-export function resetInterruptState(): void {
-  state.lastUserPrompt = undefined;
-  state.lastEscTimestamp = 0;
-}
-
-/**
- * Record an Esc press. Returns the prompt to restore when this press completes
- * a double-tap, else undefined.
- *
- * `lastEscTimestamp > 0` and `delta > 0` together reject the degenerate case
- * where the same press is seen twice at the same instant.
- */
-export function handleEscapeKey(now: number = Date.now()): string | undefined {
-  const delta = now - state.lastEscTimestamp;
-  const isDouble = state.lastEscTimestamp > 0 && delta > 0 && delta <= DOUBLE_ESC_THRESHOLD_MS;
-  state.lastEscTimestamp = now;
-  if (isDouble && state.lastUserPrompt) return state.lastUserPrompt;
-  return undefined;
-}
-
-/** Injectable editor surface, so the wrap is testable without a TUI. */
+/** Text of the editor surface we need; injected so tests avoid a real TUI. */
 export interface EditorLike {
-  onEscape?: () => void;
   getText?: () => string;
   setText?: (text: string) => void;
 }
 
-export interface RecallHooks {
-  now?: () => number;
-  /** Called when a prompt is restored, for a one-line confirmation. */
-  onRecall?: (prompt: string) => void;
+/** Record a submitted prompt. Consecutive duplicates collapse. */
+export function recordPrompt(prompt: string): void {
+  const trimmed = prompt.trim();
+  if (trimmed === "") return;
+  if (history[history.length - 1] === trimmed) return;
+  history.push(trimmed);
+  while (history.length > HISTORY_LIMIT) history.shift();
+}
+
+/** Most recent prompt, or undefined when nothing has been submitted. */
+export function lastPrompt(): string | undefined {
+  return history[history.length - 1];
 }
 
 /**
- * Install the double-Esc recall on a live editor. Idempotent-safe: wrapping
- * twice would double the timing state, so callers install once per mode.
+ * `index` counts back from the most recent: 0 is the last prompt, 1 the one
+ * before it. Out-of-range returns undefined rather than wrapping, so a /recall 9
+ * with two prompts does nothing instead of silently restoring something old.
  */
-export function installPromptRecall(editor: EditorLike, hooks: RecallHooks = {}): void {
-  const now = hooks.now ?? (() => Date.now());
-  const previous = editor.onEscape;
-
-  editor.onEscape = () => {
-    // Let pi keep its own Escape semantics (interrupt, tree, selector).
-    previous?.();
-
-    // Only a *second* Esc on an empty editor is a recall gesture. If the user is
-    // mid-edit, Escape means "abandon this edit", not "restore the last prompt".
-    const current = editor.getText?.() ?? "";
-    if (current.trim() !== "") return;
-
-    const recalled = handleEscapeKey(now());
-    if (recalled) {
-      editor.setText?.(recalled);
-      // A restored prompt is a fresh edit, so the next Esc should not chain into
-      // another recall.
-      state.lastEscTimestamp = 0;
-      hooks.onRecall?.(recalled);
-    }
-  };
+export function promptAt(index: number): string | undefined {
+  if (!Number.isInteger(index) || index < 0) return undefined;
+  return history[history.length - 1 - index];
 }
 
-export interface CreateInterruptOptions {
-  now?: () => number;
+export function historySize(): number {
+  return history.length;
 }
 
-export function createInterruptExtension(opts: CreateInterruptOptions = {}): InlineExtension {
+/** Test seam. */
+export function resetHistory(): void {
+  history.length = 0;
+}
+
+/**
+ * Put a remembered prompt back in the editor. Returns what was restored.
+ * Refuses to clobber text the user is actively typing: overwriting a half-written
+ * message would be exactly the kind of surprise the Escape wrap was removed for.
+ */
+export function recallInto(
+  editor: EditorLike | undefined,
+  index: number,
+  opts: { force?: boolean } = {},
+): { restored?: string; reason?: "empty-history" | "out-of-range" | "editor-busy" | "no-editor" } {
+  const prompt = promptAt(index);
+  if (history.length === 0) return { reason: "empty-history" };
+  if (prompt === undefined) return { reason: "out-of-range" };
+  if (!editor?.setText) return { reason: "no-editor" };
+  const current = editor.getText?.() ?? "";
+  if (current.trim() !== "" && !opts.force) return { reason: "editor-busy" };
+  editor.setText(prompt);
+  return { restored: prompt };
+}
+
+export function createPromptHistoryExtension(): InlineExtension {
   return {
-    name: "qronos-interrupt",
+    name: "qronos-prompt-history",
     factory(pi: ExtensionAPI) {
       // "input" fires once per submission (before the agent runs), which is
-      // exactly the prompt worth recalling.
+      // exactly the prompt worth remembering.
       pi.on("input", (event) => {
-        if (event.text) setLastUserPrompt(event.text);
+        if (event.text) recordPrompt(event.text);
         return { action: "continue" };
-      });
-
-      // A new turn means the previous prompt is no longer the "last" one to
-      // return to; clear the window so a stale timestamp cannot pair with a
-      // later Escape.
-      pi.on("turn_start", () => {
-        state.lastEscTimestamp = 0;
       });
     },
   };

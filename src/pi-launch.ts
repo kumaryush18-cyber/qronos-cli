@@ -48,7 +48,7 @@ import { createFusionExtension, resolveFusionIds } from "./fusion";
 import { patchResumeLine } from "./resume-line";
 import { CLAUDE_THEME_NAME, ensureQronosTheme } from "./theme-claude";
 import { createClaudeToolRendererExtension } from "./tool-renderer-claude";
-import { createInterruptExtension, installPromptRecall } from "./interrupt-handler";
+import { createPromptHistoryExtension } from "./interrupt-handler";
 import { decideProjectTrustInteractive, projectTrustForCwd } from "./project-trust";
 import { DEFAULT_BASE_URL } from "./env";
 
@@ -361,7 +361,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     codemodeExtension,
     toolSearchExtension,
     createClaudeToolRendererExtension(),
-    createInterruptExtension(),
+    createPromptHistoryExtension(),
   ];
 
   const settingsManager = buildSettingsManager(opts, models, opts.projectTrusted === true);
@@ -530,18 +530,11 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
   // Double-Esc recalls the last prompt. Wraps editor.onEscape rather than
   // registering Escape (which is pi's app.interrupt binding) so interrupt and
   // the tree/selector behaviour pi already provides keep working.
-  // `editor` and `showStatus` are private on InteractiveMode, so reach them
-  // through an unknown cast — the same technique footer-align uses for `footer`.
-  const modePrivate = mode as unknown as {
-    editor?: Parameters<typeof installPromptRecall>[0];
-    showStatus?: (msg: string) => void;
-  };
-  if (modePrivate.editor) {
-    installPromptRecall(modePrivate.editor, {
-      onRecall: (prompt) =>
-        modePrivate.showStatus?.(`Recalled previous prompt (${prompt.length} chars) — edit and press Enter`),
-    });
-  }
+  // Escape stays purely "interrupt" / "cancel", exactly as in Claude Code and as
+  // pi binds it (app.interrupt). Recall is NOT grafted onto Escape: doing so made
+  // a second Esc ambiguous between "abort" and "restore", which is the behaviour
+  // the user rejected. Prompt history is available on a dedicated key instead
+  // (see the prompt-recall command), so the two gestures never collide.
 
   await mode.run();
   return sm.getSessionId();

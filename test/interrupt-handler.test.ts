@@ -1,152 +1,134 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import {
-  DOUBLE_ESC_THRESHOLD_MS,
-  getLastUserPrompt,
-  handleEscapeKey,
-  installPromptRecall,
-  resetInterruptState,
-  setLastUserPrompt,
+  HISTORY_LIMIT,
+  historySize,
+  lastPrompt,
+  promptAt,
+  recallInto,
+  recordPrompt,
+  resetHistory,
   type EditorLike,
 } from "../src/interrupt-handler";
 
 beforeEach(() => {
-  resetInterruptState();
+  resetHistory();
 });
 
-describe("interrupt-handler: prompt tracking", () => {
-  test("records the last submitted prompt", () => {
-    setLastUserPrompt("implement authentication with oauth");
-    expect(getLastUserPrompt()).toBe("implement authentication with oauth");
+describe("prompt history: recording", () => {
+  test("records submitted prompts in order", () => {
+    recordPrompt("first");
+    recordPrompt("second");
+    expect(lastPrompt()).toBe("second");
+    expect(promptAt(1)).toBe("first");
   });
 
-  test("ignores empty or whitespace-only prompts", () => {
-    setLastUserPrompt("first valid prompt");
-    setLastUserPrompt("   ");
-    expect(getLastUserPrompt()).toBe("first valid prompt");
-  });
-});
-
-describe("interrupt-handler: esc timing", () => {
-  test("a single Escape does not recall", () => {
-    setLastUserPrompt("test prompt");
-    expect(handleEscapeKey(1000)).toBeUndefined();
+  test("ignores empty and whitespace-only prompts", () => {
+    recordPrompt("real");
+    recordPrompt("   ");
+    expect(historySize()).toBe(1);
   });
 
-  test("two Escapes within the threshold recall the prompt", () => {
-    setLastUserPrompt("implement jwt validation");
-    expect(handleEscapeKey(1000)).toBeUndefined();
-    expect(handleEscapeKey(1000 + DOUBLE_ESC_THRESHOLD_MS)).toBe("implement jwt validation");
+  test("collapses consecutive duplicates", () => {
+    recordPrompt("same");
+    recordPrompt("same");
+    expect(historySize()).toBe(1);
   });
 
-  test("Escapes beyond the threshold do not recall", () => {
-    setLastUserPrompt("implement jwt validation");
-    handleEscapeKey(1000);
-    expect(handleEscapeKey(2000)).toBeUndefined();
+  test("is bounded to HISTORY_LIMIT, dropping the oldest", () => {
+    for (let i = 0; i < HISTORY_LIMIT + 10; i++) recordPrompt(`p${i}`);
+    expect(historySize()).toBe(HISTORY_LIMIT);
+    expect(lastPrompt()).toBe(`p${HISTORY_LIMIT + 9}`);
   });
 
-  test("the same instant reported twice is not a double-tap", () => {
-    setLastUserPrompt("p");
-    handleEscapeKey(1000);
-    // delta === 0 means one press seen twice, not two presses.
-    expect(handleEscapeKey(1000)).toBeUndefined();
-  });
-
-  test("no recorded prompt means no recall even on a double-tap", () => {
-    handleEscapeKey(1000);
-    expect(handleEscapeKey(1100)).toBeUndefined();
+  test("trims surrounding whitespace", () => {
+    recordPrompt("  padded  ");
+    expect(lastPrompt()).toBe("padded");
   });
 });
 
-describe("interrupt-handler: editor wiring", () => {
-  /** A minimal editor that records setText calls. */
-  function fakeEditor(text = "") {
-    const calls: string[] = [];
+describe("prompt history: lookup", () => {
+  test("out-of-range indices return undefined instead of wrapping", () => {
+    recordPrompt("only");
+    expect(promptAt(5)).toBeUndefined();
+    expect(promptAt(-1)).toBeUndefined();
+  });
+
+  test("an empty history has no last prompt", () => {
+    expect(lastPrompt()).toBeUndefined();
+  });
+
+  test("non-integer indices are rejected", () => {
+    recordPrompt("x");
+    expect(promptAt(0.5)).toBeUndefined();
+  });
+});
+
+describe("prompt history: recall", () => {
+  function editor(text = "") {
+    const sets: string[] = [];
     let current = text;
-    const editor: EditorLike = {
+    const e: EditorLike = {
       getText: () => current,
       setText: (t) => {
         current = t;
-        calls.push(t);
+        sets.push(t);
       },
     };
-    return { editor, calls, set: (t: string) => (current = t) };
+    return { e, sets };
   }
 
-  test("double-Esc actually puts the prompt back in the editor", () => {
-    setLastUserPrompt("restore me");
-    const { editor, calls } = fakeEditor();
-    let clock = 1000;
-    installPromptRecall(editor, { now: () => clock });
-
-    editor.onEscape!(); // first press
-    expect(calls).toEqual([]);
-    clock += 200; // within threshold
-    editor.onEscape!();
-    expect(calls).toEqual(["restore me"]);
+  test("restores the last prompt into an empty editor", () => {
+    recordPrompt("bring me back");
+    const { e, sets } = editor();
+    expect(recallInto(e, 0)).toEqual({ restored: "bring me back" });
+    expect(sets).toEqual(["bring me back"]);
   });
 
-  test("Escape while mid-edit never restores, so an abandoned edit is not lost", () => {
-    setLastUserPrompt("old prompt");
-    const { editor, calls } = fakeEditor("half-typed text");
-    let clock = 1000;
-    installPromptRecall(editor, { now: () => clock });
-
-    editor.onEscape!();
-    clock += 100;
-    editor.onEscape!();
-    expect(calls).toEqual([]);
+  test("restores the Nth previous prompt", () => {
+    recordPrompt("old");
+    recordPrompt("newer");
+    const { e } = editor();
+    expect(recallInto(e, 1).restored).toBe("old");
   });
 
-  test("pi's own onEscape still runs, preserving interrupt and tree behaviour", () => {
-    let piHandlerRan = 0;
-    const { editor } = fakeEditor();
-    editor.onEscape = () => {
-      piHandlerRan++;
-    };
-    installPromptRecall(editor, { now: () => 1000 });
-
-    editor.onEscape!();
-    expect(piHandlerRan).toBe(1);
+  test("refuses to overwrite text the user is typing", () => {
+    recordPrompt("previous");
+    const { e, sets } = editor("half-written message");
+    expect(recallInto(e, 0).reason).toBe("editor-busy");
+    expect(sets).toEqual([]);
   });
 
-  test("recall fires once, not on a third chained Escape", () => {
-    setLastUserPrompt("once");
-    const { editor, calls } = fakeEditor();
-    let clock = 1000;
-    installPromptRecall(editor, { now: () => clock });
-
-    editor.onEscape!();
-    clock += 100;
-    editor.onEscape!(); // recalls, and clears its own window
-    // The editor now holds text, so further Escapes are mid-edit and do nothing.
-    clock += 100;
-    editor.onEscape!();
-    expect(calls).toEqual(["once"]);
+  test("force overrides the busy guard", () => {
+    recordPrompt("previous");
+    const { e, sets } = editor("draft");
+    expect(recallInto(e, 0, { force: true }).restored).toBe("previous");
+    expect(sets).toEqual(["previous"]);
   });
 
-  test("onRecall receives the restored text", () => {
-    setLastUserPrompt("notify me");
-    const { editor } = fakeEditor();
-    const seen: string[] = [];
-    let clock = 1000;
-    installPromptRecall(editor, { now: () => clock, onRecall: (p) => seen.push(p) });
+  test("reports empty history and missing editor distinctly", () => {
+    expect(recallInto(editor().e, 0).reason).toBe("empty-history");
+    recordPrompt("x");
+    expect(recallInto(undefined, 0).reason).toBe("no-editor");
+    expect(recallInto(editor().e, 3).reason).toBe("out-of-range");
+  });
+});
 
-    editor.onEscape!();
-    clock += 100;
-    editor.onEscape!();
-    expect(seen).toEqual(["notify me"]);
+describe("prompt history: Escape is not involved", () => {
+  // Regression: an earlier version wrapped editor.onEscape so a double press
+  // restored the prompt. Escape must stay purely interrupt.
+  test("no recall happens without an explicit call", () => {
+    recordPrompt("do not auto-restore");
+    const sets: string[] = [];
+    const e: EditorLike = { getText: () => "", setText: (t) => sets.push(t) };
+    // Merely having history must never populate the editor.
+    expect(sets).toEqual([]);
+    expect(historySize()).toBe(1);
+    void e;
   });
 
-  test("works when the editor exposes no getText (treated as empty)", () => {
-    setLastUserPrompt("x");
-    const calls: string[] = [];
-    const editor: EditorLike = { setText: (t) => calls.push(t) };
-    let clock = 1000;
-    installPromptRecall(editor, { now: () => clock });
-
-    editor.onEscape!();
-    clock += 100;
-    editor.onEscape!();
-    expect(calls).toEqual(["x"]);
+  test("the module exposes no escape handler at all", () => {
+    const mod = require("../src/interrupt-handler") as Record<string, unknown>;
+    expect(mod.handleEscapeKey).toBeUndefined();
+    expect(mod.installPromptRecall).toBeUndefined();
   });
 });

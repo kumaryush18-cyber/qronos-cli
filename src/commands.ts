@@ -17,6 +17,7 @@ import { HOOK_EVENTS, mergeHookConfigs, parseHookConfig } from "./hooks";
 import { readHooksFile } from "./cli-config";
 import { getHooksPath, getProjectHooksPath, getUserMemoryPath } from "./paths";
 import { loadMemory, memoryPathsFor } from "./memory-io";
+import { historySize, recallInto, type EditorLike } from "./interrupt-handler";
 import { formatContextBreakdown, getLatestContextStats, updateContextStats } from "./context-view";
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -264,6 +265,45 @@ function describeMode(mode: ExecutionMode): string {
   }
 }
 
+/**
+ * /recall: restore a previous prompt into the editor.
+ *
+ * Deliberately a command rather than a second Escape press: Escape is interrupt
+ * ("Cancel or abort") in both pi and Claude Code, and overloading it made an
+ * abort double-tap silently rewrite the input box.
+ */
+async function runRecall(
+  args: string | undefined,
+  ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } },
+): Promise<void> {
+  const raw = (args ?? "").trim();
+  const index = raw === "" ? 0 : Number(raw);
+  if (raw !== "" && (!Number.isInteger(index) || index < 0)) {
+    ctx.ui.notify("Usage: /recall [n] — n counts back from the most recent prompt (default 0).", "warning");
+    return;
+  }
+
+  const ui = ctx.ui as unknown as EditorLike | undefined;
+  const result = recallInto(ui, index);
+
+  switch (result.reason) {
+    case "empty-history":
+      ctx.ui.notify("No prompts yet in this session.", "info");
+      return;
+    case "out-of-range":
+      ctx.ui.notify(`Only ${historySize()} prompt(s) in history.`, "info");
+      return;
+    case "no-editor":
+      ctx.ui.notify("This session has no editor to restore into.", "warning");
+      return;
+    case "editor-busy":
+      ctx.ui.notify("The editor already has text. Clear it first, then run /recall.", "warning");
+      return;
+    default:
+      ctx.ui.notify(`Restored: ${(result.restored ?? "").slice(0, 60)}`, "info");
+  }
+}
+
 /** /memory: show which memory layers resolved, and any broken @imports. */
 async function showMemory(ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }): Promise<void> {
   const root = process.cwd();
@@ -501,6 +541,10 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
       pi.registerCommand("permissions", {
         description: "Show the active execution mode and what it will ask you to approve.",
         handler: (_args, ctx) => showPermissions(ctx as any),
+      });
+      pi.registerCommand("recall", {
+        description: "Put a previous prompt back in the editor (/recall, /recall 2 for older).",
+        handler: (args, ctx) => runRecall(args, ctx as any),
       });
       pi.registerCommand("memory", {
         description: "Show which QRONOS.md memory files are loaded for this project.",
