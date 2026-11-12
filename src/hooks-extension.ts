@@ -30,6 +30,24 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
       // hooks pays nothing per tool call.
       if (Object.keys(config).length === 0) return;
 
+      // Hook failures leave a persistent transcript line rather than a
+      // transient toast: a warning the user can scroll back to is the whole
+      // point of surfacing it. Falls back to notify when sendMessage is absent.
+      const reportWarnings = (warnings: string[]) => {
+        if (warnings.length === 0) return;
+        const text = warnings.map((w) => `Hook warning: ${w}`).join("\n");
+        opts.notify?.(text, "warning");
+        try {
+          pi.sendMessage({
+            customType: "qronos-hook-warning",
+            content: text,
+            display: true,
+          });
+        } catch {
+          // Older pi without sendMessage: the notify above is enough.
+        }
+      };
+
       const base = () => ({
         cwd: opts.cwd(),
         session_id: opts.sessionId?.(),
@@ -48,7 +66,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
           },
           opts.deps,
         );
-        for (const w of warnings) opts.notify?.(`Hook warning: ${w}`, "warning");
+        reportWarnings(warnings);
         if (blocked) {
           return { block: true, reason: `Blocked by PreToolUse hook (${blocked.command}): ${blocked.reason}` };
         }
@@ -70,7 +88,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
           opts.deps,
         );
         // PostToolUse cannot block: the tool already ran. Failures are warnings.
-        for (const w of warnings) opts.notify?.(`Hook warning: ${w}`, "warning");
+        reportWarnings(warnings);
       });
 
       pi.on("session_start", async (event, ctx) => {
@@ -99,7 +117,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
           { hook_event_name: "Stop", ...base() },
           opts.deps,
         );
-        for (const w of warnings) opts.notify?.(`Hook warning: ${w}`, "warning");
+        reportWarnings(warnings);
       });
 
       pi.on("turn_start", async (event) => {
@@ -112,7 +130,7 @@ export function createHooksExtension(opts: CreateHooksOptions): InlineExtension 
           { hook_event_name: "UserPromptSubmit", ...base(), source: String(event.turnIndex) },
           opts.deps,
         );
-        for (const w of warnings) opts.notify?.(`Hook warning: ${w}`, "warning");
+        reportWarnings(warnings);
       });
     },
   };

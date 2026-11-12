@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { installFooterRightAlign } from "../src/footer-align";
 import { getExecutionModeStatusLine, initExecutionMode, setExecutionModePersistence } from "../src/execution-modes";
+import {
+  STATUS_LINE_MAX_CHARS,
+  STATUS_LINE_TTL_MS,
+  createStatusLineCache,
+  firstStatusLine,
+  resolveStatusLineAsync,
+} from "../src/footer-align";
 
 const mk = (lines: string[]) => ({ footer: { render: (_w: number) => lines } });
 
@@ -61,5 +68,91 @@ describe("installFooterRightAlign", () => {
     const m = mk([]);
     installFooterRightAlign(m);
     expect(m.footer.render(40)).toEqual([getExecutionModeStatusLine(40)]);
+  });
+});
+
+describe("status line: never blocks the render path", () => {
+  test("render does not spawn the command when the cache is warm", () => {
+    let spawns = 0;
+    const cache = createStatusLineCache();
+    cache.value = "main";
+    cache.lastRun = 1000;
+    const out = resolveStatusLineAsync(cache, "git branch", 2000, () => {
+      spawns++;
+    });
+    expect(out).toBe("main");
+    expect(spawns).toBe(0);
+  });
+
+  test("a stale cache schedules exactly one refresh and returns the old value meanwhile", () => {
+    let spawns = 0;
+    const cache = createStatusLineCache();
+    cache.value = "old";
+    cache.lastRun = 0;
+    const out = resolveStatusLineAsync(cache, "cmd", STATUS_LINE_TTL_MS + 1, () => {
+      spawns++;
+    });
+    // Old value is served immediately; the refresh happens off-path.
+    expect(out).toBe("old");
+    expect(spawns).toBe(1);
+    // A concurrent render must not queue a second spawn.
+    resolveStatusLineAsync(cache, "cmd", STATUS_LINE_TTL_MS + 2, () => {
+      spawns++;
+    });
+    expect(spawns).toBe(1);
+  });
+
+  test("the first render returns undefined rather than blocking", () => {
+    const cache = createStatusLineCache();
+    const out = resolveStatusLineAsync(cache, "slow-cmd", 1, () => {
+      /* never calls back: simulates a hung command */
+    });
+    expect(out).toBeUndefined();
+  });
+
+  test("no command configured means nothing is spawned", () => {
+    let spawns = 0;
+    const cache = createStatusLineCache();
+    expect(resolveStatusLineAsync(cache, undefined, 1, () => spawns++)).toBeUndefined();
+    expect(spawns).toBe(0);
+  });
+
+  test("the refresh result becomes the next value", () => {
+    const cache = createStatusLineCache();
+    let cb: ((raw: string | undefined) => void) | undefined;
+    resolveStatusLineAsync(cache, "cmd", STATUS_LINE_TTL_MS + 1, (_cmd, callback) => {
+      cb = callback;
+    });
+    cb!("feature/x\nsecond line");
+    expect(cache.value).toBe("feature/x");
+    expect(cache.inFlight).toBe(false);
+  });
+
+  test("a failed command clears the line instead of keeping stale output", () => {
+    const cache = createStatusLineCache();
+    cache.value = "old";
+    let cb: ((raw: string | undefined) => void) | undefined;
+    resolveStatusLineAsync(cache, "cmd", STATUS_LINE_TTL_MS + 1, (_c, callback) => {
+      cb = callback;
+    });
+    cb!(undefined);
+    expect(cache.value).toBeUndefined();
+  });
+});
+
+describe("status line: output shaping", () => {
+  test("uses the first non-empty line", () => {
+    expect(firstStatusLine("\n\nmain\nother")).toBe("main");
+  });
+
+  test("blank output yields undefined", () => {
+    expect(firstStatusLine("   \n\n")).toBeUndefined();
+  });
+
+  test("a very long line is truncated so the footer cannot overflow", () => {
+    const long = "x".repeat(500);
+    const out = firstStatusLine(long)!;
+    expect(out.length).toBeLessThanOrEqual(STATUS_LINE_MAX_CHARS);
+    expect(out.endsWith("…")).toBe(true);
   });
 });

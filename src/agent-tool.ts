@@ -21,6 +21,21 @@ export { SUBAGENT_READ_ONLY_TOOLS };
 export const SUBAGENT_MAX_TURNS = 10;
 
 /**
+ * Cap on the text a subagent hands back to the parent.
+ *
+ * A subagent reads a lot but the parent only needs the conclusion; without a
+ * cap a single fan-out search can swallow the main session's context — the
+ * exact thing subagents exist to prevent.
+ */
+export const SUBAGENT_MAX_OUTPUT_CHARS = 12_000;
+
+export function capSubagentOutput(text: string): string {
+  if (text.length <= SUBAGENT_MAX_OUTPUT_CHARS) return text;
+  const keep = SUBAGENT_MAX_OUTPUT_CHARS - 200;
+  return `${text.slice(0, keep)}\n\n[...subagent output truncated: ${text.length - keep} characters omitted. Ask the subagent for a narrower follow-up if you need the rest.]`;
+}
+
+/**
  * Resolve the tools a subagent may use: a custom agent's `tools:` list can only
  * NARROW the read-only default, never widen it.
  *
@@ -233,7 +248,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
   }
 
   return {
-    output: finalOutput || "Subagent finished task.",
+    output: capSubagentOutput(finalOutput || "Subagent finished task."),
     turns,
     toolsUsed: Array.from(toolsUsed),
     planApproved,

@@ -4,7 +4,9 @@ import {
   AGENT_TOOL_NAME,
   createAgentToolExtension,
   defaultSubagentRunner,
+  capSubagentOutput,
   resolveSubagentToolNames,
+  SUBAGENT_MAX_OUTPUT_CHARS,
   SUBAGENT_READ_ONLY_TOOLS,
 } from "../src/agent-tool";
 
@@ -178,5 +180,24 @@ describe("Option B: custom agent definitions cannot escalate privileges", () => 
   test("a definition may still narrow the set to a read-only subset", () => {
     const allowed = resolveSubagentToolNames(agentWithTools(["grep", "read"]));
     expect([...allowed].sort()).toEqual(["grep", "read"]);
+  });
+});
+
+describe("Option B: subagent output is capped", () => {
+  test("short output passes through unchanged", () => {
+    expect(capSubagentOutput("done")).toBe("done");
+  });
+
+  test("output at the cap is untouched", () => {
+    const exact = "x".repeat(SUBAGENT_MAX_OUTPUT_CHARS);
+    expect(capSubagentOutput(exact)).toBe(exact);
+  });
+
+  test("oversized output is truncated with a marker the model can act on", () => {
+    const huge = "y".repeat(SUBAGENT_MAX_OUTPUT_CHARS * 2);
+    const out = capSubagentOutput(huge);
+    expect(out.length).toBeLessThan(huge.length);
+    expect(out).toContain("subagent output truncated");
+    expect(out.startsWith("y")).toBe(true);
   });
 });

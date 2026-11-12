@@ -48,7 +48,7 @@ import { createFusionExtension, resolveFusionIds } from "./fusion";
 import { patchResumeLine } from "./resume-line";
 import { CLAUDE_THEME_NAME, ensureQronosTheme } from "./theme-claude";
 import { createClaudeToolRendererExtension } from "./tool-renderer-claude";
-import { createInterruptExtension } from "./interrupt-handler";
+import { createInterruptExtension, installPromptRecall } from "./interrupt-handler";
 import { decideProjectTrustInteractive, projectTrustForCwd } from "./project-trust";
 import { DEFAULT_BASE_URL } from "./env";
 
@@ -526,6 +526,22 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
   installEffortHandler(mode);
   const statusLineCommand = readStatusLineCommand(getConfigPath());
   installFooterRightAlign(mode, { statusLineCommand });
+
+  // Double-Esc recalls the last prompt. Wraps editor.onEscape rather than
+  // registering Escape (which is pi's app.interrupt binding) so interrupt and
+  // the tree/selector behaviour pi already provides keep working.
+  // `editor` and `showStatus` are private on InteractiveMode, so reach them
+  // through an unknown cast — the same technique footer-align uses for `footer`.
+  const modePrivate = mode as unknown as {
+    editor?: Parameters<typeof installPromptRecall>[0];
+    showStatus?: (msg: string) => void;
+  };
+  if (modePrivate.editor) {
+    installPromptRecall(modePrivate.editor, {
+      onRecall: (prompt) =>
+        modePrivate.showStatus?.(`Recalled previous prompt (${prompt.length} chars) — edit and press Enter`),
+    });
+  }
 
   await mode.run();
   return sm.getSessionId();

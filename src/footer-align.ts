@@ -6,7 +6,7 @@
 // 0.5.0: the execution-mode line is prepended above pi's own footer lines. It is
 // a marker, not a status, so it keeps its left alignment; only pi's last line —
 // the credits status the user scans — is right-aligned.
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { getExecutionModeStatusLine } from "./execution-modes";
 import { getLatestContextStats, renderContextFooterTag } from "./context-view";
@@ -22,35 +22,95 @@ function visibleLength(text: string): number {
 export interface FooterAlignOptions {
   statusLineCommand?: string;
   getStatusLine?: () => string | undefined;
+  /** Injected in tests; must not block. */
+  statusLineRunner?: (command: string, cb: (raw: string | undefined) => void) => void;
 }
 
-let lastStatusLineRun = 0;
-let cachedStatusLine: string | undefined;
+/** How long a status-line result is reused before the command runs again. */
+export const STATUS_LINE_TTL_MS = 5000;
+/** A status command that runs longer than this is killed. */
+export const STATUS_LINE_TIMEOUT_MS = 2000;
+/** Cap on a status line's output; it is one line of footer, not a report. */
+export const STATUS_LINE_MAX_CHARS = 200;
 
+/**
+ * Cached status line, refreshed off the render path.
+ *
+ * The first version called execSync(..., timeout: 2000) *inside*
+ * footer.render(). Render runs many times per second while streaming, so a slow
+ * `git status` blocked the event loop for up to 2s per frame and froze the TUI.
+ *
+ * Now render only ever reads `cached.value`; `refresh()` schedules the command
+ * in the background. Until the first result arrives the footer shows nothing,
+ * which is correct — a blank segment is better than a stalled UI.
+ */
+export interface StatusLineCache {
+  value: string | undefined;
+  lastRun: number;
+  inFlight: boolean;
+}
+
+export function createStatusLineCache(): StatusLineCache {
+  return { value: undefined, lastRun: 0, inFlight: false };
+}
+
+/** First line of output, trimmed and bounded. Empty output clears the line. */
+export function firstStatusLine(raw: string): string | undefined {
+  const line = raw.split("\n").find((l) => l.trim() !== "")?.trim();
+  if (!line) return undefined;
+  return line.length > STATUS_LINE_MAX_CHARS ? `${line.slice(0, STATUS_LINE_MAX_CHARS - 1)}…` : line;
+}
+
+/**
+ * Read the cache, kicking off a refresh when it is stale. Never blocks.
+ * `runner` is injected so tests need no real shell.
+ */
+export function resolveStatusLineAsync(
+  cache: StatusLineCache,
+  command: string | undefined,
+  now: number,
+  runner: (command: string, cb: (raw: string | undefined) => void) => void,
+): string | undefined {
+  if (!command) return undefined;
+  const stale = now - cache.lastRun >= STATUS_LINE_TTL_MS;
+  if (stale && !cache.inFlight) {
+    cache.inFlight = true;
+    cache.lastRun = now;
+    runner(command, (raw) => {
+      cache.inFlight = false;
+      cache.value = raw === undefined ? undefined : firstStatusLine(raw);
+    });
+  }
+  return cache.value;
+}
+
+/** Default runner: spawns the command asynchronously with a kill timer. */
+export function defaultStatusLineRunner(command: string, cb: (raw: string | undefined) => void): void {
+  let settled = false;
+  const done = (raw: string | undefined) => {
+    if (settled) return;
+    settled = true;
+    cb(raw);
+  };
+  try {
+    exec(
+      command,
+      { encoding: "utf8", timeout: STATUS_LINE_TIMEOUT_MS, maxBuffer: 64 * 1024 },
+      (err, stdout) => done(err ? undefined : stdout),
+    );
+  } catch {
+    done(undefined);
+  }
+}
+
+/** Back-compat shim used by older callers/tests: synchronous, no subprocess. */
 export function resolveStatusLine(opts?: FooterAlignOptions): string | undefined {
   if (opts?.getStatusLine) return opts.getStatusLine();
-  if (!opts?.statusLineCommand) return undefined;
-
-  const now = Date.now();
-  if (now - lastStatusLineRun < 5000 && cachedStatusLine !== undefined) {
-    return cachedStatusLine;
-  }
-  lastStatusLineRun = now;
-  try {
-    const raw = execSync(opts.statusLineCommand, {
-      encoding: "utf8",
-      timeout: 2000,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    cachedStatusLine = raw.length > 0 ? raw.split("\n")[0] : undefined;
-    return cachedStatusLine;
-  } catch {
-    cachedStatusLine = undefined;
-    return undefined;
-  }
+  return undefined;
 }
 
 export function installFooterRightAlign(mode: object, options?: FooterAlignOptions): void {
+  const statusCache = createStatusLineCache();
   const footer = (mode as { footer: { render(w: number): string[] } }).footer;
   const render = footer.render.bind(footer);
   footer.render = (w: number) => {
@@ -66,7 +126,16 @@ export function installFooterRightAlign(mode: object, options?: FooterAlignOptio
       }
     }
 
-    const customStatus = resolveStatusLine(options);
+    // Never spawn from render: read the cache and let a background refresh
+    // update it (see resolveStatusLineAsync).
+    const customStatus = options?.getStatusLine
+      ? options.getStatusLine()
+      : resolveStatusLineAsync(
+          statusCache,
+          options?.statusLineCommand,
+          Date.now(),
+          options?.statusLineRunner ?? defaultStatusLineRunner,
+        );
     const extraLines: string[] = [];
     if (customStatus) {
       extraLines.push(truncateToWidth(customStatus, w));

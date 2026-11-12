@@ -14,4 +14,8 @@ export const AGENT_RULES = `## Working rules
   the output, or run the specific test. Say plainly what you checked and what you did not.
 - In plan mode you are read-only: explore with read/grep/glob and read-only bash, then finish
   by calling exit_plan_mode with the plan. Never print a plan as text and end the turn.
-- For any complex or multi-step task (≥3 steps), use the todo tool to track your progress before modifying files, and update items as each step completes.`;
+- For any complex or multi-step task (≥3 steps), use the todo tool to track your progress
+  before modifying files, and update items as each step completes. A stale list is worse than none.
+- When the context meter in the footer turns red, tell the user to run /compact before starting
+  a large new task, and prefer delegating broad searches to a subagent so their output does not
+  fill this session.`;
