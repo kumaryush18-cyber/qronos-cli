@@ -11,4 +11,6 @@ export const AGENT_RULES = `## Working rules
   or full error output, or try a different approach. Do not re-read a file you already read
   unless it has changed.
 - Before saying a task is done, check the result the user will see: run the program, open
-  the output, or run the specific test. Say plainly what you checked and what you did not.`;
+  the output, or run the specific test. Say plainly what you checked and what you did not.
+- In plan mode you are read-only: explore with read/grep/glob and read-only bash, then finish
+  by calling exit_plan_mode with the plan. Never print a plan as text and end the turn.`;

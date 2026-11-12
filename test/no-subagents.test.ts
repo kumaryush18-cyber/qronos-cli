@@ -35,6 +35,7 @@ import { IMAGE_TOOL_NAME } from "../src/image-tool";
 import { BUY_TOOL_NAME } from "../src/buy-tool";
 import { DOCS_TOOL_NAME } from "../src/docs-tool";
 import { TODO_TOOL_NAME } from "../src/todo-tool";
+import { EXIT_PLAN_TOOL_NAME } from "../src/exit-plan-tool";
 
 function tempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -54,7 +55,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(opts.settingsManager.getThemeSetting()).toBe("light/dark");
   });
 
-  test("buildRuntimeOptions registers exactly the seventeen known extensions — no more, no less", () => {
+  test("buildRuntimeOptions registers exactly the eighteen known extensions — no more, no less", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-a");
     // #226: the closed set deliberately grew to six with free-pi-buy-tool;
     // 2026-09-01: to seven with free-pi-error-notice (one readable line on a
@@ -62,6 +63,9 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // U1/U2); 2026-09-03: to nine with free-pi-docs-tool (the free_pi_docs
     // tool, U2). Any further addition must be a reviewed, deliberate edit —
     // never accidental. 2026-10-20: to sixteen with free-pi-web-tools (web_search, docs_lookup); to seventeen with free-pi-image-tool (generate_image).
+    // 0.5.0: to eighteen with qronos-exit-plan (plan mode's exit_plan_mode).
+    // It is not a subagent: it writes a markdown plan and asks the user to
+    // approve, and it is refused unless the execution mode is "plan".
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "free-pi-ads",
@@ -81,15 +85,18 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "pi-codemode",
         "pi-mcp",
         "pi-tool-search",
+        "qronos-exit-plan",
       ].sort(),
     );
   });
 
-  test("settings pin packages: [] and defaultTools to exactly SAFE_TOOLS plus todo", () => {
+  test("settings pin packages: [] and defaultTools to exactly SAFE_TOOLS plus todo and exit_plan_mode", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-b");
     const settings = opts.settingsManager.getGlobalSettings();
     expect(settings.packages).toEqual([]);
-    expect([...(settings.defaultTools ?? [])].sort()).toEqual([...SAFE_TOOLS, TODO_TOOL_NAME].sort());
+    expect([...(settings.defaultTools ?? [])].sort()).toEqual(
+      [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME].sort(),
+    );
   });
 
   test("settings carry quietStartup: true (KTD1, hides pi's own header)", () => {
@@ -98,7 +105,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(settings.quietStartup).toBe(true);
   });
 
-  test("the strict SDK tools allowlist is exactly SAFE_TOOLS plus the custom tools, todo, codemode and tool_search", () => {
+  test("the strict SDK tools allowlist is exactly SAFE_TOOLS plus the custom tools, todo, exit_plan_mode, codemode and tool_search", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-c");
     expect([...opts.tools].sort()).toEqual(
       [
@@ -110,6 +117,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         DOCS_LOOKUP_TOOL_NAME,
         IMAGE_TOOL_NAME,
         TODO_TOOL_NAME,
+        EXIT_PLAN_TOOL_NAME,
         "codemode",
         "tool_search",
         // MCP patterns, so direct-exposure user servers are declared (2026-10-14).
@@ -159,8 +167,8 @@ describe("closed extension list (#28 R20, SB1)", () => {
     }
   });
 
-  test("codemode and tool_search are the only new non-MCP names beyond the 2026-10-13 todo tool", () => {
-    const known = [...SAFE_TOOLS, USAGE_TOOL_NAME, BUY_TOOL_NAME, DOCS_TOOL_NAME, WEB_SEARCH_TOOL_NAME, DOCS_LOOKUP_TOOL_NAME, IMAGE_TOOL_NAME, TODO_TOOL_NAME];
+  test("codemode and tool_search are the only new non-MCP names beyond the 2026-10-13 todo and the 0.5.0 exit_plan_mode", () => {
+    const known = [...SAFE_TOOLS, USAGE_TOOL_NAME, BUY_TOOL_NAME, DOCS_TOOL_NAME, WEB_SEARCH_TOOL_NAME, DOCS_LOOKUP_TOOL_NAME, IMAGE_TOOL_NAME, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME];
     expect(ALLOWED_TOOL_NAMES.filter((n) => !known.includes(n)).sort()).toEqual(["codemode", "tool_search"]);
     expect(ALLOWED_TOOL_NAMES.some((n) => n.startsWith("mcp__"))).toBe(false);
   });

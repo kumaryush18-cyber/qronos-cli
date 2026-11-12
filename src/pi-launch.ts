@@ -24,6 +24,7 @@ import { createWebToolsExtension, DOCS_LOOKUP_TOOL_NAME, WEB_SEARCH_TOOL_NAME } 
 import { createBuyToolExtension, BUY_TOOL_NAME } from "./buy-tool";
 import { createDocsToolExtension, DOCS_TOOL_NAME } from "./docs-tool";
 import { createTodoToolExtension, TODO_TOOL_NAME } from "./todo-tool";
+import { createExitPlanToolExtension, EXIT_PLAN_TOOL_NAME } from "./exit-plan-tool";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
 import { AGENT_RULES } from "./agent-rules";
@@ -105,6 +106,7 @@ export const ALLOWED_TOOL_NAMES: readonly string[] = [
   DOCS_LOOKUP_TOOL_NAME,
   IMAGE_TOOL_NAME,
   TODO_TOOL_NAME,
+  EXIT_PLAN_TOOL_NAME,
   "codemode",
   "tool_search",
 ];
@@ -166,7 +168,7 @@ export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[]
       // The picker starts on the first catalog model (the server lists the
       // default first); the user switches with /model.
       defaultModel: models[0]!.id,
-      defaultTools: [...SAFE_TOOLS, TODO_TOOL_NAME],
+      defaultTools: [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME],
       packages: [],
       // hides pi's own startup header dump so qronos-header is the only header shown.
       quietStartup: true,
@@ -299,6 +301,9 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // `models: false`: scripts get no `models` global, so a script can never
   // start a model request of its own (one agent per user, SB2).
   const todoToolExtension: InlineExtension = createTodoToolExtension();
+  // Tier 1 item 2: plan mode's ExitPlanMode tool. It is refused outside plan
+  // mode (see exit-plan-tool.ts), so it cannot be used to skip review.
+  const exitPlanToolExtension: InlineExtension = createExitPlanToolExtension({});
   const toolAliasesExtension: InlineExtension = createToolAliasesExtension();
   const mcpExtension: InlineExtension = { name: "pi-mcp", factory: createMcpExtension() };
   const codemodeExtension: InlineExtension = { name: "pi-codemode", factory: createCodemodeExtension({ models: false }) };
@@ -325,6 +330,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     commandsExtension,
     headerExtension,
     todoToolExtension,
+    exitPlanToolExtension,
     toolAliasesExtension,
     mcpExtension,
     codemodeExtension,
