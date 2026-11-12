@@ -23,6 +23,42 @@ export interface AgentDefinition {
   filePath?: string;
 }
 
+/**
+ * The only tools a subagent may ever hold (Option B: strictly read-only).
+ *
+ * Lives here rather than in agent-tool.ts so the sanitiser below can use it
+ * without importing the runner, which would be a cycle. Every write-capable
+ * tool is absent by construction, and `bash` is absent because a shell is not
+ * read-only in any meaningful sense.
+ */
+export const SUBAGENT_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "read",
+  "read_file",
+  "grep",
+  "glob",
+  "find",
+  "list_dir",
+  "ls",
+  "web_search",
+  "docs_lookup",
+  "free_pi_docs",
+  "free_pi_usage",
+  "exit_plan_mode",
+]);
+
+/**
+ * Drop any tool a definition asks for that is not read-only.
+ *
+ * Applied at parse time so a hostile or mistaken `.qronos/agents/*.md` cannot
+ * carry `write`/`edit`/`bash` into the runtime at all. Returns undefined when
+ * nothing survives, which callers read as "use the full read-only set".
+ */
+export function sanitizeAgentTools(tools: readonly string[] | undefined): string[] | undefined {
+  if (!tools) return undefined;
+  const safe = tools.filter((t) => SUBAGENT_READ_ONLY_TOOLS.has(t));
+  return safe.length > 0 ? safe : undefined;
+}
+
 export const BUILTIN_AGENTS: Record<string, Omit<AgentDefinition, "source">> = {
   "general-purpose": {
     name: "general-purpose",
@@ -99,7 +135,9 @@ function loadAgentsFromDirectory(dir: string, source: "project" | "user"): Agent
       agents.push({
         name: agentName,
         description,
-        tools: parseToolList(frontmatter.tools),
+        // Sanitised at parse time: a definition cannot carry a non-read-only
+        // tool past this line, regardless of what its frontmatter says.
+        tools: sanitizeAgentTools(parseToolList(frontmatter.tools)),
         model: typeof frontmatter.model === "string" ? frontmatter.model.trim() : undefined,
         systemPrompt: body.trim(),
         source,

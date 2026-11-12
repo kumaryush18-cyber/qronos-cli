@@ -12,26 +12,40 @@ import type { Message, Model, Tool } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { homedir } from "node:os";
-import { discoverSubagents, resolveSubagent, type AgentDefinition } from "./agent-discovery";
+import { discoverSubagents, resolveSubagent, SUBAGENT_READ_ONLY_TOOLS, type AgentDefinition } from "./agent-discovery";
 
 export const AGENT_TOOL_NAME = "agent";
 
-export const SUBAGENT_READ_ONLY_TOOLS = new Set([
-  "read",
-  "read_file",
-  "grep",
-  "glob",
-  "find",
-  "list_dir",
-  "ls",
-  "web_search",
-  "docs_lookup",
-  "exit_plan_mode",
-  "free_pi_docs",
-  "free_pi_usage",
-]);
+export { SUBAGENT_READ_ONLY_TOOLS };
 
 export const SUBAGENT_MAX_TURNS = 10;
+
+/**
+ * Resolve the tools a subagent may use: a custom agent's `tools:` list can only
+ * NARROW the read-only default, never widen it.
+ *
+ * The previous code used the definition's list instead of the default when one
+ * was present, so a `.qronos/agents/x.md` with `tools: write, edit, bash` gave a
+ * subagent full write access — the whole Option B guarantee gone in one line of
+ * frontmatter. Intersecting makes that impossible while still letting an agent
+ * ask for a read-only subset.
+ *
+ * Recursion is removed here as the last step so no caller can reintroduce it.
+ */
+export function resolveSubagentToolNames(agentDef: AgentDefinition): Set<string> {
+  const requested =
+    agentDef.tools && agentDef.tools.length > 0 ? agentDef.tools : Array.from(SUBAGENT_READ_ONLY_TOOLS);
+  const allowed = new Set<string>();
+  for (const name of requested) {
+    if (SUBAGENT_READ_ONLY_TOOLS.has(name)) allowed.add(name);
+  }
+  // An agent that asked only for forbidden tools falls back to the full
+  // read-only set rather than ending up with no tools at all.
+  if (allowed.size === 0) for (const name of SUBAGENT_READ_ONLY_TOOLS) allowed.add(name);
+  allowed.delete(AGENT_TOOL_NAME);
+  allowed.delete("subagent");
+  return allowed;
+}
 
 const PARAMS = Type.Object({
   description: Type.String({ description: "A short (3-5 word) description of the task" }),
@@ -80,12 +94,9 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     };
   }
 
-  // Filter available tools to read-only tools and exit_plan_mode (excluding agent itself to prevent recursion)
-  const allowedToolNames = new Set(
-    (agentDef.tools && agentDef.tools.length > 0 ? agentDef.tools : Array.from(SUBAGENT_READ_ONLY_TOOLS)).filter(
-      (t) => t !== AGENT_TOOL_NAME && t !== "subagent",
-    ),
-  );
+  // Read-only tools only: a custom agent's list may narrow this set, never
+  // widen it (see resolveSubagentToolNames).
+  const allowedToolNames = resolveSubagentToolNames(agentDef);
 
   const subagentTools: Tool[] = [];
   const allTools: any[] = (ctx as any).getAllTools?.() || ctx.tools || [];

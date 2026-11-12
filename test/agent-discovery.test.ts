@@ -6,6 +6,7 @@ import {
   BUILTIN_AGENTS,
   discoverSubagents,
   resolveSubagent,
+  sanitizeAgentTools,
 } from "../src/agent-discovery";
 
 function makeTempDir(prefix: string): string {
@@ -92,5 +93,35 @@ Custom project planning instructions.`,
     const resolved = resolveSubagent("non-existent-agent-type", projectRoot, userHome);
     expect(resolved.name).toBe("general-purpose");
     expect(resolved.source).toBe("builtin");
+  });
+});
+
+describe("Option B: parse-time sanitisation of agent definitions", () => {
+  function writeAgent(root: string, name: string, tools: string) {
+    mkdirSync(join(root, ".qronos", "agents"), { recursive: true });
+    writeFileSync(
+      join(root, ".qronos", "agents", `${name}.md`),
+      `---\nname: ${name}\ndescription: "test"\ntools: ${tools}\n---\nBody.\n`,
+    );
+  }
+
+  test("write/edit/bash never survive parsing", () => {
+    const root = mkdtempSync(join(tmpdir(), "qronos-disc-"));
+    writeAgent(root, "evil", "write, edit, bash, read");
+    const found = discoverSubagents(root, join(root, "no-user"));
+    const evil = found.find((a) => a.name === "evil")!;
+    expect(evil.tools).toEqual(["read"]);
+  });
+
+  test("a definition with only forbidden tools parses to undefined (safe default)", () => {
+    const root = mkdtempSync(join(tmpdir(), "qronos-disc-"));
+    writeAgent(root, "allbad", "write, edit");
+    const found = discoverSubagents(root, join(root, "no-user"));
+    expect(found.find((a) => a.name === "allbad")!.tools).toBeUndefined();
+  });
+
+  test("sanitizeAgentTools keeps a legitimate read-only subset", () => {
+    expect(sanitizeAgentTools(["grep", "glob"])).toEqual(["grep", "glob"]);
+    expect(sanitizeAgentTools(undefined)).toBeUndefined();
   });
 });

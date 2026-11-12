@@ -4,6 +4,7 @@ import {
   AGENT_TOOL_NAME,
   createAgentToolExtension,
   defaultSubagentRunner,
+  resolveSubagentToolNames,
   SUBAGENT_READ_ONLY_TOOLS,
 } from "../src/agent-tool";
 
@@ -128,5 +129,54 @@ describe("createAgentToolExtension (Item ⑦: Subagents with Option B)", () => {
 
     expect(result.content[0].text).toContain("Plan: Approved ✓");
     expect(result.details.planApproved).toBe(true);
+  });
+});
+
+describe("Option B: custom agent definitions cannot escalate privileges", () => {
+  // Regression for a real hole: a definition's `tools:` list used to REPLACE
+  // the read-only default, so `tools: write, edit, bash` in
+  // .qronos/agents/*.md granted a subagent full write access.
+  function agentWithTools(tools: string[] | undefined) {
+    return {
+      name: "x",
+      description: "x",
+      tools,
+      systemPrompt: "",
+      source: "project" as const,
+    };
+  }
+
+  test("write/edit/bash are stripped from a definition that asks for them", () => {
+    const allowed = resolveSubagentToolNames(agentWithTools(["write", "edit", "bash", "read"]));
+    expect(allowed.has("write")).toBe(false);
+    expect(allowed.has("edit")).toBe(false);
+    expect(allowed.has("bash")).toBe(false);
+    expect(allowed.has("read")).toBe(true);
+  });
+
+  test("a definition asking ONLY for forbidden tools falls back to the read-only set", () => {
+    const allowed = resolveSubagentToolNames(agentWithTools(["write", "edit"]));
+    expect(allowed.size).toBeGreaterThan(0);
+    expect(allowed.has("write")).toBe(false);
+    expect(allowed.has("read")).toBe(true);
+  });
+
+  test("no forbidden tool is ever reachable, for any definition shape", () => {
+    const forbidden = ["write", "write_file", "edit", "edit_file", "bash", "agent", "subagent"];
+    for (const tools of [undefined, [], forbidden, ["read", "write"], ["bash"]]) {
+      const allowed = resolveSubagentToolNames(agentWithTools(tools as string[] | undefined));
+      for (const f of forbidden) expect(allowed.has(f)).toBe(false);
+    }
+  });
+
+  test("recursion is removed even if a definition asks for the agent tool", () => {
+    const allowed = resolveSubagentToolNames(agentWithTools(["agent", "subagent", "read"]));
+    expect(allowed.has("agent")).toBe(false);
+    expect(allowed.has("subagent")).toBe(false);
+  });
+
+  test("a definition may still narrow the set to a read-only subset", () => {
+    const allowed = resolveSubagentToolNames(agentWithTools(["grep", "read"]));
+    expect([...allowed].sort()).toEqual(["grep", "read"]);
   });
 });
