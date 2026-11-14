@@ -50,6 +50,7 @@ export const SUBAGENT_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "docs_lookup",
   "qronos_docs",
   "qronos_usage",
+  "enter_plan_mode",
   "exit_plan_mode",
 ]);
 

@@ -47,7 +47,7 @@ const AD_BODY = {
   ad_id: "ad-1",
   click_token: "tok-1",
   creative: { headline: "Headline", body: "Body copy", cta: "Click here", accent: "#fff" },
-  click_url: "https://freepi.ai/c/tok-1",
+  click_url: "https://qronos.me/c/tok-1",
 };
 
 function deps(fetchImpl: typeof fetch): AdsDeps {
@@ -222,7 +222,7 @@ describe("narrow terminal fallback", () => {
 
     const lines = drawAt(widgetCalls[0]?.content, 40); // < adMinColumns (60)
     expect(lines.length).toBe(1);
-    expect(lines[0]).not.toContain("┌");
+    expect(lines[0]).not.toContain("╭");
     expect(lines[0]).not.toContain("│");
   });
 
@@ -240,7 +240,7 @@ describe("narrow terminal fallback", () => {
 
     const lines = drawAt(widgetCalls[0]?.content, 80);
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines[0]).toContain("┌");
+    expect(lines[0]).toContain("╭");
   });
 });
 
@@ -287,7 +287,7 @@ describe("inferErrorFromRemainingBudget", () => {
 describe("#61 ad link: CTA visible, tracker URL only as the OSC-8 target", () => {
   const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
   const creative = { headline: "H", body: "B", cta: "get the skill @ slop.cash", accent: "#fff" };
-  const clickUrl = "https://api.freepi.ai/c/8eb56276-fda6-4aae-a800-b40ad39abcde";
+  const clickUrl = "https://api.qronos.me/c/8eb56276-fda6-4aae-a800-b40ad39abcde";
   // Strip OSC-8 open (`ESC ] 8 ; [id=..];  <url> BEL`) + close so only visible text remains.
   const stripOsc8 = (s: string) => s.replace(/\x1b\]8;[^;\x07]*;[^\x07]*\x07/g, "");
 
@@ -317,7 +317,7 @@ describe("#61 ad link: CTA visible, tracker URL only as the OSC-8 target", () =>
 describe("U1: whole ad card is one clickable link", () => {
   const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
   const creative = { headline: "Headline", body: "Body copy", cta: "Click here", accent: "#fff" };
-  const clickUrl = "https://api.freepi.ai/c/tok";
+  const clickUrl = "https://api.qronos.me/c/tok";
   const stripOsc8 = (s: string) => s.replace(/\x1b\]8;[^;\x07]*;[^\x07]*\x07/g, "");
   const idOf = (line: string): string => {
     const m = line.match(/\x1b\]8;id=([0-9a-f]+);/);
@@ -339,7 +339,7 @@ describe("U1: whole ad card is one clickable link", () => {
   test("the id is stable across two renders of the same URL and differs for a different URL", () => {
     const idA1 = idOf(renderAdCard(creative, clickUrl, theme, 80)[0]!);
     const idA2 = idOf(renderAdCard(creative, clickUrl, theme, 80)[0]!);
-    const idB = idOf(renderAdCard(creative, "https://api.freepi.ai/c/other", theme, 80)[0]!);
+    const idB = idOf(renderAdCard(creative, "https://api.qronos.me/c/other", theme, 80)[0]!);
     expect(idA1).toBe(idA2);
     expect(idA1).not.toBe(idB);
   });
@@ -347,25 +347,25 @@ describe("U1: whole ad card is one clickable link", () => {
   test("visible text with escapes stripped is byte-identical to the pre-change output at 60, 80, 140 cols", () => {
     const expected: Record<number, string[]> = {
       60: [
-        "┌ AD ░▒▓ ────────────────────────────────────────────────┐",
+        "╭── Sponsored ◈ ─────────────────────────────────────────╮",
         "│ Headline                                               │",
         "│ Body copy                                              │",
         "│ ▸ Click here                                           │",
-        "└────────────────────────────────────────────────────────┘",
+        "╰────────────────────────────────────────────────────────╯",
       ],
       80: [
-        "┌ AD ░▒▓ ────────────────────────────────────────────────────────────────────┐",
+        "╭── Sponsored ◈ ─────────────────────────────────────────────────────────────╮",
         "│ Headline                                                                   │",
         "│ Body copy                                                                  │",
         "│ ▸ Click here                                                               │",
-        "└────────────────────────────────────────────────────────────────────────────┘",
+        "╰────────────────────────────────────────────────────────────────────────────╯",
       ],
       140: [
-        "┌ AD ░▒▓ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐",
+        "╭── Sponsored ◈ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮",
         "│ Headline                                                                                                                               │",
         "│ Body copy                                                                                                                              │",
         "│ ▸ Click here                                                                                                                           │",
-        "└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘",
+        "╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯",
       ],
     };
     for (const width of [60, 80, 140] as const) {

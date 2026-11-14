@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createWebToolsExtension, DOCS_LOOKUP_GUIDELINES, WEB_SEARCH_GUIDELINES, DOCS_LOOKUP_TOOL_NAME, WEB_SEARCH_TOOL_NAME } from "../src/web-tools";
+import { createWebToolsExtension, DOCS_LOOKUP_GUIDELINES, WEB_SEARCH_GUIDELINES, DOCS_LOOKUP_TOOL_NAME, WEB_SEARCH_TOOL_NAME, isSafeTargetUrl } from "../src/web-tools";
 
 type Tool = {
   promptGuidelines?: string[];
@@ -127,3 +127,37 @@ describe("model-facing text", () => {
     expect((await run(tools[WEB_SEARCH_TOOL_NAME]!, { query: "q" })).content[0]!.text).toBe("Request failed (HTTP 403): under review");
   });
 });
+
+describe("isSafeTargetUrl (SSRF Guard)", () => {
+  test("allows legitimate external public URLs", () => {
+    expect(isSafeTargetUrl("https://qronos.me/docs")).toBe(true);
+    expect(isSafeTargetUrl("https://api.github.com/repos")).toBe(true);
+    expect(isSafeTargetUrl("http://example.com/test")).toBe(true);
+  });
+
+  test("rejects cloud metadata IP (169.254.169.254)", () => {
+    expect(isSafeTargetUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
+  });
+
+  test("rejects loopback and localhost", () => {
+    expect(isSafeTargetUrl("http://localhost:8080")).toBe(false);
+    expect(isSafeTargetUrl("http://127.0.0.1:3000")).toBe(false);
+    expect(isSafeTargetUrl("http://127.1.2.3")).toBe(false);
+    expect(isSafeTargetUrl("http://0.0.0.0:80")).toBe(false);
+    expect(isSafeTargetUrl("http://app.localhost")).toBe(false);
+  });
+
+  test("rejects private RFC1918 networks", () => {
+    expect(isSafeTargetUrl("http://10.0.0.1")).toBe(false);
+    expect(isSafeTargetUrl("http://192.168.1.1")).toBe(false);
+    expect(isSafeTargetUrl("http://172.16.0.1")).toBe(false);
+    expect(isSafeTargetUrl("http://172.31.255.255")).toBe(false);
+  });
+
+  test("rejects non-http protocols and malformed strings", () => {
+    expect(isSafeTargetUrl("file:///etc/passwd")).toBe(false);
+    expect(isSafeTargetUrl("gopher://server")).toBe(false);
+    expect(isSafeTargetUrl("not-a-valid-url")).toBe(false);
+  });
+});
+

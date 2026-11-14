@@ -9,7 +9,7 @@ import {
 
 const MSG = "out of free usage today (young tier). Buy more at https://api.test/buy/t — $5 or $10, card or USDC. Free usage resets at 00:00 UTC.";
 // Exactly the shape pi 0.84.4 puts in message.errorMessage for a qronos 429 (observed live 2026-09-01).
-const ERR = `429: ${JSON.stringify({ message: MSG, code: "daily_cap", error: { message: MSG, code: "daily_cap", type: "free_pi_error" } })}`;
+const ERR = `429: ${JSON.stringify({ message: MSG, code: "daily_cap", error: { message: MSG, code: "daily_cap", type: "qronos_error" } })}`;
 
 describe("parseErrorEnvelope", () => {
   test("parses pi's '<status>: {envelope}' into status/code/message", () => {

@@ -34,6 +34,7 @@ describe("createAgentToolExtension (Item ⑦: Subagents with Option B)", () => {
   test("Option B: SUBAGENT_READ_ONLY_TOOLS strictly excludes mutating tools and agent recursion", () => {
     expect(SUBAGENT_READ_ONLY_TOOLS.has("read")).toBe(true);
     expect(SUBAGENT_READ_ONLY_TOOLS.has("grep")).toBe(true);
+    expect(SUBAGENT_READ_ONLY_TOOLS.has("enter_plan_mode")).toBe(true);
     expect(SUBAGENT_READ_ONLY_TOOLS.has("exit_plan_mode")).toBe(true);
 
     // Mutating tools must be forbidden

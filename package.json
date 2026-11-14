@@ -3,6 +3,15 @@
   "version": "1.0.0",
   "description": "Qronos CLI - Autonomous AI coding agent in your terminal powered by Qronos AI.",
   "license": "MIT",
+  "author": "Qronos AI",
+  "homepage": "https://qronos.me",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kumaryush18-cyber/qronos-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kumaryush18-cyber/qronos-cli/issues"
+  },
   "type": "module",
   "piConfig": {
     "name": "qronos",

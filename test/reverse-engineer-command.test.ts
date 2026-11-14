@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentSessionFromServices, createAgentSessionServices, SessionManager } from "@earendil-works/pi-coding-agent";
-import { createFreePiCommandsExtension, type CreateCommandsOptions } from "../src/commands";
+import { createCommandsExtension, type CreateCommandsOptions } from "../src/commands";
 import { buildRuntimeOptions } from "../src/pi-launch";
 
 const stubServer = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "stub-mcp-server.mjs");
@@ -27,7 +27,7 @@ function fakePi(extra: Partial<CreateCommandsOptions> = {}) {
     },
     getMcpServers: () => servers,
   };
-  const ext = createFreePiCommandsExtension({ baseUrl: "https://api.test", getToken: () => "t", ...extra });
+  const ext = createCommandsExtension({ baseUrl: "https://api.test", getToken: () => "t", ...extra });
   (ext as unknown as { factory: (pi: unknown) => void }).factory(pi);
   const ctx = { ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) } };
   const run = () => commands.get(COMMAND)!.handler("", ctx);
@@ -120,7 +120,7 @@ describe("/reverse-engineer-anything in a real pi session", () => {
     // Same extension list as production; only the rea launch command points at the stub server.
     resourceLoaderOptions.extensionFactories = resourceLoaderOptions.extensionFactories.map((e) =>
       (e as { name: string }).name === "qronos-commands"
-        ? createFreePiCommandsExtension({
+        ? createCommandsExtension({
             baseUrl,
             getToken: () => "t",
             nodeVersion: "24.15.0",

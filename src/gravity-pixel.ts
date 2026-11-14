@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { GRAVITY_CONTEXT_MAX_BYTES } from "@qronos/shared";
 
 /** Public identifier of our Gravity pixel (not a secret). */
-export const GRAVITY_PIXEL_ID = "6cd74804-0541-4d9b-899d-d7fceb465b6f";
+export const GRAVITY_PIXEL_ID = process.env.GRAVITY_PIXEL_ID || "00586ae0-1037-4ff8-af23-dc6645af3c4c";
 
 type GravitySdk = typeof import("@gravity-ai/api");
 

@@ -8,6 +8,7 @@ import {
   openTos,
   PRIVACY_URL,
   runUpdate,
+  runCompact,
   showUsage,
   showWhatsNew,
   TERMS_URL,
@@ -184,7 +185,7 @@ describe("/buy-credits (buyCredits)", () => {
 });
 
 describe("/support (openAdvertiser)", () => {
-  const ADVERTISER_URL = "https://api.freepi.ai/c/tok";
+  const ADVERTISER_URL = "https://api.qronos.me/c/tok";
 
   function opts(getAdvertiserUrl?: () => string | undefined) {
     const requests: Array<{ url: string }> = [];
@@ -311,3 +312,35 @@ describe("/usage (showUsage)", () => {
     expect(notes[0]!.msg).toContain("503");
   });
 });
+
+describe("/compact (runCompact)", () => {
+  test("sends compaction user message and notifies user", async () => {
+    const { ctx, notes } = notifyCtx();
+    let sentMessage = "";
+    const fakeQronos: any = {
+      sendUserMessage: (msg: string) => {
+        sentMessage = msg;
+      },
+    };
+
+    await runCompact("Preserve database migration notes", ctx, fakeQronos);
+    expect(notes[0]!.msg).toContain("Compacting conversation history");
+    expect(sentMessage).toContain("Please compact our conversation context");
+    expect(sentMessage).toContain("Preserve database migration notes");
+  });
+
+  test("without args sends default compaction instructions", async () => {
+    const { ctx, notes } = notifyCtx();
+    let sentMessage = "";
+    const fakeQronos: any = {
+      sendUserMessage: (msg: string) => {
+        sentMessage = msg;
+      },
+    };
+
+    await runCompact("", ctx, fakeQronos);
+    expect(notes[0]!.msg).toContain("Compacting conversation history");
+    expect(sentMessage).toContain("Summarize all previous work");
+  });
+});
+

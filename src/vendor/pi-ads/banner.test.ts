@@ -30,10 +30,10 @@ const config = loadConfig({});
 describe("createBannerRenderer onBannerAd (KTD7)", () => {
   test("successful fetch → onBannerAd called with the ad's click_url", async () => {
     const calls: Array<string | undefined> = [];
-    const fetchImpl = (async () => adResponse("https://api.freepi.ai/c/tok-1")) as unknown as typeof fetch;
+    const fetchImpl = (async () => adResponse("https://api.qronos.me/c/tok-1")) as unknown as typeof fetch;
     const banner = createBannerRenderer({ onBannerAd: (u) => calls.push(u) });
     await banner.render({ ...deps, fetchImpl }, fakeCtx(), config);
-    expect(calls).toEqual(["https://api.freepi.ai/c/tok-1"]);
+    expect(calls).toEqual(["https://api.qronos.me/c/tok-1"]);
   });
 
   test("204 (no ad) → onBannerAd called with undefined", async () => {
@@ -48,11 +48,11 @@ describe("createBannerRenderer onBannerAd (KTD7)", () => {
     let holder: string | undefined = "unset";
     let status: 200 | 204 = 200;
     const fetchImpl = (async () =>
-      status === 200 ? adResponse("https://api.freepi.ai/c/tok-2") : new Response(null, { status: 204 })) as unknown as typeof fetch;
+      status === 200 ? adResponse("https://api.qronos.me/c/tok-2") : new Response(null, { status: 204 })) as unknown as typeof fetch;
     const banner = createBannerRenderer({ onBannerAd: (u) => (holder = u) });
 
     await banner.render({ ...deps, fetchImpl }, fakeCtx(), config);
-    expect(holder).toBe("https://api.freepi.ai/c/tok-2");
+    expect(holder).toBe("https://api.qronos.me/c/tok-2");
 
     status = 204;
     await banner.render({ ...deps, fetchImpl }, fakeCtx(), config);
@@ -60,8 +60,36 @@ describe("createBannerRenderer onBannerAd (KTD7)", () => {
   });
 
   test("onBannerAd not passed → render still works (option is optional)", async () => {
-    const fetchImpl = (async () => adResponse("https://api.freepi.ai/c/tok-3")) as unknown as typeof fetch;
+    const fetchImpl = (async () => adResponse("https://api.qronos.me/c/tok-3")) as unknown as typeof fetch;
     const banner = createBannerRenderer();
     await expect(banner.render({ ...deps, fetchImpl }, fakeCtx(), config)).resolves.toBeUndefined();
+  });
+});
+
+// Regression: a session that is replaced/reloaded mid-fetch leaves an in-flight
+// render holding a stale ExtensionContext. pi's runner throws
+// "This extension ctx is stale after session replacement or reload." on any
+// later ctx.ui use, and because the banner render is fire-and-forget that throw
+// escaped into the agent loop and failed the turn (seen via Fusion's
+// session-replacement test). Ad writes must be dropped, never fatal.
+describe("stale extension context", () => {
+  test("a render into a replaced session resolves without throwing", async () => {
+    const stale = {
+      ui: {
+        setWidget: () => {
+          throw new Error("This extension ctx is stale after session replacement or reload.");
+        },
+        setStatus: () => {
+          throw new Error("This extension ctx is stale after session replacement or reload.");
+        },
+        theme: { fg: (_c: string, t: string) => t, bold: (t: string) => t },
+      },
+    } as unknown as ExtensionContext;
+    const fetchImpl = (async () => adResponse("https://api.qronos.me/c/tok-stale")) as unknown as typeof fetch;
+    const banner = createBannerRenderer();
+    await banner.render({ ...deps, fetchImpl }, stale, config);
+    // and the empty-slot path (204) writes undefined through the same guard
+    const noAd = (async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+    await banner.render({ ...deps, fetchImpl: noAd }, stale, config);
   });
 });

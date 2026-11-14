@@ -226,7 +226,7 @@ describe("Fusion production session routing", () => {
               error: {
                 message: "upstream responded 503",
                 code: "upstream_error",
-                type: "free_pi_error",
+                type: "qronos_error",
               },
             });
             return trackedResponse(errorEnvelope, closeStream, 502, "application/json");

@@ -6,11 +6,19 @@
 // never be approved implicitly by a stray Shift+Tab — the user has to choose.
 import type { ExtensionAPI, ExtensionToolContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { getExecutionMode } from "./execution-modes";
+import { getExecutionMode, setExecutionMode } from "./execution-modes";
 import { reviewPlan, writePlan, type PlanIo } from "./plan-io";
 import { planSummaryLine, type PlanDocument } from "./plan-mode";
 
 export const EXIT_PLAN_TOOL_NAME = "exit_plan_mode";
+export const ENTER_PLAN_TOOL_NAME = "enter_plan_mode";
+
+const ENTER_PARAMS = Type.Object({
+  reason: Type.String({ description: "Why plan mode is needed (e.g. multi-file changes, architectural refactoring, complex bug fix)" }),
+});
+
+const ENTER_DESCRIPTION =
+  "Enter plan mode to explore the codebase and design an implementation plan before writing or modifying any code. In plan mode, edits and destructive actions are paused. Once finished exploring, call exit_plan_mode for user approval.";
 
 const PARAMS = Type.Object({
   title: Type.String({ description: "One-line title of the plan" }),
@@ -35,6 +43,40 @@ export function createExitPlanToolExtension(opts: CreateExitPlanToolOptions): In
   return {
     name: "qronos-exit-plan",
     factory(qronos: ExtensionAPI) {
+      qronos.registerTool({
+        name: ENTER_PLAN_TOOL_NAME,
+        label: "Enter Plan Mode",
+        description: ENTER_DESCRIPTION,
+        promptSnippet:
+          "Call enter_plan_mode to explore and design a plan before modifying code on complex tasks",
+        parameters: ENTER_PARAMS,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<any> {
+          if (getExecutionMode() === "plan") {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Already in plan mode. Explore the codebase using read tools and call exit_plan_mode when your plan is ready.",
+                },
+              ],
+              details: { ok: true, mode: "plan" },
+            };
+          }
+          setExecutionMode("plan");
+          const ui = ctx.ui as { notify?: (msg: string, type?: string) => void } | undefined;
+          ui?.notify?.(`Entered Plan Mode: ${params.reason}`, "info");
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Switched to Plan Mode (${params.reason}). Edits are now paused. Use read, grep, and find tools to explore the codebase, design your plan, and call exit_plan_mode when ready for human approval.`,
+              },
+            ],
+            details: { ok: true, mode: "plan", reason: params.reason },
+          };
+        },
+      });
+
       qronos.registerTool({
         name: EXIT_PLAN_TOOL_NAME,
         label: "Exit Plan Mode",

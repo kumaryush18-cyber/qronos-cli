@@ -55,7 +55,7 @@ The rename release. One product name everywhere, and the setup screen users aske
 
 ### Changed
 - Limit messages now say when the limit clears and how many credits are left today. On the slow
-  lane, the message explains the hourly limit and points to freepi.ai/extra-credits.
+  lane, the message explains the hourly limit and points to qronos.me/account.
 - A session-conflict message keeps its `/close-other-session` hint.
 
 ## [0.4.7] - 2026-10-20
@@ -119,7 +119,7 @@ The rename release. One product name everywhere, and the setup screen users aske
 - A credits meter ("<n> credits") in the footer status bar. If you have bought credits, it reads
   "<free> + <bought> credits".
 - A warning line when 10% or less of your daily credits are left, and another when you are in the
-  slow lane. Each links to freepi.ai/buy.
+  slow lane. Each links to qronos.me/account.
 - `/usage` now shows "X / Y credits left today" with the refill time, the slow-lane line when it
   applies, and a final "buy more credits: /buy-credits" line.
 
@@ -166,7 +166,7 @@ The rename release. One product name everywhere, and the setup screen users aske
 ### Added
 - The whole ad card is one clickable link. Every row of the card carries the same link, so a
   click anywhere on the card opens the advertiser.
-- `free_pi_docs` tool: the agent can answer questions about qronos itself (what it is, the
+- `qronos_docs` tool: the agent can answer questions about qronos itself (what it is, the
   free allowance, credits, and the slash commands) from a built-in guide.
 
 ## [0.2.15] - 2026-09-03
@@ -182,7 +182,7 @@ The rename release. One product name everywhere, and the setup screen users aske
 ### Added
 - `/buy-credits` slash command (#241): opens the buy page with no model turn, so it works when
   you are out of usage and every request is rejected.
-- `/usage` slash command: the same report as `free_pi_usage`, with no model turn.
+- `/usage` slash command: the same report as `qronos_usage`, with no model turn.
 - One readable line when the server rejects a request with a 429: the server's own buy notice at
   the wall, or a plain rate-limit line with the retry time. pi still prints its raw error and
   retries; this line sits beside it.
@@ -190,7 +190,7 @@ The rename release. One product name everywhere, and the setup screen users aske
 - A one-turn "Payment received — $X of usage added" line in the meter when a purchase lands.
 
 ### Changed
-- `free_pi_usage` reports free usage as a percentage of today's allowance (#242). No free-usage
+- `qronos_usage` reports free usage as a percentage of today's allowance (#242). No free-usage
   dollar figure is shown anywhere (cap, spend, lifetime). Purchased credit stays in dollars.
 
 ## [0.2.11] - 2026-09-01
@@ -199,9 +199,9 @@ The rename release. One product name everywhere, and the setup screen users aske
 - **Buy more usage when the free daily cap is hit** (epic #221). A purchased credit balance
   covers usage above the free allowance and persists across days. Packs: $5 → $4.00 of usage,
   $10 → $8.00, paid by card or USDC through Stripe Checkout.
-- `free_pi_buy_credits` tool (#226): ask pi to buy credits and it opens the buy page in your
+- `qronos_buy_credits` tool (#226): ask qronos to buy credits and it opens the buy page in your
   browser and prints the URL (for SSH sessions).
-- `free_pi_usage` now shows the purchased balance (#227).
+- `qronos_usage` now shows the purchased balance (#227).
 
 ### Changed
 - The out-of-usage line in the meter is now server-supplied (#225), so the offer and link can

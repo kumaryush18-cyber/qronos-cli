@@ -1,6 +1,7 @@
 // Responsive, minimalist Claude Code-inspired header with pixel-accurate Qronos block logo.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { CLI_VERSION } from "./version";
 
 export interface ThemeLike {
   fg(color: string, text: string): string;
@@ -83,7 +84,7 @@ export function headerLines(
   // Keeps header strictly at 11 lines total so it never scrolls off-screen on mobile
   const textLines = [
     "",
-    `${BOLD}${WHITE}Qronos AI v1.0.0${RESET}`,
+    `${BOLD}${WHITE}Qronos AI v${CLI_VERSION}${RESET}`,
     `${DIM}qronos-me · API Gateway${RESET}`,
     `${DIM}${truncateToWidth(cwd, Math.max(10, safeWidth - 23))}${RESET}`,
     `${COLOR_TOP}●${RESET} ${DIM}${cleanModel}${RESET}`,

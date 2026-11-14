@@ -3,8 +3,8 @@
 // so each renderer checks this before showing an own ad and clears the other
 // widget when a Gravity ad takes over. UI state only; nothing here is model-visible.
 export interface AdScreen {
-  banner?: "gravity" | "own";
-  inline?: "gravity" | "own";
+  banner?: "gravity" | "thrad" | "own";
+  inline?: "gravity" | "thrad" | "own";
   clearBanner?: () => void;
   clearInline?: () => void;
 }

@@ -55,23 +55,21 @@ function isGravityImpUrl(raw: string | undefined): raw is string {
   if (!raw) return false;
   try {
     const u = new URL(raw);
-    return u.protocol === "https:" && /(^|\.)trygravity\.(ai|com)$/.test(u.hostname);
+    return (
+      u.protocol === "https:" &&
+      (/(^|\.)trygravity\.(ai|com)$/.test(u.hostname) || /(^|\.)thrad\.ai$/.test(u.hostname))
+    );
   } catch {
     return false;
   }
 }
 
 /**
- * Fires Gravity's impression pixel from this machine (their requirement: the
- * impression is measured where the ad is shown). Plain GET with no qronos
- * credentials. Fire-and-forget: never awaited, errors swallowed, so it cannot
- * delay a render. Returns true when the fire was ATTEMPTED (not whether it
- * succeeded): the caller then tells the server imp_fired, because a lost
- * impression is acceptable but a double count at Gravity is not. False when
- * there was nothing to fire (own ad, no imp_url, non-Gravity host).
+ * Fires the programmatic impression pixel (Gravity or Thrad AI) from this machine.
+ * Plain GET with no qronos credentials. Fire-and-forget: never awaited, errors swallowed.
  */
 export function fireGravityImpression(deps: AdsDeps, ad: AdNextResponse): boolean {
-  if (ad.source !== "gravity" || !isGravityImpUrl(ad.imp_url)) return false;
+  if ((ad.source !== "gravity" && ad.source !== "thrad") || !isGravityImpUrl(ad.imp_url)) return false;
   try {
     void Promise.resolve((deps.fetchImpl ?? fetch)(ad.imp_url, { method: "GET", signal: AbortSignal.timeout(IMP_TIMEOUT_MS) })).catch(() => {});
   } catch {

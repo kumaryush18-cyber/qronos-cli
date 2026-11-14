@@ -24,7 +24,7 @@ import { createWebToolsExtension, DOCS_LOOKUP_TOOL_NAME, WEB_SEARCH_TOOL_NAME } 
 import { createBuyToolExtension, BUY_TOOL_NAME } from "./buy-tool";
 import { createDocsToolExtension, DOCS_TOOL_NAME } from "./docs-tool";
 import { createTodoToolExtension, TODO_TOOL_NAME } from "./todo-tool";
-import { createExitPlanToolExtension, EXIT_PLAN_TOOL_NAME } from "./exit-plan-tool";
+import { createExitPlanToolExtension, EXIT_PLAN_TOOL_NAME, ENTER_PLAN_TOOL_NAME } from "./exit-plan-tool";
 import { createAgentToolExtension, AGENT_TOOL_NAME } from "./agent-tool";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
@@ -41,7 +41,7 @@ import { getConfigPath, getHooksPath, getProjectHooksPath } from "./paths";
 import { createHooksExtension } from "./hooks-extension";
 import { mergeHookConfigs, parseHookConfig } from "./hooks";
 import { initExecutionMode, isExecutionMode, setExecutionModePersistence } from "./execution-modes";
-import { createFreePiCommandsExtension } from "./commands";
+import { createCommandsExtension } from "./commands";
 import { createHeaderExtension } from "./header";
 import { resolveQronosScope } from "./provider-lock";
 import { createFusionExtension, resolveFusionIds } from "./fusion";
@@ -113,6 +113,7 @@ export const ALLOWED_TOOL_NAMES: readonly string[] = [
   DOCS_LOOKUP_TOOL_NAME,
   IMAGE_TOOL_NAME,
   TODO_TOOL_NAME,
+  ENTER_PLAN_TOOL_NAME,
   EXIT_PLAN_TOOL_NAME,
   AGENT_TOOL_NAME,
   "codemode",
@@ -286,7 +287,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // 0.2.6: qronos's slash commands — /close-other-session, /whats-new, /update.
   // A dedicated extension rather than folding into usage-tool (which stays
   // read-only).
-  const commandsExtension: InlineExtension = createFreePiCommandsExtension({
+  const commandsExtension: InlineExtension = createCommandsExtension({
     baseUrl: opts.baseUrl,
     getToken: () => opts.jwt,
     apiKey: opts.jwt,

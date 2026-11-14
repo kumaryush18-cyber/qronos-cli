@@ -83,7 +83,7 @@ function stubFetch(
   return { fetchImpl, requests };
 }
 
-const BUY_URL = "https://api.freepi.ai/buy?token=abc123";
+const BUY_URL = "https://api.qronos.me/buy?token=abc123";
 
 const ME_WITH_BUY_URL: MeResponse = {
   user_id: "u1",

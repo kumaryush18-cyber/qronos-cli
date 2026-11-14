@@ -10,6 +10,7 @@ import type { AdsDeps } from "./api";
 import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";
 import { adWidget } from "./style";
+import { setWidgetSafely } from "./widget";
 
 export const INLINE_WIDGET_ID = "qronos-ad-inline";
 
@@ -25,7 +26,7 @@ export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
   let lastPostedToken: string | undefined;
 
   const clearInline = (ctx: ExtensionContext) => {
-    if (inlineVisible) ctx.ui.setWidget(INLINE_WIDGET_ID, undefined);
+    if (inlineVisible) setWidgetSafely(ctx, INLINE_WIDGET_ID, undefined);
     inlineVisible = false;
     screen.inline = undefined;
   };
@@ -37,19 +38,19 @@ export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
       clearInline(ctx);
 
       if (turnCount % config.adInlineTurnFrequency !== 0) return;
-      // A Gravity banner is on screen: no other ad (of any source) may appear beside it.
-      if (screen.banner === "gravity") return;
+      // A programmatic banner is on screen: no other ad (of any source) may appear beside it.
+      if (screen.banner === "gravity" || screen.banner === "thrad") return;
 
       const ad = await fetchAdNext(deps, "inline");
       if (!ad) return;
-      const isGravity = ad.source === "gravity";
-      // The banner may have turned into a Gravity ad while this fetch was in flight.
-      if ((screen as AdScreen).banner === "gravity") return;
-      if (isGravity && screen.banner) screen.clearBanner?.();
+      const isProgrammatic = ad.source === "gravity" || ad.source === "thrad";
+      // The banner may have turned into a programmatic ad while this fetch was in flight.
+      if ((screen as AdScreen).banner === "gravity" || (screen as AdScreen).banner === "thrad") return;
+      if (isProgrammatic && screen.banner) screen.clearBanner?.();
 
-      ctx.ui.setWidget(INLINE_WIDGET_ID, adWidget(ad.creative, ad.click_url, config.adMinColumns), { placement: "belowEditor" });
+      setWidgetSafely(ctx, INLINE_WIDGET_ID, adWidget(ad.creative, ad.click_url, config.adMinColumns), { placement: "belowEditor" });
       inlineVisible = true;
-      screen.inline = isGravity ? "gravity" : "own";
+      screen.inline = isProgrammatic ? (ad.source as "gravity" | "thrad") : "own";
       screen.clearInline = () => clearInline(ctx);
 
       if (lastPostedToken !== ad.click_token) {

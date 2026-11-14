@@ -35,7 +35,7 @@ import { IMAGE_TOOL_NAME } from "../src/image-tool";
 import { BUY_TOOL_NAME } from "../src/buy-tool";
 import { DOCS_TOOL_NAME } from "../src/docs-tool";
 import { TODO_TOOL_NAME } from "../src/todo-tool";
-import { EXIT_PLAN_TOOL_NAME } from "../src/exit-plan-tool";
+import { EXIT_PLAN_TOOL_NAME, ENTER_PLAN_TOOL_NAME } from "../src/exit-plan-tool";
 import { AGENT_TOOL_NAME, SUBAGENT_READ_ONLY_TOOLS } from "../src/agent-tool";
 
 function tempDir(prefix: string): string {
@@ -61,7 +61,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // #226: the closed set deliberately grew to six with qronos-buy-tool;
     // 2026-09-01: to seven with qronos-error-notice (one readable line on a
     // 429); 2026-09-03: to eight with qronos-header (the startup header,
-    // U1/U2); 2026-09-03: to nine with qronos-docs-tool (the free_pi_docs
+    // U1/U2); 2026-09-03: to nine with qronos-docs-tool (the qronos_docs
     // tool, U2). Any further addition must be a reviewed, deliberate edit —
     // never accidental. 2026-10-20: to sixteen with qronos-web-tools (web_search, docs_lookup); to seventeen with qronos-image-tool (generate_image).
     // 0.5.0: to eighteen with qronos-exit-plan (plan mode's exit_plan_mode).
@@ -131,6 +131,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         DOCS_LOOKUP_TOOL_NAME,
         IMAGE_TOOL_NAME,
         TODO_TOOL_NAME,
+        ENTER_PLAN_TOOL_NAME,
         EXIT_PLAN_TOOL_NAME,
         AGENT_TOOL_NAME,
         "codemode",
@@ -186,7 +187,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
   });
 
   test("codemode and tool_search are the only new non-MCP names beyond the tools", () => {
-    const known = [...SAFE_TOOLS, USAGE_TOOL_NAME, BUY_TOOL_NAME, DOCS_TOOL_NAME, WEB_SEARCH_TOOL_NAME, DOCS_LOOKUP_TOOL_NAME, IMAGE_TOOL_NAME, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME];
+    const known = [...SAFE_TOOLS, USAGE_TOOL_NAME, BUY_TOOL_NAME, DOCS_TOOL_NAME, WEB_SEARCH_TOOL_NAME, DOCS_LOOKUP_TOOL_NAME, IMAGE_TOOL_NAME, TODO_TOOL_NAME, ENTER_PLAN_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME];
     expect(ALLOWED_TOOL_NAMES.filter((n) => !known.includes(n)).sort()).toEqual(["codemode", "tool_search"]);
     expect(ALLOWED_TOOL_NAMES.some((n) => n.startsWith("mcp__"))).toBe(false);
   });

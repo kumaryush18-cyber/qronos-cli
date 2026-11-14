@@ -4,3 +4,7 @@ dist
 .DS_Store
 # Plan-mode artifacts (Tier 1 item 2): per-run plan files, not source.
 .qronos/plans/
+
+.env
+.env.local
+

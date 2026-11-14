@@ -426,8 +426,8 @@ async function showDoctor(ctx: any, opts: CreateCommandsOptions): Promise<void> 
 
   // 2. Git status
   try {
-    const branch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    const status = execSync("git status --porcelain", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 }).trim();
+    const status = execSync("git status --porcelain", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 }).trim();
     const dirty = status.length > 0 ? "dirty working tree" : "clean";
     checks.push(`[✓] Git Repository: branch '${branch}' (${dirty})`);
   } catch {
@@ -462,9 +462,9 @@ async function showDoctor(ctx: any, opts: CreateCommandsOptions): Promise<void> 
 async function runReview(ctx: any, qronos: ExtensionAPI): Promise<void> {
   let diff = "";
   try {
-    diff = execSync("git diff HEAD", { encoding: "utf8", maxBuffer: 1024 * 1024 }).trim();
+    diff = execSync("git diff HEAD", { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 5000 }).trim();
     if (!diff) {
-      diff = execSync("git diff --staged", { encoding: "utf8", maxBuffer: 1024 * 1024 }).trim();
+      diff = execSync("git diff --staged", { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 5000 }).trim();
     }
   } catch (err: any) {
     ctx.ui.notify(`Could not read git diff: ${err?.message || String(err)}`, "error");
@@ -488,7 +488,18 @@ async function runReview(ctx: any, qronos: ExtensionAPI): Promise<void> {
   qronos.sendUserMessage(prompt);
 }
 
-export function createFreePiCommandsExtension(opts: CreateCommandsOptions): InlineExtension {
+export async function runCompact(args: string, ctx: any, qronos: ExtensionAPI): Promise<void> {
+  const hint = args.trim();
+  const prompt = [
+    "Please compact our conversation context.",
+    hint ? `Focus of compaction: ${hint}` : "Summarize all previous work, key technical decisions, current file changes, and remaining tasks.",
+    "Preserve any active todos and plans. Be concise so that maximum context headroom is freed.",
+  ].join("\n");
+  ctx.ui?.notify?.("Compacting conversation history...", "info");
+  qronos.sendUserMessage(prompt);
+}
+
+export function createCommandsExtension(opts: CreateCommandsOptions): InlineExtension {
   return {
     name: "qronos-commands",
     factory(qronos: ExtensionAPI) {
@@ -569,6 +580,10 @@ export function createFreePiCommandsExtension(opts: CreateCommandsOptions): Inli
       qronos.registerCommand("review", {
         description: "Review current git diff changes for correctness, bugs, and code quality.",
         handler: (_args, ctx) => runReview(ctx as any, qronos),
+      });
+      qronos.registerCommand("compact", {
+        description: "Compact and summarize session history to free up context window space.",
+        handler: (args, ctx) => runCompact(args, ctx as any, qronos),
       });
     },
   };

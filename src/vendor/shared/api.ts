@@ -152,10 +152,9 @@ export const AdNextResponseSchema = z.object({
   click_token: z.string(),
   creative: AdCreativeSchema,
   click_url: z.string(),
-  // Who supplied the ad. Optional so older servers still parse. Gravity's
-  // guidelines forbid any other ad on screen beside a Gravity ad, so the
-  // client hides our own ads while one is showing.
-  source: z.enum(["gravity", "own"]).optional(),
+  // Who supplied the ad. Optional so older servers still parse. Supports
+  // Thrad AI DSP and Gravity sponsor networks.
+  source: z.enum(["gravity", "thrad", "own"]).optional(),
   // Gravity's impression pixel (source "gravity" only). The client fires it
   // from the user's machine when the ad is actually shown, then reports
   // imp_fired so the server does not fire it again.

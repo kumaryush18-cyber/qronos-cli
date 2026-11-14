@@ -9,6 +9,31 @@ import { Type } from "typebox";
 export const WEB_SEARCH_TOOL_NAME = "web_search";
 export const DOCS_LOOKUP_TOOL_NAME = "docs_lookup";
 
+/**
+ * SSRF Guard: validates that a URL does not target loopback, link-local,
+ * cloud metadata (169.254.169.254), or private network ranges.
+ */
+export function isSafeTargetUrl(urlString: string): boolean {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".localhost")) return false;
+    if (hostname === "0.0.0.0" || hostname === "127.0.0.1" || hostname.startsWith("127.")) return false;
+    if (hostname === "169.254.169.254") return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) return false;
+    if (hostname === "::1" || hostname === "[::1]") return false;
+    const match172 = hostname.match(/^172\.(\d+)\./);
+    if (match172) {
+      const second = Number(match172[1]);
+      if (second >= 16 && second <= 31) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface CreateWebToolsOptions {
   baseUrl: string;
   getToken: () => string | Promise<string>;

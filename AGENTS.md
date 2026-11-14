@@ -1,25 +1,40 @@
 # AGENTS.md
 
-## This repo is a generated mirror
+Welcome to the **Qronos CLI** repository (`kumaryush18-cyber/qronos-cli`).
 
-`qronos-cli` is a one-way mirror of `packages/cli` (plus the vendored
-`pi-ads` and `shared` packages) from the private `dennisonbertram/qronos`
-monorepo. A GitHub Actions workflow in that repo syncs this one on every push
-to its `main` branch. `.mirror-state.json` records the sha256 of every file the
-last sync wrote.
+## Project Overview
 
-Rules for agents:
+`qronos-cli` is the official standalone repository for the Qronos autonomous terminal AI coding agent. It is powered by Qronos AI and built atop the **Earendil engine** (`@earendil-works/pi-coding-agent` & `@earendil-works/pi-tui`).
 
-- Do not edit `src/`, `test/`, `README.md`, `CHANGELOG.md`, or `package.json`
-  here. The next sync overwrites them and refuses to run if it finds hand
-  edits. Port the change into the monorepo instead.
-- Do not publish to npm from this repo. Publishing runs from the monorepo on a
-  `cli-v<version>` tag.
-- Outside contributors: open a PR here. A maintainer ports it into the
-  monorepo, and the next sync brings it back.
-- Keep this repo public and free of private repo names, secrets, and
-  server-side spend or tier values. Three files in `shared` are held back from
-  the mirror on purpose for that reason.
+This is the primary canonical codebase maintained by the Qronos team. All features, improvements, tests, and documentation are developed and published directly from this repository.
 
-Split reviewed 2026-09-02: the CLI is a separate public repo because the
-npm bundle already ships its source, and the monorepo stays private.
+---
+
+## Toolchain & Commands
+
+- **Runtime:** Bun `v1.3.14` and Node.js `>=22.19.0`.
+- **Typecheck:** `bun run typecheck` (`tsc --noEmit`) — must pass cleanly with 0 errors.
+- **Tests:** `bun test` — all tests in `test/` must pass (875+ tests).
+- **Build:** `bun run build` — bundles into standalone executable `dist/index.js`.
+- **Package Manager:** Bun with `bun.lock`. CI validates `--frozen-lockfile`.
+
+---
+
+## Architecture & Conventions
+
+1. **Brand Identity:**
+   - Package: `qronos-cli`
+   - Binaries: `qronos-cli` and `qronos`
+   - User config dir: `~/.qronos`
+   - Memory system: `QRONOS.md` (layered hierarchy)
+   - Core tools: `qronos_usage`, `qronos_buy_credits`, `qronos_docs`
+   - Widgets: `qronos-ad`, `qronos-ad-inline`, `qronos-meter`
+   - Extension namespace: `qronos-*`
+
+2. **UI & TUI Discipline:**
+   - Logo geometry rule: Terminal cells are ~1 wide × 2 tall; any block art mark must maintain `cols === 2 * rows` to look square.
+   - Guarded Widget Rendering: All widget writes should use `setWidgetSafely` / `setStatusSafely` (`src/vendor/pi-ads/widget.ts`) to avoid stale ExtensionContext errors when sessions reload.
+
+3. **Security Standards:**
+   - Local credentials must always be written with `0600` permissions (`src/credentials.ts`).
+   - Server-side and model-suggested URLs must be sanitized before opening.

@@ -7,6 +7,7 @@ import { fetchMe } from "./api";
 import { usdToCredits } from "@qronos/shared";
 import { inferErrorFromRemainingBudget, mapErrorCode } from "./errors";
 import { osc8, renderErrorLine, renderWarningLine, sanitizeText, type ThemeLike } from "./style";
+import { setStatusSafely, setWidgetSafely } from "./widget";
 
 export const METER_WIDGET_ID = "qronos-meter";
 // Routine credit balance lives in pi's footer status bar; the widget is kept
@@ -48,9 +49,9 @@ export async function renderMeter(deps: AdsDeps, ctx: ExtensionContext): Promise
   const me = await fetchMe(deps);
   // Any widget state below (notice, confirmation, error, hidden) clears the
   // footer balance so the two never disagree; the credits branches set it.
-  ctx.ui.setStatus(METER_STATUS_KEY, undefined);
+  setStatusSafely(ctx, METER_STATUS_KEY, undefined);
   if (!me) {
-    ctx.ui.setWidget(METER_WIDGET_ID, undefined);
+    setWidgetSafely(ctx, METER_WIDGET_ID, undefined);
     return;
   }
 
@@ -61,7 +62,7 @@ export async function renderMeter(deps: AdsDeps, ctx: ExtensionContext): Promise
   if (added > 0) confirm = { addedUsd: added, turnsLeft: CONFIRM_TURNS };
   if (confirm && confirm.turnsLeft > 0) {
     confirm.turnsLeft--;
-    ctx.ui.setWidget(METER_WIDGET_ID, [renderErrorLine(creditAddedMessage(confirm.addedUsd), theme)]);
+    setWidgetSafely(ctx, METER_WIDGET_ID, [renderErrorLine(creditAddedMessage(confirm.addedUsd), theme)]);
     return;
   }
   confirm = undefined;
@@ -72,14 +73,14 @@ export async function renderMeter(deps: AdsDeps, ctx: ExtensionContext): Promise
   // Absent (old server) → the exact pre-#225 behavior below.
   const notice = typeof me.notice === "string" ? sanitizeText(me.notice).trim() : "";
   if (notice !== "") {
-    ctx.ui.setWidget(METER_WIDGET_ID, [renderErrorLine(notice, theme)]);
+    setWidgetSafely(ctx, METER_WIDGET_ID, [renderErrorLine(notice, theme)]);
     return;
   }
   // Phase 0: credits, never dollars, for free usage. Server-owned fields
   // (optional so an older /me still falls through to the pre-Phase-0 hide).
   if (me.lane === "fallback") {
-    ctx.ui.setStatus(METER_STATUS_KEY, theme.fg("muted", "0 credits · slow lane"));
-    ctx.ui.setWidget(METER_WIDGET_ID, [
+    setStatusSafely(ctx, METER_STATUS_KEY, theme.fg("muted", "0 credits · slow lane"));
+    setWidgetSafely(ctx, METER_WIDGET_ID, [
       renderWarningLine(`Out of free credits — slow lane until refill${buyMore(me.buy_url)}`, theme),
     ]);
     return;
@@ -94,9 +95,10 @@ export async function renderMeter(deps: AdsDeps, ctx: ExtensionContext): Promise
       const left = me.remaining_credits_today;
       // Purchased credits ride along in the footer; the low warning below stays on free credits.
       const bought = typeof me.bonus_credits === "number" && me.bonus_credits > 0 ? ` + ${me.bonus_credits.toLocaleString("en-US")}` : "";
-      ctx.ui.setStatus(METER_STATUS_KEY, theme.fg("muted", `${left.toLocaleString("en-US")}${bought} credits`));
+      setStatusSafely(ctx, METER_STATUS_KEY, theme.fg("muted", `${left.toLocaleString("en-US")}${bought} credits`));
       const low = left > 0 && left <= me.allowance_credits * LOW_CREDIT_FRACTION;
-      ctx.ui.setWidget(
+      setWidgetSafely(
+        ctx,
         METER_WIDGET_ID,
         low ? [renderWarningLine(`Low on credits: ${left.toLocaleString("en-US")} left today${buyMore(me.buy_url)}`, theme)] : undefined,
       );
@@ -107,8 +109,8 @@ export async function renderMeter(deps: AdsDeps, ctx: ExtensionContext): Promise
   // Founder decision (2026-08-17): never show free-usage dollars. An old
   // server without credit fields still hides the meter until the cap is hit.
   if (errorCode === undefined) {
-    ctx.ui.setWidget(METER_WIDGET_ID, undefined);
+    setWidgetSafely(ctx, METER_WIDGET_ID, undefined);
     return;
   }
-  ctx.ui.setWidget(METER_WIDGET_ID, [renderErrorLine(mapErrorCode(errorCode), theme)]);
+  setWidgetSafely(ctx, METER_WIDGET_ID, [renderErrorLine(mapErrorCode(errorCode), theme)]);
 }

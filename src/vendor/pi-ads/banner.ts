@@ -9,6 +9,7 @@ import type { AdsDeps } from "./api";
 import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";
 import { adWidget } from "./style";
+import { setWidgetSafely } from "./widget";
 
 export const BANNER_WIDGET_ID = "qronos-ad";
 
@@ -45,29 +46,29 @@ export function createBannerRenderer(opts: BannerRendererOptions = {}): BannerRe
       if (opts.isActive && !opts.isActive()) return;
       if (!ad) {
         screen.banner = undefined;
-        ctx.ui.setWidget(BANNER_WIDGET_ID, undefined);
+        setWidgetSafely(ctx, BANNER_WIDGET_ID, undefined);
         opts.onBannerAd?.(undefined);
         return;
       }
 
-      // Gravity's rule: no other ad (of any source) on screen beside a Gravity ad.
-      // A banner yields to a visible Gravity inline card; a Gravity banner clears any inline card.
-      const isGravity = ad.source === "gravity";
-      if (screen.inline === "gravity") {
+      // Programmatic ad rule (Gravity / Thrad): no other ad on screen beside a programmatic ad.
+      // A banner yields to a visible programmatic inline card; a programmatic banner clears any inline card.
+      const isProgrammatic = ad.source === "gravity" || ad.source === "thrad";
+      if (screen.inline === "gravity" || screen.inline === "thrad") {
         screen.banner = undefined;
-        ctx.ui.setWidget(BANNER_WIDGET_ID, undefined);
+        setWidgetSafely(ctx, BANNER_WIDGET_ID, undefined);
         opts.onBannerAd?.(undefined);
         return;
       }
-      if (isGravity && screen.inline) screen.clearInline?.();
-      screen.banner = isGravity ? "gravity" : "own";
+      if (isProgrammatic && screen.inline) screen.clearInline?.();
+      screen.banner = isProgrammatic ? (ad.source as "gravity" | "thrad") : "own";
       screen.clearBanner = () => {
         screen.banner = undefined;
-        ctx.ui.setWidget(BANNER_WIDGET_ID, undefined);
+        setWidgetSafely(ctx, BANNER_WIDGET_ID, undefined);
         opts.onBannerAd?.(undefined);
       };
 
-      ctx.ui.setWidget(BANNER_WIDGET_ID, adWidget(ad.creative, ad.click_url, config.adMinColumns));
+      setWidgetSafely(ctx, BANNER_WIDGET_ID, adWidget(ad.creative, ad.click_url, config.adMinColumns));
       opts.onBannerAd?.(ad.click_url);
 
       if (lastPostedToken !== ad.click_token) {

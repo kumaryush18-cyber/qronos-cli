@@ -11,9 +11,9 @@ import { z } from "zod";
 
 export const ConfigSchema = z.object({
   // Show the inline ad card after assistant turns.
-  adInlineTurnFrequency: z.number().int().default(1),
+  adInlineTurnFrequency: z.number().int().default(5),
   // Minimum terminal width (columns) for the framed ad card.
-  adMinColumns: z.number().int().default(35),
+  adMinColumns: z.number().int().default(60),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

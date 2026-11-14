@@ -86,7 +86,7 @@ function stubFetch(): typeof fetch {
           cta: "Learn more",
           accent: "#ff00ff",
         },
-        click_url: "https://freepi.ai/c/tok-1",
+        click_url: "https://qronos.me/c/tok-1",
       });
     }
     if (url.pathname === "/ads/impression") return Response.json({ ok: true });

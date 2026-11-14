@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHeaderExtension, headerLines, LOGO_BLOCKS, type ThemeLike, type TuiLike } from "../src/header";
+import { CLI_VERSION } from "../src/version";
 
 /** InlineExtension is a union (bare factory fn | {name, factory}); our
  * factory always returns the object form. */
@@ -42,7 +43,7 @@ describe("headerLines — block-art header", () => {
 
   test("names the product and version", () => {
     const lines = headerLines(theme, MODEL, false);
-    expect(stripAnsi(lines[1]!)).toContain("Qronos AI v1.0.0");
+    expect(stripAnsi(lines[1]!)).toContain(`Qronos AI v${CLI_VERSION}`);
   });
 
   test("shows the gateway label", () => {

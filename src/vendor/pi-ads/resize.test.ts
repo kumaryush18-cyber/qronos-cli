@@ -20,7 +20,7 @@ const AD = {
     cta: "Start Building",
     accent: "#00ff88",
   },
-  click_url: "https://freepi.ai/c/tok-1",
+  click_url: "https://qronos.me/c/tok-1",
 };
 const fetchImpl = (async (input: string) => {
   const url = new URL(input.toString());
@@ -61,7 +61,12 @@ function drawAt(content: unknown, width: number): string[] {
 }
 
 // OSC 8 link escapes take no columns. Every glyph the card uses is one column wide.
-const visibleWidth = (s: string) => [...s.replace(/\x1b\]8;[^\x07]*\x07/g, "")].length;
+// Column width of a drawn line. pi-tui's own visibleWidth (already imported as
+// piVisibleWidth above) strips OSC 8 links AND SGR sequences; the hand-rolled
+// version this replaced only stripped OSC 8, so the `\x1b[0m` resets that
+// truncateToWidth emits were counted as columns and a line that fit reported as
+// too wide (41 vs 34 at the plain-line fallback).
+const visibleWidth = (s: string) => piVisibleWidth(s);
 
 for (const [name, widgetId, show] of [
   ["banner", BANNER_WIDGET_ID, (ctx: ExtensionContext) => createBannerRenderer().render(deps, ctx, config)],
@@ -102,7 +107,8 @@ for (const [name, widgetId, show] of [
       expect(drawAt(content, 100).length).toBe(5); // framed card at 100
       const plain = drawAt(content, config.adMinColumns - 1);
       expect(plain.length).toBe(1);
-      expect(plain[0]).not.toContain("┌");
+      expect(plain[0]).not.toContain("╭");
+      expect(plain[0]).not.toContain("│");
       expect(visibleWidth(plain[0]!)).toBeLessThanOrEqual(config.adMinColumns - 1);
     });
   });

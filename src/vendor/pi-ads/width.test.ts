@@ -9,7 +9,7 @@ import type { AdCreative } from "@qronos/shared";
 import { adWidget } from "./style";
 
 const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
-const URL_ = "https://freepi.ai/c/tok-1";
+const URL_ = "https://qronos.me/c/tok-1";
 const MIN = 60;
 
 function draw(creative: Partial<AdCreative>, width: number, adMinColumns = MIN): string[] {
