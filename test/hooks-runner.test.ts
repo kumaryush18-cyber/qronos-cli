@@ -24,13 +24,15 @@ describe("hooks-runner: single command", () => {
   });
 
   test("exit 2 blocks and the stderr text becomes the reason", async () => {
-    const r = await runHookCommand(cmd("echo 'nope' >&2; exit 2"), payload);
+    const errCmd = process.platform === "win32" ? "node -e \"process.stderr.write('nope'); process.exit(2)\"" : "echo 'nope' >&2; exit 2";
+    const r = await runHookCommand(cmd(errCmd), payload);
     expect(r.outcome).toEqual({ kind: "block", reason: "nope" });
   });
 
   test("the payload really arrives on stdin", async () => {
     // The hook echoes stdin; we then assert the tool name round-tripped.
-    const r = await runHookCommand(cmd("cat"), payload);
+    const echoCmd = process.platform === "win32" ? "node -e \"process.stdin.pipe(process.stdout)\"" : "cat";
+    const r = await runHookCommand(cmd(echoCmd), payload);
     expect(r.stdout).toContain('"tool_name":"bash"');
     expect(r.stdout).toContain('"hook_event_name":"PreToolUse"');
   });

@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.2",
+    highlights: [
+      "Cross-platform reliability fixes for Windows and macOS environments.",
+      "Live DuckDuckGo web search and library documentation lookup.",
+      "Enhanced orange styling across the Privacy & Transparency consent screen.",
+    ],
+  },
+  {
     version: "1.0.1",
     highlights: [
       "Vibrant brand styling: bold orange headers, glowing cursor, and clean compact token counters (10M).",

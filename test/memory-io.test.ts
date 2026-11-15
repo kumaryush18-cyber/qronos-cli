@@ -53,7 +53,7 @@ describe("memory-io: real files", () => {
     const root = project();
     const paths = memoryPathsFor(root, join(project(), "QRONOS.md"));
     expect(paths).toHaveLength(2);
-    expect(paths[1]!.endsWith("/QRONOS.md")).toBe(true);
+    expect(paths[1]!.replace(/\\/g, "/").endsWith("/QRONOS.md")).toBe(true);
   });
 });
 

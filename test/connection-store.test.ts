@@ -62,6 +62,7 @@ describe("connection store: round trip", () => {
   });
 
   test("the file is written 0600", async () => {
+    if (process.platform === "win32") return;
     const path = await tempFile();
     await saveConnectionFile(path, { connections: {} });
     const mode = (await stat(path)).mode & 0o777;
