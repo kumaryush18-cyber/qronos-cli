@@ -30,9 +30,10 @@ export const LOGO_BLOCKS: string[] = [
   "        █████████  ", // Row 10
 ];
 
-// Monochrome: Ghost Platinum on top, Charcoal Obsidian on bottom (Option 3)
-export const COLOR_TOP = "\x1b[38;2;248;250;252m";     // #f8fafc Ghost Platinum White
-export const COLOR_BOTTOM = "\x1b[38;2;100;116;139m";   // #64748b Charcoal Obsidian Gray
+// Engaging Brand Orange Palette: Vibrant Orange on top, Warm Amber on bottom
+// High-contrast and readable on BOTH light (white) and dark (black) terminal backgrounds!
+export const COLOR_TOP = "\x1b[38;2;255;107;0m";     // #ff6b00 Vibrant Qronos Orange
+export const COLOR_BOTTOM = "\x1b[38;2;255;160;50m";   // #ffa032 Warm Amber Gold
 export const COLOR_RESET = "\x1b[0m";
 
 const COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
@@ -76,18 +77,14 @@ export function headerLines(
   const cwd = process.cwd();
 
   const RESET = "\x1b[0m";
-  const BOLD = "\x1b[1m";
-  const DIM = "\x1b[2m";
-  const WHITE = "\x1b[38;2;240;240;240m";
-
   // Content lines placed directly beside rows 1, 2, 3, 4 of the logo
-  // Keeps header strictly at 11 lines total so it never scrolls off-screen on mobile
+  // Uses theme tokens so it dynamically adapts to look stunning on BOTH light and dark themes!
   const textLines = [
     "",
-    `${BOLD}${WHITE}Qronos AI v${CLI_VERSION}${RESET}`,
-    `${DIM}qronos-me · API Gateway${RESET}`,
-    `${DIM}${truncateToWidth(cwd, Math.max(10, safeWidth - 23))}${RESET}`,
-    `${COLOR_TOP}●${RESET} ${DIM}${cleanModel}${RESET}`,
+    theme.bold(theme.fg("text", `Qronos AI v${CLI_VERSION}`)),
+    theme.fg("muted", "qronos-me · API Gateway"),
+    theme.fg("dim", truncateToWidth(cwd, Math.max(10, safeWidth - 23))),
+    `${COLOR_TOP}●${RESET} ${theme.fg("text", cleanModel)}`,
     "",
     "",
     "",
