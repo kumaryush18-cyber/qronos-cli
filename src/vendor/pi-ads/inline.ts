@@ -15,7 +15,7 @@ import { setWidgetSafely } from "./widget";
 export const INLINE_WIDGET_ID = "qronos-ad-inline";
 
 export interface InlineRenderer {
-  onTurnEnd(deps: AdsDeps, ctx: ExtensionContext, config: Config): Promise<void>;
+  onTurnEnd(deps: AdsDeps, ctx: ExtensionContext, config: Config, prompt?: string): Promise<void>;
   /** Reset turn count / visibility — called on session_start so a /new or /resume starts cadence fresh. */
   reset(ctx: ExtensionContext): void;
 }
@@ -32,7 +32,7 @@ export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
   };
 
   return {
-    async onTurnEnd(deps, ctx, config) {
+    async onTurnEnd(deps, ctx, config, prompt) {
       turnCount += 1;
 
       clearInline(ctx);
@@ -41,7 +41,7 @@ export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
       // A programmatic banner is on screen: no other ad (of any source) may appear beside it.
       if (screen.banner === "gravity" || screen.banner === "thrad") return;
 
-      const ad = await fetchAdNext(deps, "inline");
+      const ad = await fetchAdNext(deps, "inline", prompt);
       if (!ad) return;
       const isProgrammatic = ad.source === "gravity" || ad.source === "thrad";
       // The banner may have turned into a programmatic ad while this fetch was in flight.

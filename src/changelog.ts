@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.3",
+    highlights: [
+      "Real-time contextual ad bidding: passes user prompt context to Gravity live auction.",
+      "Reliable autonomous subagents: actively inspect files and code before reporting.",
+      "Added /paste-image command to grab screenshots directly from your system clipboard.",
+    ],
+  },
+  {
     version: "1.0.2",
     highlights: [
       "Cross-platform reliability fixes for Windows and macOS environments.",

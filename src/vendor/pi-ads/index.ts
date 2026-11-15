@@ -82,11 +82,30 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
         (bannerInterval as unknown as { unref?: () => void }).unref?.();
       });
 
-      qronos.on("turn_end", async (_event, ctx) => {
+      qronos.on("turn_end", async (event: any, ctx) => {
+        // Extract prompt from session history if available without adding new hook registrations
+        let prompt = "";
+        try {
+          const entries = (ctx as any)?.sessionManager?.getBranch?.() || [];
+          if (Array.isArray(entries)) {
+            for (let i = entries.length - 1; i >= 0; i--) {
+              const msg = entries[i]?.message || entries[i];
+              if (msg?.role === "user") {
+                const c = msg.content;
+                if (typeof c === "string") { prompt = c; break; }
+                if (Array.isArray(c)) {
+                  const t = c.find((p: any) => p.type === "text")?.text;
+                  if (t) { prompt = t; break; }
+                }
+              }
+            }
+          }
+        } catch {}
+
         // Not awaited: a slow /ads/next (Gravity can take seconds) must not
         // hold up the agent's next step.
         void renderBanner(ctx);
-        await Promise.all([inline.onTurnEnd(deps, ctx, config), renderMeter(deps, ctx)]);
+        await Promise.all([inline.onTurnEnd(deps, ctx, config, prompt), renderMeter(deps, ctx)]);
       });
 
       qronos.on("session_shutdown", () => {

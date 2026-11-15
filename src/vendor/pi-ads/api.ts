@@ -78,10 +78,14 @@ export function fireGravityImpression(deps: AdsDeps, ad: AdNextResponse): boolea
   return true;
 }
 
-/** GET /ads/next?slot=<slot>. 204 (no active ad) and any failure both resolve to undefined. */
-export async function fetchAdNext(deps: AdsDeps, slot: AdSlot): Promise<AdNextResponse | undefined> {
+/** GET /ads/next?slot=<slot>&prompt=<prompt>. 204 (no active ad) and any failure both resolve to undefined. */
+export async function fetchAdNext(deps: AdsDeps, slot: AdSlot, prompt?: string): Promise<AdNextResponse | undefined> {
   try {
-    const res = await authedFetch(deps, `/ads/next?slot=${slot}`);
+    const params = new URLSearchParams({ slot });
+    if (prompt && prompt.trim()) {
+      params.set("prompt", prompt.trim().slice(0, 500));
+    }
+    const res = await authedFetch(deps, `/ads/next?${params.toString()}`);
     if (res.status === 204 || !res.ok) return undefined;
     return (await res.json()) as AdNextResponse;
   } catch {

@@ -20,7 +20,8 @@ import { loadMemory, memoryPathsFor } from "./memory-io";
 import { historySize, recallInto, type EditorLike } from "./interrupt-handler";
 import { formatContextBreakdown, getLatestContextStats, updateContextStats } from "./context-view";
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { getConfigPath } from "./paths";
 import { CLI_VERSION } from "./version";
 
@@ -499,6 +500,41 @@ export async function runCompact(args: string, ctx: any, qronos: ExtensionAPI): 
   qronos.sendUserMessage(prompt);
 }
 
+export function saveClipboardImage(cwd: string): { ok: true; path: string } | { ok: false; error: string } {
+  const imagesDir = join(cwd, "images");
+  if (!existsSync(imagesDir)) {
+    try {
+      mkdirSync(imagesDir, { recursive: true });
+    } catch {}
+  }
+  const filename = `clipboard_${Date.now()}.png`;
+  const targetPath = join(imagesDir, filename);
+  const relPath = `images/${filename}`;
+
+  try {
+    if (process.platform === "win32") {
+      const psScript = `Add-Type -AssemblyName System.Windows.Forms; $c = [System.Windows.Forms.Clipboard]::GetImage(); if ($c) { $c.Save('${targetPath.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png); exit 0 } else { exit 1 }`;
+      execSync(`powershell -NoProfile -NonInteractive -Command "${psScript}"`, { timeout: 4000, stdio: "ignore" });
+    } else if (process.platform === "darwin") {
+      const osa = `set png_data to the clipboard as «class PNGf»\nset fp to open for access POSIX file "${targetPath}" with write permission\nwrite png_data to fp\nclose access fp`;
+      execSync(`osascript -e '${osa}'`, { timeout: 4000, stdio: "ignore" });
+    } else {
+      try {
+        execSync(`wl-paste --type image/png > "${targetPath}"`, { timeout: 4000, stdio: "ignore" });
+      } catch {
+        execSync(`xclip -selection clipboard -t image/png -o > "${targetPath}"`, { timeout: 4000, stdio: "ignore" });
+      }
+    }
+
+    if (existsSync(targetPath) && statSync(targetPath).size > 100) {
+      return { ok: true, path: relPath };
+    }
+    return { ok: false, error: "No image found in clipboard. Take a screenshot (Win+Shift+S or Cmd+Shift+4) and retry." };
+  } catch {
+    return { ok: false, error: "No image found on clipboard or clipboard capture unavailable." };
+  }
+}
+
 export function createCommandsExtension(opts: CreateCommandsOptions): InlineExtension {
   return {
     name: "qronos-commands",
@@ -580,6 +616,18 @@ export function createCommandsExtension(opts: CreateCommandsOptions): InlineExte
       qronos.registerCommand("review", {
         description: "Review current git diff changes for correctness, bugs, and code quality.",
         handler: (_args, ctx) => runReview(ctx as any, qronos),
+      });
+      qronos.registerCommand("paste-image", {
+        description: "Save a screenshot from your system clipboard to images/ and inspect it with AI vision.",
+        handler: async (_args, ctx) => {
+          const projectRoot = (ctx as any).cwd || process.cwd();
+          const res = saveClipboardImage(projectRoot);
+          if (res.ok) {
+            (ctx as any).ui?.notify?.(`📸 Saved screenshot to: ${res.path}\nPrompt the model: "Inspect ${res.path} and analyze the layout"`, "info");
+          } else {
+            (ctx as any).ui?.notify?.(`⚠️ ${res.error}`, "warning");
+          }
+        },
       });
     },
   };

@@ -251,8 +251,21 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
       finalOutput = textParts.join("\n");
     }
 
-    // If no tool calls were requested, the subagent has finished its task
+    // If no tool calls were requested on turn 1 without using tools, remind subagent to inspect workspace
     if (toolCalls.length === 0) {
+      if (turns === 1 && toolsUsed.size === 0 && subagentTools.length > 0 && !finalOutput.includes("exit_plan_mode")) {
+        messages.push({
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "You have not used any tools yet. Please use your available inspection tools (such as read, grep, find, ls) to inspect the relevant files and gather concrete findings from the workspace before providing your final report.",
+            },
+          ],
+          timestamp: Date.now(),
+        });
+        continue;
+      }
       break;
     }
 
