@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 
 export const PROJECT_TRUST_PROMPT =
-  "This folder has project settings for qronos (.pi/ or .agents/skills), which can run code such as MCP servers and extensions. Trust this folder? [y/N] ";
+  "This folder has project settings for qronos (.qronos/ or .agents/skills), which can run code such as MCP servers and extensions. Trust this folder? [y/N] ";
 
 export interface ProjectTrustDeps {
   hasTrustRequiringResources?: (cwd: string) => boolean;
@@ -27,7 +27,7 @@ export async function decideProjectTrust(cwd: string, agentDir: string, deps: Pr
   const saved = store.get(cwd);
   if (typeof saved === "boolean") return saved;
   if (!deps.stdinIsTTY) {
-    deps.log("This folder has project settings (.pi/ or .agents/skills); they are ignored because it is not trusted.");
+    deps.log("This folder has project settings (.qronos/ or .agents/skills); they are ignored because it is not trusted.");
     return false;
   }
   const decision = /^y(es)?$/i.test((await deps.askLine(PROJECT_TRUST_PROMPT)).trim());

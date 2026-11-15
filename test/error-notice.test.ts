@@ -64,7 +64,7 @@ describe("qronos-error-notice extension", () => {
     })}`;
     const { handlers, notes, ctx } = harness([0]);
     handlers["turn_end"]!({ type: "turn_end", message: { stopReason: "error", errorMessage: hourly } }, ctx);
-    expect(notes).toEqual([{ m: "hourly limit, back in 12 min, 4,200 credits left today", t: "warning" }]);
+    expect(notes).toEqual([{ m: "hourly limit, back in 12 min, 4.2K tokens left today", t: "warning" }]);
   });
 });
 
@@ -78,7 +78,7 @@ describe("slow-lane hourly notice", () => {
     );
   });
   test("the regular hourly line is unchanged without lane", () => {
-    expect(formatLimitEnvelope(base)).toBe("hourly limit, back in 12 min, 0 credits left today");
+    expect(formatLimitEnvelope(base)).toBe("hourly limit, back in 12 min, 0 tokens left today");
   });
 });
 
@@ -110,6 +110,6 @@ describe("formatLimitEnvelope", () => {
         },
         { timeZone: "America/New_York" },
       ),
-    ).toBe("daily limit, back at 8:00 PM, 0 credits left today");
+    ).toBe("daily limit, back at 8:00 PM, 0 tokens left today");
   });
 });

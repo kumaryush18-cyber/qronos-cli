@@ -33,14 +33,27 @@ export function formatRefillEt(date: Date, timeZone = "America/New_York"): strin
   return `${formatted} ET`;
 }
 
+/** Compactly formats token counts as M or K (e.g. 10_000_000 -> "10M", 8_500_000 -> "8.5M", 500_000 -> "500K"). */
+export function formatTokensCompact(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    const val = tokens / 1_000_000;
+    return `${Number(val.toFixed(2))}M`;
+  }
+  if (tokens >= 1_000) {
+    const val = tokens / 1_000;
+    return `${Number(val.toFixed(2))}K`;
+  }
+  return `${tokens}`;
+}
+
 /**
- * Meter / /usage line for free usage. Credits, never dollars.
- * Example: "12,400 / 15,000 credits left today · refills 8:00 PM ET"
+ * Meter / /usage line for free usage. Tokens with compact M notation.
+ * Example: "10M / 10M tokens left today · refills 8:00 PM ET"
  */
 export function formatCreditsLeftLine(remaining: number, allowance: number, refillAt: Date): string {
-  const left = remaining.toLocaleString("en-US");
-  const total = allowance.toLocaleString("en-US");
-  return `${left} / ${total} credits left today · refills ${formatRefillEt(refillAt)}`;
+  const left = formatTokensCompact(remaining);
+  const total = formatTokensCompact(allowance);
+  return `${left} / ${total} tokens left today · refills ${formatRefillEt(refillAt)}`;
 }
 
 export const SLOW_LANE_METER_LINE = "Slow lane: cheapest model until refill";
@@ -129,6 +142,6 @@ export function formatLimitNotice(
     const wait = parts.length > 1 ? ` ${parts[1]![0]!.toUpperCase()}${parts[1]!.slice(1)} \u2014 or get` : " Get";
     return `${label}${wait} credits at ${EXTRA_CREDITS_URL} to keep going at full speed.`;
   }
-  parts.push(`${fields.remaining_credits_today.toLocaleString("en-US")} credits left today`);
+  parts.push(`${formatTokensCompact(fields.remaining_credits_today)} tokens left today`);
   return parts.join(", ");
 }

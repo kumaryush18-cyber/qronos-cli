@@ -98,7 +98,7 @@ describe("createUsageToolExtension", () => {
     const tool = registerAndGetTool(fetchImpl);
 
     const result = await tool.execute("call-1", {}, undefined, undefined, {});
-    expect(result.content[0]!.text).toContain("12,400 / 15,000 credits left today");
+    expect(result.content[0]!.text).toContain("12.4K / 15K tokens left today");
     expect(result.content[0]!.text).not.toContain("$"); // never a free-usage dollar figure
     expect(result.content[0]!.text).toContain("young"); // tier
     expect(result.details).toEqual(STATS);
@@ -107,22 +107,22 @@ describe("createUsageToolExtension", () => {
   test("free usage is shown as credits left + refill — never a dollar figure", () => {
     expect(formatStats({ ...STATS, credit_credits: 50000 }).split("\n")).toEqual([
       "tier: young",
-      "12,400 / 15,000 credits left today · refills 8:00 PM ET",
-      "credit: 50,000 credits remaining",
+      "12.4K / 15K tokens left today · refills 8:00 PM ET",
+      "tokens: 50K tokens remaining",
       "today tokens: 120 prompt / 60 completion",
       "lifetime: 900 prompt / 400 completion tokens",
-      "buy more credits: /buy-credits",
+      "get more tokens: https://qronos.me/account",
     ]);
     expect(formatStats({ ...STATS, lane: "fallback" })).toContain("Slow lane: cheapest model until refill");
     const { credit_credits: _omit, allowance_credits: _a, remaining_credits_today: _r, refill_at: _f, lane: _l, bonus_credits: _b, ...oldServer } = STATS;
     const without = formatStats(oldServer as MeStatsResponse);
-    expect(without).not.toContain("credits remaining");
-    expect(without.split("\n").at(-1)).toBe("buy more credits: /buy-credits");
+    expect(without).not.toContain("tokens remaining");
+    expect(without.split("\n").at(-1)).toBe("get more tokens: https://qronos.me/account");
     expect(without).toContain("17% of your free daily allowance used"); // 0.195 of 1.125
     for (const s of [without, formatStats(STATS)]) {
       expect(s).not.toMatch(/\$/);
     }
-    expect(formatStats(STATS)).toContain("credit: 0 credits remaining");
+    expect(formatStats(STATS)).toContain("tokens: 0 tokens remaining");
   });
 
   test("percentUsed rounds to a whole percent, clamps to 0..100, and treats a zero cap as fully used", () => {

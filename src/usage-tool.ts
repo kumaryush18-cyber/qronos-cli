@@ -16,7 +16,7 @@
 // in this file.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { formatCreditsLeftLine, SLOW_LANE_METER_LINE, type MeStatsResponse } from "@qronos/shared";
+import { formatCreditsLeftLine, formatTokensCompact, SLOW_LANE_METER_LINE, type MeStatsResponse } from "@qronos/shared";
 
 export interface CreateUsageToolOptions {
   baseUrl: string;
@@ -64,10 +64,10 @@ export function formatStats(stats: MeStatsResponse): string {
     `tier: ${stats.tier}`,
     todayLine,
     ...(lane === "fallback" ? [SLOW_LANE_METER_LINE] : []),
-    ...(typeof credits === "number" ? [`credit: ${credits.toLocaleString("en-US")} credits remaining`] : []),
-    `today tokens: ${stats.prompt_tokens_today} prompt / ${stats.completion_tokens_today} completion`,
-    `lifetime: ${stats.lifetime.prompt_tokens} prompt / ${stats.lifetime.completion_tokens} completion tokens`,
-    "buy more credits: /buy-credits",
+    ...(typeof credits === "number" ? [`tokens: ${formatTokensCompact(credits)} tokens remaining`] : []),
+    `today tokens: ${formatTokensCompact(stats.prompt_tokens_today)} prompt / ${formatTokensCompact(stats.completion_tokens_today)} completion`,
+    `lifetime: ${formatTokensCompact(stats.lifetime.prompt_tokens)} prompt / ${formatTokensCompact(stats.lifetime.completion_tokens)} completion tokens`,
+    "get more tokens: https://qronos.me/account",
   ].join("\n");
 }
 

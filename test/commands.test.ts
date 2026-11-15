@@ -297,11 +297,11 @@ describe("/usage (showUsage)", () => {
     expect(notes[0]!.type).toBe("info");
     expect(notes[0]!.msg.split("\n")).toEqual([
       "tier: young",
-      "12,400 / 15,000 credits left today · refills 8:00 PM ET",
-      "credit: 50,000 credits remaining",
+      "12.4K / 15K tokens left today · refills 8:00 PM ET",
+      "tokens: 50K tokens remaining",
       "today tokens: 120 prompt / 60 completion",
       "lifetime: 900 prompt / 400 completion tokens",
-      "buy more credits: /buy-credits",
+      "get more tokens: https://qronos.me/account",
     ]);
     expect(notes[0]!.msg).not.toMatch(/\$/);
   });

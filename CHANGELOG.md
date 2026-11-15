@@ -13,7 +13,7 @@ The rename release. One product name everywhere, and the setup screen users aske
 - The tool is now **qronos-cli** throughout: config lives in `~/.qronos`, and the help,
   error messages, prompts and resume hints all say qronos. `piConfig` in `package.json`
   makes the underlying agent library use the same name and config directory.
-- `FREEPI_*` environment variables are now `QRONOS_*`.
+- Environment variables are standardized to `QRONOS_*`.
 
 ### Added
 - First-run setup offers two explicit choices: sign in to the Qronos Gateway, or bring your

@@ -5,11 +5,10 @@
 export const QRONOS_DOCS = `# qronos
 
 ## What qronos is
-qronos is a free, ad-supported distribution of the pi coding agent.
+qronos is an autonomous AI coding agent in your terminal powered by Qronos AI.
 You run \`npx qronos-cli\`, sign in with GitHub, and get free inference with
 exciting models. Ads shown in the terminal pay for it. You never handle a
-model API key. Config and the sign-in token live under \`~/.qronos/agent\`,
-separate from any \`~/.pi/agent\` install.
+model API key. Config and the sign-in token live under \`~/.qronos/agent\`.
 
 ## Ads and your data
 Ads render in the terminal, in a framed card. Some ads come from Gravity, a
@@ -54,7 +53,7 @@ database, a browser, or an internal API. Qronos CLI includes none by default; yo
 own. The agent reaches their tools by writing a short script for its
 \`codemode\` tool.
 Servers live in \`~/.qronos/agent/mcp.json\`. A project can have its own
-\`.pi/mcp.json\`; it is read only after you trust the project when asked.
+\`.qronos/mcp.json\`; it is read only after you trust the project when asked.
 Add a server from a shell, or ask the agent to run the command for you with
 its bash tool:
 \`qronos-cli mcp add files -- npx -y @modelcontextprotocol/server-filesystem .\`
