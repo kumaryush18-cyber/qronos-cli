@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.4",
+    highlights: [
+      "Subagent runtime error fallback: automatically falls back and retries with parent session model on model quota or tier failures.",
+      "Authenticated subagent execution passing session credentials and client headers.",
+      "Error surfacing on subagent completion instead of empty success stubs.",
+    ],
+  },
+  {
     version: "1.0.3",
     highlights: [
       "Real-time contextual ad bidding: passes user prompt context to Gravity live auction.",

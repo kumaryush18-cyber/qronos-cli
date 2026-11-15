@@ -17,6 +17,7 @@ import { maxSubagentDepth, resolveSubagentTools } from "./agent-tools";
 import { scanSubagentOutput, wrapSubagentReport } from "./agent-scan";
 import { getExecutionMode } from "./execution-modes";
 import { maxConcurrentSubagents } from "./agent-tools";
+import { CLI_VERSION } from "./version";
 
 export const AGENT_TOOL_NAME = "agent";
 
@@ -34,22 +35,47 @@ export const SUBAGENT_MAX_TURNS = 10;
 export const SUBAGENT_MAX_OUTPUT_CHARS = 12_000;
 
 /**
- * Map a requested model id onto the session model object.
- *
- * The harness hands us a single resolved model, not a catalogue, so an override
- * that does not match the session model is reported rather than silently
- * ignored — a user who writes `model: haiku` deserves to know it did not apply.
+ * Map a requested model id onto a resolved model object.
+ * When the requested model is not found, cleanly falls back to the parent session model.
  */
-function resolveModelName(requested: string, sessionModel: unknown): unknown {
+export function resolveSubagentModel(
+  requested: string | undefined,
+  sessionModel: any,
+  modelRegistry?: any,
+): { model: any; fallback: boolean } {
+  if (!requested || requested.trim().toLowerCase() === "inherit") {
+    return { model: sessionModel, fallback: false };
+  }
   const wanted = requested.trim().toLowerCase();
-  if (!wanted || wanted === "inherit") return sessionModel;
-  const current = sessionModel as { id?: string; name?: string } | undefined;
+  const current = sessionModel as { id?: string; name?: string; provider?: string } | undefined;
   const ids = [current?.id, current?.name].filter(Boolean).map((v) => String(v).toLowerCase());
-  if (ids.some((id) => id === wanted || id.includes(wanted))) return sessionModel;
-  // Unmatched override: keep the session model (never break the run) but say so
-  // through the output so the caller is not misled.
+  if (ids.some((id) => id === wanted || id.includes(wanted))) {
+    return { model: sessionModel, fallback: false };
+  }
+
+  // 1. Try finding in modelRegistry under current provider
+  if (modelRegistry) {
+    if (current?.provider) {
+      const matchInProvider = modelRegistry.find?.(current.provider, requested);
+      if (matchInProvider) return { model: matchInProvider, fallback: false };
+    }
+    const allModels: any[] = modelRegistry.getModels?.() || [];
+    const match = allModels.find(
+      (m) =>
+        m.id?.toLowerCase() === wanted ||
+        m.name?.toLowerCase() === wanted ||
+        m.id?.toLowerCase().includes(wanted),
+    );
+    if (match) return { model: match, fallback: false };
+  }
+
+  // 2. Unmatched: fall back to the parent session model so the task never breaks!
   unappliedModel = requested;
-  return sessionModel;
+  return { model: sessionModel, fallback: true };
+}
+
+export function resolveModelName(requested: string, sessionModel: unknown, modelRegistry?: unknown): unknown {
+  return resolveSubagentModel(requested, sessionModel, modelRegistry).model;
 }
 
 /** Set when a requested model could not be applied, for a one-line notice. */
@@ -210,24 +236,93 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
   let finalOutput = "";
   let planApproved = false;
 
+  const { model: targetModel, fallback } = resolveSubagentModel(
+    params.model,
+    ctx.model,
+    (ctx as any).modelRegistry,
+  );
+  if (fallback && params.model) {
+    unappliedModel = params.model;
+  }
+
+  // Resolve authorization credentials and headers for subagent completion
+  let auth: { apiKey?: string; headers?: Record<string, string> } = {};
+  try {
+    auth = (await (ctx as any).modelRegistry?.getApiKeyAndHeaders?.(targetModel)) || {};
+  } catch {}
+
+  let apiKey = auth?.apiKey;
+  if (!apiKey) {
+    try {
+      const { loadJwt } = await import("./credentials");
+      const { getCredentialsPath } = await import("./paths");
+      apiKey = (await loadJwt(getCredentialsPath())) || process.env.QRONOS_API_KEY || "";
+    } catch {}
+  }
+
+  let headers: Record<string, string> = {
+    ...(auth?.headers || {}),
+    ...(ctx.model as any)?.headers,
+    "x-client-version": CLI_VERSION,
+  };
+
+  let currentModel = targetModel;
+  let hasFallenBackToParent = false;
+
   while (turns < maxTurns) {
     turns++;
     let response: any;
     try {
       response = await completeSimple(
-        (params.model ? resolveModelName(params.model, ctx.model) : ctx.model) as Model<any>,
+        currentModel as Model<any>,
         {
           systemPrompt,
           messages,
           tools: subagentTools,
         },
         {
+          apiKey,
+          headers,
           signal: ctx.signal,
         },
       );
     } catch (err: any) {
+      // If a requested model (e.g. paid tier or quota limit) threw an error,
+      // automatically fall back and retry with the working parent session model!
+      if (!hasFallenBackToParent && currentModel !== ctx.model) {
+        hasFallenBackToParent = true;
+        currentModel = ctx.model;
+        try {
+          auth = (await (ctx as any).modelRegistry?.getApiKeyAndHeaders?.(currentModel)) || {};
+          if (auth?.apiKey) apiKey = auth.apiKey;
+          headers = { ...(auth?.headers || {}), ...(ctx.model as any)?.headers, "x-client-version": CLI_VERSION };
+        } catch {}
+        turns--;
+        continue;
+      }
       return {
         output: `Subagent encountered model completion error: ${err?.message || String(err)}`,
+        turns,
+        toolsUsed: Array.from(toolsUsed),
+      };
+    }
+
+    if (response?.stopReason === "error") {
+      // If requested model returned an error (e.g. tier/quota error),
+      // automatically fall back and retry with the working parent session model!
+      if (!hasFallenBackToParent && currentModel !== ctx.model) {
+        hasFallenBackToParent = true;
+        currentModel = ctx.model;
+        try {
+          auth = (await (ctx as any).modelRegistry?.getApiKeyAndHeaders?.(currentModel)) || {};
+          if (auth?.apiKey) apiKey = auth.apiKey;
+          headers = { ...(auth?.headers || {}), ...(ctx.model as any)?.headers, "x-client-version": CLI_VERSION };
+        } catch {}
+        turns--;
+        continue;
+      }
+      return {
+        output: `Subagent failed (${response.stopReason}): ${response.errorMessage || "Model request failed"}`,
         turns,
         toolsUsed: Array.from(toolsUsed),
       };
