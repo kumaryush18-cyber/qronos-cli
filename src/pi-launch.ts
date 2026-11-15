@@ -462,6 +462,32 @@ UserMessageComponent.prototype.render = function (width: number): string[] {
   return Container.prototype.render.call(this, safeWidth);
 };
 
+/**
+ * Patch InteractiveMode's built-in /logout handler so it clears Qronos AI credentials
+ * (~/.qronos/agent/credentials.json) without registering a conflicting extension command.
+ */
+const originalShowOAuthSelector = (InteractiveMode.prototype as any).showOAuthSelector;
+(InteractiveMode.prototype as any).showOAuthSelector = async function (mode: string) {
+  if (mode === "logout") {
+    try {
+      const { clearJwt } = await import("./credentials");
+      const { getCredentialsPath } = await import("./paths");
+      await clearJwt(getCredentialsPath());
+      if (typeof this.showStatus === "function") {
+        this.showStatus("Logged out: credentials removed from ~/.qronos/agent/credentials.json. Run 'exit' or restart to sign in again.");
+      }
+    } catch (err: any) {
+      if (typeof this.showError === "function") {
+        this.showError(`Failed to log out: ${err?.message || err}`);
+      }
+    }
+    return;
+  }
+  if (typeof originalShowOAuthSelector === "function") {
+    return originalShowOAuthSelector.call(this, mode);
+  }
+};
+
 export async function launchPi(opts: LaunchOptions): Promise<string> {
   await ensureQronosTheme(opts.agentDir);
   const cwd = process.cwd();
