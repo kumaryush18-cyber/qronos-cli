@@ -444,7 +444,7 @@ describe("meter: server-supplied notice (#225)", () => {
       ),
       ctx,
     );
-    expect(statusCalls.at(-1)).toEqual({ key: METER_STATUS_KEY, text: "14,984 credits" });
+    expect(statusCalls.at(-1)).toEqual({ key: METER_STATUS_KEY, text: "14.98K tokens" });
     expect(widgetCalls).toEqual([{ id: METER_WIDGET_ID, content: undefined, options: undefined }]);
   });
 
@@ -458,9 +458,9 @@ describe("meter: server-supplied notice (#225)", () => {
       );
       return statusCalls.at(-1)!.text;
     };
-    expect(await run({ bonus_credits: 100_000 })).toBe("14,613 + 100,000 credits");
-    expect(await run({ bonus_credits: 0 })).toBe("14,613 credits");
-    expect(await run({})).toBe("14,613 credits");
+    expect(await run({ bonus_credits: 100_000 })).toBe("14.61K + 100K tokens");
+    expect(await run({ bonus_credits: 0 })).toBe("14.61K tokens");
+    expect(await run({})).toBe("14.61K tokens");
   });
 
   test("Phase 0: fallback lane shows '0 credits · slow lane' in the footer, no widget", async () => {
@@ -510,8 +510,8 @@ describe("meter: low-credit and slow-lane nudges", () => {
   test("exactly 10% shows a warning-colored widget with a clickable link; footer unchanged", async () => {
     const { ctx, widgetCalls, statusCalls } = colorCtx();
     await renderMeter(deps(me(LOW_CREDIT_FRACTION * 15_000)), ctx);
-    expect(widgetCalls.at(-1)!.content).toEqual([`<warning>Low on credits: 1,500 left today · Buy more: ${link("qronos.me/account")}</warning>`]);
-    expect(statusCalls.at(-1)!.text).toBe("<muted>1,500 credits</muted>");
+    expect(widgetCalls.at(-1)!.content).toEqual([`<warning>Low on tokens: 1.5K left today · Buy more: ${link("qronos.me/account")}</warning>`]);
+    expect(statusCalls.at(-1)!.text).toBe("<muted>1.5K tokens</muted>");
   });
 
   test("just above 10% and zero-remaining standard have no warning", async () => {
@@ -540,7 +540,7 @@ describe("meter: low-credit and slow-lane nudges", () => {
   test("no buy_url → warning without a link", async () => {
     const { ctx, widgetCalls } = colorCtx();
     await renderMeter(deps(me(1_200, { buy_url: undefined })), ctx);
-    expect(widgetCalls.at(-1)!.content).toEqual(["<warning>Low on credits: 1,200 left today</warning>"]);
+    expect(widgetCalls.at(-1)!.content).toEqual(["<warning>Low on tokens: 1.2K left today</warning>"]);
   });
 
   test("slow lane: footer plus warning widget with link", async () => {

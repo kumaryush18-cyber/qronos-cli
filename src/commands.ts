@@ -581,10 +581,6 @@ export function createCommandsExtension(opts: CreateCommandsOptions): InlineExte
         description: "Review current git diff changes for correctness, bugs, and code quality.",
         handler: (_args, ctx) => runReview(ctx as any, qronos),
       });
-      qronos.registerCommand("compact", {
-        description: "Compact and summarize session history to free up context window space.",
-        handler: (args, ctx) => runCompact(args, ctx as any, qronos),
-      });
     },
   };
 }

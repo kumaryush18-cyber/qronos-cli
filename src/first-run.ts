@@ -50,6 +50,13 @@ export type FirstRunOutcome =
 const BORDER = "────────────────────────────────────────────────────────";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
+// Engaging Orange Brand Palette
+const ORANGE_BOLD = "\x1b[1;38;2;255;107;0m";
+const ORANGE_LIGHT = "\x1b[38;2;255;170;86m";
+const WHITE_BOLD = "\x1b[1;37m";
+const MUTED = "\x1b[38;2;148;163;184m";
+const RESET = "\x1b[0m";
+
 /** The menu, as plain text so it renders identically in any terminal. */
 export function renderMenu(selected: number): string {
   const options = [
@@ -65,29 +72,29 @@ export function renderMenu(selected: number): string {
 
   const lines: string[] = [
     "",
-    `  ◈ Qronos CLI`,
+    `  ${ORANGE_BOLD}◈ Qronos CLI${RESET}`,
     "",
-    `  Welcome. Let's connect you to a model.`,
+    `  ${ORANGE_LIGHT}Welcome. Let's connect you to a model.${RESET}`,
     "",
   ];
 
   options.forEach((opt, i) => {
-    const marker = i === selected ? "❯" : " ";
-    const num = `${i + 1}.`;
-    lines.push(`  ${marker} ${num}  ${opt.title}`);
-    lines.push(`         ${opt.blurb}`);
+    const marker = i === selected ? `${ORANGE_BOLD}❯${RESET}` : " ";
+    const num = `${ORANGE_LIGHT}${i + 1}.${RESET}`;
+    lines.push(`  ${marker} ${num}  ${WHITE_BOLD}${opt.title}${RESET}`);
+    lines.push(`         ${MUTED}${opt.blurb}${RESET}`);
     if (i === 0) lines.push("");
   });
 
   lines.push("");
-  lines.push(`  Enter a number, or ↑/↓ then ⏎`);
+  lines.push(`  ${MUTED}Enter a number, or ↑/↓ then ⏎${RESET}`);
   lines.push("");
   return lines.join("\n");
 }
 
 /** Header used for the BYOK sub-flow. */
 function heading(title: string): string {
-  return `\n  ${title}\n  ${BORDER}\n`;
+  return `\n  ${ORANGE_BOLD}${title}${RESET}\n  ${MUTED}${BORDER}${RESET}\n`;
 }
 
 /**
@@ -99,7 +106,7 @@ function heading(title: string): string {
 export async function runFirstRun(deps: FirstRunDeps): Promise<FirstRunOutcome> {
   for (;;) {
     deps.log(renderMenu(0));
-    const answer = (await deps.ask("  Choice [1-2]: ")).trim().toLowerCase();
+    const answer = (await deps.ask(`  ${ORANGE_BOLD}❯${RESET} Choice [1-2]: `)).trim().toLowerCase();
 
     if (answer === "" || answer === "1" || answer === "gateway" || answer === "signin") {
       deps.log(`\n  Opening Qronos Gateway sign-in...\n`);

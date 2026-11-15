@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.1",
+    highlights: [
+      "Vibrant brand styling: bold orange headers, glowing cursor, and clean compact token counters (10M).",
+      "Streamlined commands: eliminated duplicate /compact warning.",
+      "Optimized footer: real-time 10M token allowance tracking.",
+    ],
+  },
+  {
     version: "1.0.0",
     highlights: [
       "Qronos CLI 1.0: the whole tool now carries one name. Config lives in ~/.qronos, and the help, errors and prompts all say qronos.",

@@ -4,7 +4,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AdsDeps } from "./api";
 import { fetchMe } from "./api";
-import { usdToCredits } from "@qronos/shared";
+import { usdToCredits, formatTokensCompact } from "@qronos/shared";
 import { inferErrorFromRemainingBudget, mapErrorCode } from "./errors";
 import { osc8, renderErrorLine, renderWarningLine, sanitizeText, type ThemeLike } from "./style";
 import { setStatusSafely, setWidgetSafely } from "./widget";
@@ -93,14 +93,14 @@ export async function renderMeter(deps: AdsDeps, ctx: ExtensionContext): Promise
     const refill = new Date(me.refill_at);
     if (!Number.isNaN(refill.getTime()) && me.lane !== "wait") {
       const left = me.remaining_credits_today;
-      // Purchased credits ride along in the footer; the low warning below stays on free credits.
-      const bought = typeof me.bonus_credits === "number" && me.bonus_credits > 0 ? ` + ${me.bonus_credits.toLocaleString("en-US")}` : "";
-      setStatusSafely(ctx, METER_STATUS_KEY, theme.fg("muted", `${left.toLocaleString("en-US")}${bought} credits`));
+      // Purchased tokens ride along in the footer; the low warning below stays on free tokens.
+      const bought = typeof me.bonus_credits === "number" && me.bonus_credits > 0 ? ` + ${formatTokensCompact(me.bonus_credits)}` : "";
+      setStatusSafely(ctx, METER_STATUS_KEY, theme.fg("muted", `${formatTokensCompact(left)}${bought} tokens`));
       const low = left > 0 && left <= me.allowance_credits * LOW_CREDIT_FRACTION;
       setWidgetSafely(
         ctx,
         METER_WIDGET_ID,
-        low ? [renderWarningLine(`Low on credits: ${left.toLocaleString("en-US")} left today${buyMore(me.buy_url)}`, theme)] : undefined,
+        low ? [renderWarningLine(`Low on tokens: ${formatTokensCompact(left)} left today${buyMore(me.buy_url)}`, theme)] : undefined,
       );
       return;
     }
