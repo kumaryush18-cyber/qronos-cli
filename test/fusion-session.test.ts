@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,6 +16,18 @@ import {
 } from "../src/fusion";
 import { PROVIDER_NAME } from "../src/provider";
 import { resolveQronosScope } from "../src/provider-lock";
+
+/**
+ * Wait for a file a tool run wrote. `waitForIdle()` settles the agent turn, but the
+ * tool's own disk write can land a tick later (seen on macOS CI: ENOENT 845 ms in),
+ * so polling here keeps the assertion about content, not about scheduling.
+ */
+async function waitForFile(path: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!existsSync(path) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
 
 const CATALOG_MODELS = [
   { id: FUSION_EXECUTOR_ID, name: "DeepSeek V4 Flash" },
@@ -176,6 +188,7 @@ describe("Fusion production session routing", () => {
       await session.prompt("Write the requested file with the write tool, then finish.");
       await session.prompt("Give me one brief follow-up.");
       await session.waitForIdle();
+      await waitForFile(filePath);
 
       expect(readFileSync(filePath, "utf8")).toBe("written by Fusion\n");
       expect(requestModels).toEqual([
