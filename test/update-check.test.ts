@@ -8,7 +8,7 @@ function fakeFetch(handler: () => Response | Promise<Response>): typeof fetch {
 describe("checkClientVersion (#37)", () => {
   test("block: cli version below min", async () => {
     const fetchImpl = fakeFetch(() => Response.json({ min: "0.2.0", latest: "0.3.0" }));
-    // #37 codex fix: block now carries `latest` too, so the auto-update
+    // codex fix: block now carries `latest` too, so the auto-update
     // message downstream can name the version.
     expect(await checkClientVersion("https://api.test", "0.1.0", fetchImpl)).toEqual({
       action: "block",

@@ -2,13 +2,13 @@
 // session events, with JSON on stdin and a nonzero exit able to block a tool.
 //
 // Design notes:
-//   - Config is parsed and validated into a plain HookConfig; nothing here
-//     touches the filesystem or spawns a process, so the matching rules and the
-//     parsing are unit-testable on their own (see hooks.test.ts).
-//   - A hook is a map from event -> array of matchers. Each matcher may carry
-//     `matcher` (a regex on the tool name) and `hooks` (the commands).
-//   - Matching is deliberately safe on bad input: an invalid regex is treated
-//     as "matches nothing" rather than throwing mid-tool-call.
+// - Config is parsed and validated into a plain HookConfig; nothing here
+// touches the filesystem or spawns a process, so the matching rules and the
+// parsing are unit-testable on their own (see hooks.test.ts).
+// - A hook is a map from event -> array of matchers. Each matcher may carry
+// `matcher` (a regex on the tool name) and `hooks` (the commands).
+// - Matching is deliberately safe on bad input: an invalid regex is treated
+// as "matches nothing" rather than throwing mid-tool-call.
 
 export const HOOK_EVENTS = ["PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit", "Stop"] as const;
 

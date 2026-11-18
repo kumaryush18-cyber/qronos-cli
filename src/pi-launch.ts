@@ -29,6 +29,9 @@ import { createAgentToolExtension, AGENT_TOOL_NAME } from "./agent-tool";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
+import { createThinkingMeterExtension } from "./thinking-meter";
+import { ensureKeybindingDefaults } from "./keybindings";
+import { resolveTuiMode } from "./env";
 import { AGENT_RULES } from "./agent-rules";
 import { loadMemoryPrompt } from "./memory-io";
 import { getUserMemoryPath } from "./paths";
@@ -90,20 +93,20 @@ function catalogModelsFor(opts: LaunchOptions): CatalogModel[] {
   return [{ id, name: id }];
 }
 
-// #28 R20/R20a: the exact, closed set of tool names the shipped distro ever
+// the exact, closed set of tool names the shipped distro ever
 // legitimately runs — SAFE_TOOLS' built-ins, the registered custom tools
 // (qronos_usage, U5; qronos_buy_credits, #226; qronos_docs; todo), and
 // pi's `codemode` and `tool_search` (2026-10-13, user-added MCP servers). MCP
 // tools themselves (`mcp__<server>__<tool>` and the three MCP resource tools)
 // are not listed: the user picks those servers, and tool-guard.ts admits them
 // by name shape. Used two ways, belt
-// and braces (KTD-7 found `defaultTools` alone does not block an
+// and bracesfound `defaultTools` alone does not block an
 // extension-registered tool):
-//   1. Passed as `tools` to createAgentSessionFromServices — the SDK's own
-//      strict allowlist (docs/settings.md: same mechanism as the CLI's
-//      `--tools` flag, "only the listed tool names are enabled").
-//   2. Passed to the tool-guard extension, which blocks + reports anything
-//      outside this set that still somehow reaches a tool_call event.
+// 1. Passed as `tools` to createAgentSessionFromServices — the SDK's own
+// strict allowlist (docs/settings.md: same mechanism as the CLI's
+// `--tools` flag, "only the listed tool names are enabled").
+// 2. Passed to the tool-guard extension, which blocks + reports anything
+// outside this set that still somehow reaches a tool_call event.
 export const ALLOWED_TOOL_NAMES: readonly string[] = [
   ...SAFE_TOOLS,
   USAGE_TOOL_NAME,
@@ -157,7 +160,7 @@ export interface RuntimeBuildOptions {
  * launchPi() itself drives the real interactive TUI and is only exercised
  * when the bin actually runs, never in `bun test`.
  */
-/** KTD6: the display model name for the header — server catalog name, then
+/**: the display model name for the header — server catalog name, then
  * the active model id, then the built-in default. Exported as a test seam. */
 export function resolveModelName(opts: LaunchOptions): string {
   return opts.models?.[0]?.name || opts.model || MODEL_ID;
@@ -181,8 +184,16 @@ export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[]
       packages: [],
       // hides pi's own startup header dump so qronos-header is the only header shown.
       quietStartup: true,
-      // regular inline rendering with normal scrollback.
-      tuiMode: "regular",
+      // fullscreen by default: the terminal only reports mouse clicks in the
+      // alternate screen, and clicks in the input box move the cursor there
+      // (pi-tui Editor.handleMouse). QRONOS_TUI_MODE=regular restores the old
+      // inline mode, where clicks are left to the terminal's own selection.
+      tuiMode: resolveTuiMode(),
+      // Erase rows the autocomplete panel no longer needs. Without this the
+      // @ file list stays painted after the '@' is deleted until the next key
+      // press redraws (pi's default is off; it exists for terminals that
+      // cannot move the cursor).
+      terminal: { clearOnShrink: true },
       theme: CLAUDE_THEME_NAME,
       enableInstallTelemetry: false,
     },
@@ -221,13 +232,13 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     },
   };
 
-  // KTD7: the only channel /support has to the currently-shown banner ad's
+  // the only channel /support has to the currently-shown banner ad's
   // click URL — set by the ads extension's onBannerAd, read by the commands
   // extension's getAdvertiserUrl. Deliberately not a shared object/class:
   // one field, one file, both extensions stay independently testable.
   let advertiserUrl: string | undefined;
 
-  // U7: banner/inline ads + usage meter, sandboxed to UI-only hooks (KTD9).
+  // banner/inline ads + usage meter, sandboxed to UI-only hooks.
   // See packages/pi-ads/src/sandbox.test.ts for the enforced proof.
   const adsBaseUrl = process.env.QRONOS_BASE_URL || DEFAULT_BASE_URL;
   const adsExtension: InlineExtension = createAdsExtension({
@@ -240,23 +251,23 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     },
   });
 
-  // U5 (#17): read-only "what's my usage" tool. Outside packages/pi-ads on
-  // purpose (KTD5) — see usage-tool.ts's header comment.
+  // read-only "what's my usage" tool. Outside packages/pi-ads on
+  // purpose — see usage-tool.ts's header comment.
   const usageToolExtension: InlineExtension = createUsageToolExtension({
     baseUrl: opts.baseUrl,
     getToken: () => opts.jwt,
   });
 
-  // #226: opens the server's buy-credits page. Outside packages/pi-ads on
-  // the same grounds as the usage tool (KTD5) — see buy-tool.ts's header
+  // opens the server's buy-credits page. Outside packages/pi-ads on
+  // the same grounds as the usage tool — see buy-tool.ts's header
   // comment.
   const buyToolExtension: InlineExtension = createBuyToolExtension({
     baseUrl: opts.baseUrl,
     getToken: () => opts.jwt,
   });
 
-  // U2 (2026-09-03): read-only "about qronos" docs tool. Outside
-  // packages/pi-ads on the same grounds as the usage/buy tools (KTD4) —
+  // (2026-09-03): read-only "about qronos" docs tool. Outside
+  // packages/pi-ads on the same grounds as the usage/buy tools —
   // see docs-tool.ts's header comment.
   const docsToolExtension: InlineExtension = createDocsToolExtension();
 
@@ -276,7 +287,12 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // (read from turn_end's error envelope). See error-notice.ts.
   const errorNoticeExtension: InlineExtension = createErrorNoticeExtension();
 
-  // #28 R20a: defense-in-depth block + report for any tool outside
+  // 2026-11-20: Claude-Code-style working line. The spinner frames carry the
+  // real context size ("⠋ ↓ 12.3k") so the number sits next to the animation
+  // instead of only in the footer. No tool, no model call.
+  const thinkingMeterExtension: InlineExtension = createThinkingMeterExtension();
+
+  // defense-in-depth block + report for any tool outside
   // ALLOWED_TOOL_NAMES that somehow reaches a tool_call event.
   const toolGuardExtension: InlineExtension = createToolGuardExtension({
     baseUrl: opts.baseUrl,
@@ -296,8 +312,8 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     getAdvertiserUrl: () => advertiserUrl,
   });
 
-  // U1/U2 (2026-09-03): qronos's own startup header, replacing pi's
-  // built-in one (hidden via quietStartup below). KTD1, KTD6.
+  // (2026-09-03): qronos's own startup header, replacing pi's
+ // built-in one (hidden via quietStartup below).,.
   const headerExtension: InlineExtension = createHeaderExtension({
     modelName: resolveModelName(opts),
     updateLatest: opts.updateLatest,
@@ -349,6 +365,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     webToolsExtension,
     imageToolExtension,
     errorNoticeExtension,
+    thinkingMeterExtension,
     toolGuardExtension,
     commandsExtension,
     headerExtension,
@@ -453,9 +470,9 @@ patchResumeLine(process.stdout);
 /**
  * Patch UserMessageComponent to render user messages as a single, solid #3a3a3a box:
  * 1. Bounded to (width - 1) so padding never touches the exact right terminal boundary
- *    and triggers terminal autowrap (which inserts a blank black line on narrow mobile screens).
+ * and triggers terminal autowrap (which inserts a blank black line on narrow mobile screens).
  * 2. Does not emit OSC 133 command zone escapes that trigger VS Code Codespaces to draw
- *    terminal command decoration rules through the message block.
+ * terminal command decoration rules through the message block.
  */
 UserMessageComponent.prototype.render = function (width: number): string[] {
   const safeWidth = Math.max(1, width - 1);
@@ -466,8 +483,15 @@ UserMessageComponent.prototype.render = function (width: number): string[] {
  * Patch InteractiveMode's built-in /logout handler so it clears Qronos AI credentials
  * (~/.qronos/agent/credentials.json) without registering a conflicting extension command.
  */
-const originalShowOAuthSelector = (InteractiveMode.prototype as any).showOAuthSelector;
-(InteractiveMode.prototype as any).showOAuthSelector = async function (mode: string) {
+interface OAuthSelectorHost {
+  showOAuthSelector?: (mode: string) => unknown;
+  showStatus?: (message: string) => void;
+  showError?: (message: string) => void;
+}
+
+const interactiveProto = InteractiveMode.prototype as unknown as OAuthSelectorHost;
+const originalShowOAuthSelector = interactiveProto.showOAuthSelector;
+interactiveProto.showOAuthSelector = async function (this: OAuthSelectorHost, mode: string) {
   if (mode === "logout") {
     try {
       const { clearJwt } = await import("./credentials");
@@ -476,9 +500,10 @@ const originalShowOAuthSelector = (InteractiveMode.prototype as any).showOAuthSe
       if (typeof this.showStatus === "function") {
         this.showStatus("Logged out: credentials removed from ~/.qronos/agent/credentials.json. Run 'exit' or restart to sign in again.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       if (typeof this.showError === "function") {
-        this.showError(`Failed to log out: ${err?.message || err}`);
+        this.showError(`Failed to log out: ${message}`);
       }
     }
     return;
@@ -486,10 +511,15 @@ const originalShowOAuthSelector = (InteractiveMode.prototype as any).showOAuthSe
   if (typeof originalShowOAuthSelector === "function") {
     return originalShowOAuthSelector.call(this, mode);
   }
+  return undefined;
 };
 
 export async function launchPi(opts: LaunchOptions): Promise<string> {
   await ensureQronosTheme(opts.agentDir);
+  // Ctrl+C must not wipe the prompt: pi reads keybindings.json when it builds
+  // its keybinding manager, which happens inside the InteractiveMode below, so
+  // the defaults have to be on disk before that.
+  ensureKeybindingDefaults(opts.agentDir);
   const cwd = process.cwd();
   const sessionDir = getSessionDir(cwd, opts.agentDir);
   const sm = await createSessionManager(cwd, sessionDir, opts.session);

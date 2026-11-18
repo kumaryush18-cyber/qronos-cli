@@ -2,7 +2,7 @@
 //
 // Why this exists: pi's ExtensionContext is invalidated when a session is
 // replaced or reloaded, and every later use throws
-//   "This extension ctx is stale after session replacement or reload."
+// "This extension ctx is stale after session replacement or reload."
 // (core/extensions/runner.js, assertActive). Ad rendering is deliberately
 // fire-and-forget — an un-awaited `void renderBanner(ctx)` from turn_end, a
 // 10-minute refresh interval, and a `setWidget` after an awaited /ads/next — so

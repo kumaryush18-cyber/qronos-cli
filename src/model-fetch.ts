@@ -3,17 +3,17 @@
 // Two questions make this less trivial than it looks:
 //
 // 1. **Which path?** A user pastes `https://api.openai.com` or
-//    `https://api.anthropic.com` or `https://openrouter.ai/api/v1`. Some serve
-//    `/models`, some `/v1/models`, some both, and an Anthropic-compatible base
-//    URL may not end in /v1 at all. Rather than guess, we try every sensible
-//    path in order and take the first that answers. A wrong path costs one
-//    request, not a failed setup.
+// `https://api.anthropic.com` or `https://openrouter.ai/api/v1`. Some serve
+// `/models`, some `/v1/models`, some both, and an Anthropic-compatible base
+// URL may not end in /v1 at all. Rather than guess, we try every sensible
+// path in order and take the first that answers. A wrong path costs one
+// request, not a failed setup.
 //
 // 2. **What shape is the reply?** OpenAI-compatible replies are
-//    `{ data: [{ id }] }`. Anthropic replies `{ data: [{ id, display_name }] }`
-//    at /v1/models. Some proxies return a bare array. All three are accepted;
-//    anything unrecognised is reported as "no model list" so the caller can ask
-//    for a model id by hand instead of showing an empty picker.
+// `{ data: [{ id }] }`. Anthropic replies `{ data: [{ id, display_name }] }`
+// at /v1/models. Some proxies return a bare array. All three are accepted;
+// anything unrecognised is reported as "no model list" so the caller can ask
+// for a model id by hand instead of showing an empty picker.
 //
 // Nothing here logs or returns the API key. It is used for the Authorization
 // header and then dropped.
@@ -29,9 +29,9 @@ export interface FetchModelsResult {
   source?: string;
   /**
    * Why no list came back, phrased for a human:
-   * "auth"          key rejected (401/403) — stop and fix the key
-   * "unreachable"   network/DNS/timeout   — offer manual entry
-   * "no-endpoint"   answered, but no model list at that path
+   * "auth" key rejected (401/403) — stop and fix the key
+   * "unreachable" network/DNS/timeout — offer manual entry
+   * "no-endpoint" answered, but no model list at that path
    */
   failure?: "auth" | "unreachable" | "no-endpoint";
   /** HTTP status when the endpoint answered. */
@@ -75,8 +75,8 @@ export function modelListCandidates(baseUrl: string): string[] {
 
 /** Normalise the several reply shapes into a model list. */
 export function parseModelList(json: unknown): ModelOption[] {
-  const rows: unknown =
-    Array.isArray(json) ? json : (json as { data?: unknown; models?: unknown } | null)?.data ?? (json as any)?.models;
+  const container = json as { data?: unknown; models?: unknown } | null | undefined;
+  const rows: unknown = Array.isArray(json) ? json : container?.data ?? container?.models;
 
   if (!Array.isArray(rows)) return [];
 

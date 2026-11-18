@@ -12,7 +12,7 @@
 // field in the JSON body (`{code, message}`), and two codes — daily_cap and
 // concurrent — share HTTP 429, so status alone can't disambiguate them.
 //
-// U4 (the completions proxy) hasn't landed yet in this worktree, so there is
+// (the completions proxy) hasn't landed yet in this worktree, so there is
 // no live error to wire against, and guessing at that wiring would be
 // exactly the kind of unverified assumption this repo's rules forbid.
 // Documented choice for this unit: use the one signal that already is real

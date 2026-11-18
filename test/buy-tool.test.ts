@@ -62,7 +62,7 @@ function registerAndGetTool(
   }) as { name: string; factory: (pi: ExtensionAPI) => void };
   ext.factory(pi);
 
-  // R9 / structural: no event handler registered, and registerTool is the
+  // / structural: no event handler registered, and registerTool is the
   // only pi surface this extension ever touches.
   expect(onEvents).toEqual([]);
   expect(calls.every((c) => c.method === "registerTool")).toBe(true);
@@ -108,7 +108,7 @@ describe("createBuyToolExtension", () => {
   test("registers exactly one read-only tool (name, empty parameter schema) and no event handlers", () => {
     const tool = registerAndGetTool();
     expect(tool.name).toBe("qronos_buy_credits");
-    // R9: no argument exists that could mutate anything.
+    // no argument exists that could mutate anything.
     expect(tool.parameters).toEqual({ type: "object", properties: {} });
   });
 

@@ -216,7 +216,7 @@ describe("/support (openAdvertiser)", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]!.msg).toBe("Opening today's advertiser in your browser. Thank you for supporting Qronos CLI.");
     expect(notes[0]!.type).toBe("info");
-    // R10: no fetch call of openAdvertiser's own.
+    // no fetch call of openAdvertiser's own.
     expect(requests).toEqual([]);
   });
 

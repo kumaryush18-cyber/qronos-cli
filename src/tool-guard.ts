@@ -1,7 +1,7 @@
-// #28 R20a: defense-in-depth. qronos-cli's closed extension list (see
+// defense-in-depth. qronos-cli's closed extension list (see
 // pi-launch.ts's buildRuntimeOptions) and the SDK's strict `tools` allowlist
 // are the real reasons no subagent-shaped tool ever reaches the model
-// (SB1). This extension is the belt to that braces: if a tool outside the
+// This extension is the belt to that braces: if a tool outside the
 // allowed set is ever presented anyway — only reachable if a user has
 // hand-placed a file in their own local extensions directory (see the
 // plan's Gap Analysis; not a server-side hole) — block it rather than

@@ -1,7 +1,7 @@
 // Thin fetch layer shared by banner/inline/meter. Never throws: every ad or
 // budget fetch failure resolves to `undefined` so the caller can clear the
-// widget and move on — nothing here may block or delay the chat turn (KTD9 /
-// U7 requirement).
+// widget and move on — nothing here may block or delay the chat turn/
+// requirement).
 import { GRAVITY_CONTEXT_HEADER, type AdNextResponse, type AdSlot, type MeResponse } from "@qronos/shared";
 
 export interface AdsDeps {

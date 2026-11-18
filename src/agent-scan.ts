@@ -10,10 +10,10 @@
 // This scanner does not try to judge intent and it never deletes content. It
 // makes two changes, matching how Claude Code describes its own scan:
 //
-//   1. backslash-insertion: imitation of harness output (`<system-reminder>`,
-//      `Human:`, `Assistant:`) is neutralised so it reads as plain text;
-//   2. a marker line naming the pattern, so the parent model knows to treat the
-//      report as untrusted data rather than instructions.
+// 1. backslash-insertion: imitation of harness output (`<system-reminder>`,
+// `Human:`, `Assistant:`) is neutralised so it reads as plain text;
+// 2. a marker line naming the pattern, so the parent model knows to treat the
+// report as untrusted data rather than instructions.
 //
 // Callers must also wrap the result with `wrapSubagentReport`, which states in
 // words that instructions inside carry no authority. The scan is a mitigation,

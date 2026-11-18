@@ -8,3 +8,5 @@ dist
 .env
 .env.local
 
+# Clipboard screenshots saved by /paste-image.
+screenshots/

@@ -1,9 +1,9 @@
 // 0.2.6: qronos's slash commands — /close-other-session (self-service lease
 // reset), /whats-new (bundled changelog), /update (self-update trigger), and
-// 0.2.12: /buy-credits (opens the buy page; epic #221). One inline extension
+// 0.2.12: /buy-credits (opens the buy page;. One inline extension
 // (qronos-commands) registers all four. Grouped here rather than in
 // usage-tool, which stays read-only.
-import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { SessionResetResponseSchema } from "@qronos/shared";
 import { registerBugAutocomplete } from "./bug-report";
 import { CHANGELOG_HIGHLIGHTS } from "./changelog";
@@ -19,8 +19,8 @@ import { getHooksPath, getProjectHooksPath, getUserMemoryPath } from "./paths";
 import { loadMemory, memoryPathsFor } from "./memory-io";
 import { historySize, recallInto, type EditorLike } from "./interrupt-handler";
 import { formatContextBreakdown, getLatestContextStats, updateContextStats } from "./context-view";
-import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { execSync, spawnSync } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getConfigPath } from "./paths";
 import { CLI_VERSION } from "./version";
@@ -35,7 +35,7 @@ export interface CreateCommandsOptions {
   fetchImpl?: typeof fetch;
   /** Injected in tests; defaults to browser.ts's opener. */
   openBrowserImpl?: typeof openBrowser;
-  /** KTD7: reads the click URL of the banner ad currently shown, set by
+ /**: reads the click URL of the banner ad currently shown, set by
    * pi-ads' onBannerAd callback. Undefined when no ad is shown. */
   getAdvertiserUrl?: () => string | undefined;
   /** Injected in tests: overrides the npx command /reverse-engineer-anything registers. */
@@ -109,7 +109,7 @@ async function defaultInstallLatest(): Promise<{ ok: boolean }> {
   const { spawn } = await import("node:child_process");
   return new Promise((resolve) => {
     // shell on win32: npm is `npm.cmd`, a batch file. Node refuses to spawn a
-    // .cmd without a shell (CVE-2024-27980 hardening), so this resolved
+    // cmd without a shell (CVE-2024-27980 hardening), so this resolved
     // { ok: false } on every Windows /update. Same root cause as the
     // self-update spawn — the command is a fixed literal, no quoting surface.
     const child = spawn("npm", ["install", "-g", "qronos-cli@latest"], {
@@ -149,7 +149,7 @@ export async function runUpdate(ctx: NotifyContext, deps: UpdateDeps = {}): Prom
 // ---- /buy-credits ---------------------------------------------------------
 
 /**
- * Deliberate, discoverable "I want to buy" path (epic #221): same resolver as
+ * Deliberate, discoverable "I want to buy" path: same resolver as
  * the qronos_buy_credits tool, but a slash command needs no model turn — it
  * works even when the user is out of usage and every completion is a 429.
  * Never throws.
@@ -166,7 +166,7 @@ export async function buyCredits(opts: CreateCommandsOptions, ctx: NotifyContext
 
 /**
  * Opens today's advertiser (the click URL of the currently-shown banner ad)
- * in the browser. KTD5/R10: no reward, no server call of its own — the only
+ * in the browser.: no reward, no server call of its own — the only
  * server contact is the browser following the click redirect. Never throws.
  */
 export async function openAdvertiser(opts: CreateCommandsOptions, ctx: NotifyContext): Promise<void> {
@@ -381,26 +381,27 @@ async function showPermissions(ctx: { ui: { notify(message: string, type?: "info
   ctx.ui.notify(lines.join("\n"), mode === "dangerously-skip-permissions" ? "warning" : "info");
 }
 
-async function showContext(ctx: any, opts: CreateCommandsOptions): Promise<void> {
-  const usage = ctx?.getContextUsage?.() || ctx?.sessionManager?.getContextUsage?.();
+async function showContext(ctx: ExtensionCommandContext, opts: CreateCommandsOptions): Promise<void> {
+  const usage = ctx.getContextUsage();
   if (usage) {
+    // ContextUsage carries only these three fields; the previous `any` read
+    // input/output/cache numbers that never existed and showed zeros.
     updateContextStats({
-      usedTokens: usage.tokens || usage.totalTokens || usage.contextTokens || 0,
-      contextWindow: usage.contextWindow || 200_000,
-      inputTokens: usage.input,
-      outputTokens: usage.output,
-      cacheReadTokens: usage.cacheRead,
-      cacheWriteTokens: usage.cacheWrite,
+      usedTokens: usage.tokens ?? 0,
+      contextWindow: usage.contextWindow,
     });
   }
   const text = formatContextBreakdown(getLatestContextStats(), opts.model);
   ctx.ui.notify(text, "info");
 }
 
-async function showStatus(ctx: any, opts: CreateCommandsOptions): Promise<void> {
+async function showStatus(ctx: ExtensionCommandContext, opts: CreateCommandsOptions): Promise<void> {
   const mode = getExecutionMode();
   const memory = loadMemory(process.cwd(), getUserMemoryPath());
-  const activeToolsCount = ctx?.getActiveTools?.()?.length ?? "standard";
+  // `getActiveTools` is not part of the public context type; read it
+  // structurally and fall back to a word instead of a fake number.
+  const activeTools = (ctx as unknown as { getActiveTools?: () => unknown[] }).getActiveTools?.();
+  const activeToolsCount = activeTools?.length ?? "standard";
   const stats = getLatestContextStats();
 
   const lines = [
@@ -418,7 +419,7 @@ async function showStatus(ctx: any, opts: CreateCommandsOptions): Promise<void> 
   ctx.ui.notify(lines.join("\n"), "info");
 }
 
-async function showDoctor(ctx: any, opts: CreateCommandsOptions): Promise<void> {
+async function showDoctor(ctx: NotifyContext, opts: CreateCommandsOptions): Promise<void> {
   const checks: string[] = [`◈ Qronos CLI v${CLI_VERSION} Diagnostics`, ""];
 
   // 1. Runtime environment
@@ -460,15 +461,16 @@ async function showDoctor(ctx: any, opts: CreateCommandsOptions): Promise<void> 
   ctx.ui.notify(checks.join("\n"), "info");
 }
 
-async function runReview(ctx: any, qronos: ExtensionAPI): Promise<void> {
+async function runReview(ctx: NotifyContext, qronos: ExtensionAPI): Promise<void> {
   let diff = "";
   try {
     diff = execSync("git diff HEAD", { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 5000 }).trim();
     if (!diff) {
       diff = execSync("git diff --staged", { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 5000 }).trim();
     }
-  } catch (err: any) {
-    ctx.ui.notify(`Could not read git diff: ${err?.message || String(err)}`, "error");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    ctx.ui.notify(`Could not read git diff: ${message}`, "error");
     return;
   }
 
@@ -489,41 +491,63 @@ async function runReview(ctx: any, qronos: ExtensionAPI): Promise<void> {
   qronos.sendUserMessage(prompt);
 }
 
-export async function runCompact(args: string, ctx: any, qronos: ExtensionAPI): Promise<void> {
+export async function runCompact(args: string, ctx: NotifyContext, qronos: ExtensionAPI): Promise<void> {
   const hint = args.trim();
   const prompt = [
     "Please compact our conversation context.",
     hint ? `Focus of compaction: ${hint}` : "Summarize all previous work, key technical decisions, current file changes, and remaining tasks.",
     "Preserve any active todos and plans. Be concise so that maximum context headroom is freed.",
   ].join("\n");
-  ctx.ui?.notify?.("Compacting conversation history...", "info");
+  ctx.ui.notify("Compacting conversation history...", "info");
   qronos.sendUserMessage(prompt);
 }
 
+/** Clipboard screenshots land here, relative to the folder qronos was started in. */
+export const SCREENSHOTS_DIR = "screenshots";
+
+/** Where a clipboard screenshot goes, absolute + relative, for a given clock. */
+export function screenshotPaths(cwd: string, now: number = Date.now()): { targetPath: string; relPath: string } {
+  const filename = `screenshot_${now}.png`;
+  return {
+    targetPath: join(cwd, SCREENSHOTS_DIR, filename),
+    relPath: `${SCREENSHOTS_DIR}/${filename}`,
+  };
+}
+
 export function saveClipboardImage(cwd: string): { ok: true; path: string } | { ok: false; error: string } {
-  const imagesDir = join(cwd, "images");
-  if (!existsSync(imagesDir)) {
+  const screenshotsDir = join(cwd, SCREENSHOTS_DIR);
+  if (!existsSync(screenshotsDir)) {
     try {
-      mkdirSync(imagesDir, { recursive: true });
+      mkdirSync(screenshotsDir, { recursive: true });
     } catch {}
   }
-  const filename = `clipboard_${Date.now()}.png`;
-  const targetPath = join(imagesDir, filename);
-  const relPath = `images/${filename}`;
+  const { targetPath, relPath } = screenshotPaths(cwd);
 
+  // No shell here on purpose: the folder path comes from the user's working
+  // directory, so a name containing a quote or `$(...)` must never be parsed
+  // as shell code. Every command below is spawned with an argument array, and
+  // the Linux writers get the output file as a file descriptor, not a `>`.
   try {
     if (process.platform === "win32") {
-      const psScript = `Add-Type -AssemblyName System.Windows.Forms; $c = [System.Windows.Forms.Clipboard]::GetImage(); if ($c) { $c.Save('${targetPath.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png); exit 0 } else { exit 1 }`;
-      execSync(`powershell -NoProfile -NonInteractive -Command "${psScript}"`, { timeout: 4000, stdio: "ignore" });
+      // Single-quoted PowerShell string: literal, only a quote needs doubling.
+      const psPath = targetPath.replace(/'/g, "''");
+      const psScript = `Add-Type -AssemblyName System.Windows.Forms; $c = [System.Windows.Forms.Clipboard]::GetImage(); if ($c) { $c.Save('${psPath}', [System.Drawing.Imaging.ImageFormat]::Png); exit 0 } else { exit 1 }`;
+      spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", psScript], { timeout: 4000, stdio: "ignore" });
     } else if (process.platform === "darwin") {
-      const osa = `set png_data to the clipboard as «class PNGf»\nset fp to open for access POSIX file "${targetPath}" with write permission\nwrite png_data to fp\nclose access fp`;
-      execSync(`osascript -e '${osa}'`, { timeout: 4000, stdio: "ignore" });
+      const asPath = targetPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const osa = `set png_data to the clipboard as «class PNGf»\nset fp to open for access POSIX file "${asPath}" with write permission\nwrite png_data to fp\nclose access fp`;
+      spawnSync("osascript", ["-e", osa], { timeout: 4000, stdio: "ignore" });
     } else {
-      try {
-        execSync(`wl-paste --type image/png > "${targetPath}"`, { timeout: 4000, stdio: "ignore" });
-      } catch {
-        execSync(`xclip -selection clipboard -t image/png -o > "${targetPath}"`, { timeout: 4000, stdio: "ignore" });
-      }
+      const capture = (cmd: string, args: string[]): boolean => {
+        const fd = openSync(targetPath, "w");
+        try {
+          return spawnSync(cmd, args, { timeout: 4000, stdio: ["ignore", fd, "ignore"] }).status === 0;
+        } finally {
+          closeSync(fd);
+        }
+      };
+      const ok = capture("wl-paste", ["--type", "image/png"]);
+      if (!ok) capture("xclip", ["-selection", "clipboard", "-t", "image/png", "-o"]);
     }
 
     if (existsSync(targetPath) && statSync(targetPath).size > 100) {
@@ -543,11 +567,11 @@ export function createCommandsExtension(opts: CreateCommandsOptions): InlineExte
       registerBugAutocomplete(qronos);
       qronos.registerCommand("init", {
         description: "Initialize project instructions for Qronos AI (creates QRONOS.md).",
-        handler: async (_args, ctx) => runInit(ctx as any),
+        handler: async (_args, ctx) => runInit(ctx),
       });
       qronos.registerCommand("cost", {
         description: "Show detailed session token usage and PAYG / Token Plan billing status.",
-        handler: async (_args, ctx) => runCost(ctx as any, opts),
+        handler: async (_args, ctx) => runCost(ctx, opts),
       });
       qronos.registerCommand("close-other-session", {
         description: "Clear your other running Qronos session (use if a previous one is stuck).",
@@ -587,45 +611,47 @@ export function createCommandsExtension(opts: CreateCommandsOptions): InlineExte
       });
       qronos.registerCommand("permissions", {
         description: "Show the active execution mode and what it will ask you to approve.",
-        handler: (_args, ctx) => showPermissions(ctx as any),
+        handler: (_args, ctx) => showPermissions(ctx),
       });
       qronos.registerCommand("recall", {
         description: "Put a previous prompt back in the editor (/recall, /recall 2 for older).",
-        handler: (args, ctx) => runRecall(args, ctx as any),
+        handler: (args, ctx) => runRecall(args, ctx),
       });
       qronos.registerCommand("memory", {
         description: "Show which QRONOS.md memory files are loaded for this project.",
-        handler: (_args, ctx) => showMemory(ctx as any),
+        handler: (_args, ctx) => showMemory(ctx),
       });
       qronos.registerCommand("hooks", {
         description: "Show the lifecycle hooks configured for this session.",
-        handler: (_args, ctx) => showHooks(ctx as any),
+        handler: (_args, ctx) => showHooks(ctx),
       });
       qronos.registerCommand("context", {
         description: "Show current context window token usage, remaining headroom, and auto-compact limit.",
-        handler: (_args, ctx) => showContext(ctx as any, opts),
+        handler: (_args, ctx) => showContext(ctx, opts),
       });
       qronos.registerCommand("status", {
         description: "Show current session info, active model, execution mode, and working directory.",
-        handler: (_args, ctx) => showStatus(ctx as any, opts),
+        handler: (_args, ctx) => showStatus(ctx, opts),
       });
       qronos.registerCommand("doctor", {
         description: "Run diagnostics on your environment, API provider, git repo, memory, and hooks.",
-        handler: (_args, ctx) => showDoctor(ctx as any, opts),
+        handler: (_args, ctx) => showDoctor(ctx, opts),
       });
       qronos.registerCommand("review", {
         description: "Review current git diff changes for correctness, bugs, and code quality.",
-        handler: (_args, ctx) => runReview(ctx as any, qronos),
+        handler: (_args, ctx) => runReview(ctx, qronos),
       });
       qronos.registerCommand("paste-image", {
-        description: "Save a screenshot from your system clipboard to images/ and inspect it with AI vision.",
+        description: `Save a screenshot from your system clipboard to ${SCREENSHOTS_DIR}/ and inspect it with AI vision.`,
         handler: async (_args, ctx) => {
-          const projectRoot = (ctx as any).cwd || process.cwd();
-          const res = saveClipboardImage(projectRoot);
+          const res = saveClipboardImage(ctx.cwd || process.cwd());
           if (res.ok) {
-            (ctx as any).ui?.notify?.(`📸 Saved screenshot to: ${res.path}\nPrompt the model: "Inspect ${res.path} and analyze the layout"`, "info");
+            ctx.ui.notify(
+              `📸 Saved screenshot to: ${res.path}\nPrompt the model: "Inspect ${res.path} and analyze the layout"`,
+              "info",
+            );
           } else {
-            (ctx as any).ui?.notify?.(`⚠️ ${res.error}`, "warning");
+            ctx.ui.notify(`⚠️ ${res.error}`, "warning");
           }
         },
       });

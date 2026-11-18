@@ -9,6 +9,11 @@ permissions:
   contents: read
   id-token: write
 
+# Never let two publishes race each other to npm.
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -19,7 +24,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.3.14"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -27,8 +32,17 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
+      # Publish is the one job that puts code on other people's machines, so it
+      # gates itself: exact lockfile, no type errors, all tests green, build ok.
+      # A red test must stop the release, not be discovered after it.
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
 
       - name: Build package
         run: bun run build

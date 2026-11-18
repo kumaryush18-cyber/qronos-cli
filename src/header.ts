@@ -2,6 +2,7 @@
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { CLI_VERSION } from "./version";
+import { APP_TITLE_TEXT } from "./app-title";
 
 export interface ThemeLike {
   fg(color: string, text: string): string;
@@ -138,11 +139,79 @@ export interface CreateHeaderExtensionOptions {
   updateLatest?: string;
 }
 
+/**
+ * Text shown in the terminal tab / window title.
+ *
+ * A terminal title takes TEXT ONLY (an OSC 0/2 escape with a string). There is
+ * no standard way to put a colour or an image in it: terminals draw the title
+ * with their own font and their own colours, so "orange" cannot travel with the
+ * string. Orange lives inside the app instead — the header above the editor,
+ * which the TUI draws itself.
+ *
+ * The text itself ("◇ Qronos CLI") lives in app-title.ts, because the bin shim
+ * uses the same string for the OS process name. QRONOS_TITLE replaces it.
+ */
+export const DEFAULT_TERMINAL_TITLE = APP_TITLE_TEXT;
+
+/** The title to set: QRONOS_TITLE when given, else the plain app name. */
+export function resolveTerminalTitle(env: Record<string, string | undefined> = process.env): string {
+  const raw = (env.QRONOS_TITLE ?? "").trim();
+  return raw === "" ? DEFAULT_TERMINAL_TITLE : raw;
+}
+
+/** Back-compat alias for the default title. */
+export const TERMINAL_TITLE = DEFAULT_TERMINAL_TITLE;
+
+/** How often the title is written again. Cheap: one escape sequence, no redraw. */
+export const TITLE_HEARTBEAT_MS = 3_000;
+
+export interface TitleHost {
+  setTitle(title: string): void;
+}
+
+/**
+ * Pins the window title and keeps it pinned.
+ *
+ * pi writes "<app> - <session> - <folder>" whenever a session binds, and many
+ * shells rewrite the title from PROMPT_COMMAND / precmd on every prompt, so a
+ * single write at startup gets lost. Re-writing the same string on a slow
+ * heartbeat is the only way to win that race from inside the app.
+ *
+ * Returns a stop function. Never throws: a failed title write must not break a
+ * session.
+ */
+export function installTerminalTitle(
+  ui: TitleHost,
+  options: { title?: string; heartbeatMs?: number } = {},
+): () => void {
+  const title = options.title ?? resolveTerminalTitle();
+  const write = (): void => {
+    try {
+      ui.setTitle(title);
+    } catch {
+      // ignore: the terminal refused the escape, nothing else to do
+    }
+  };
+  write();
+  const heartbeatMs = options.heartbeatMs ?? TITLE_HEARTBEAT_MS;
+  if (heartbeatMs <= 0) return () => {};
+  const timer = setInterval(write, heartbeatMs);
+  // Node keeps the process alive for timers; the TUI owns the event loop.
+  if (typeof timer === "object" && timer && typeof timer.unref === "function") timer.unref();
+  return () => clearInterval(timer);
+}
+
 export function createHeaderExtension(opts: CreateHeaderExtensionOptions): InlineExtension {
   return {
     name: "qronos-header",
     factory(qronos: ExtensionAPI) {
+      let stopTitle: (() => void) | undefined;
       qronos.on("session_start", (_event, ctx) => {
+        // The tab/window title is plain text the app sends to the terminal.
+        // pi writes "<app> - <session> - <folder>" on every rebind and shells
+        // reset it on each prompt, so pin it and keep it pinned.
+        stopTitle?.();
+        stopTitle = installTerminalTitle(ctx.ui);
         ctx.ui.setHeader((tui: TuiLike, theme: ThemeLike) => {
           let expanded = false;
 
@@ -157,6 +226,12 @@ export function createHeaderExtension(opts: CreateHeaderExtensionOptions): Inlin
             },
           };
         });
+      });
+      // Stop the heartbeat when the session goes away so a reused process does
+      // not keep writing the title of a dead session.
+      qronos.on("session_shutdown", () => {
+        stopTitle?.();
+        stopTitle = undefined;
       });
     },
   };

@@ -4,8 +4,8 @@
 // next decides whether they stay, so this screen exists to make the first
 // thirty seconds obvious and to never dead-end:
 //
-//   1. Sign in to Qronos Gateway   (one account, no key to manage)
-//   2. Use my own API key          (any OpenAI- or Anthropic-compatible endpoint)
+// 1. Sign in to Qronos Gateway (one account, no key to manage)
+// 2. Use my own API key (any OpenAI- or Anthropic-compatible endpoint)
 //
 // Deliberately only two choices. An earlier draft offered a local-model option
 // and a preset provider list; both were noise. A preset list also rots: any

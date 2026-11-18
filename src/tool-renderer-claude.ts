@@ -40,7 +40,7 @@ function truncationHint(remaining: number, expanded: boolean | undefined): strin
 /**
  * Custom tool renderer extension that styles tool execution exactly like Claude Code:
  * - Single-line header: ● ToolName(target) with dot strictly beside the name (no awkward wrapping)
- * - Tree branch connector: '  └ ' on the first line of output
+ * - Tree branch connector: ' └ ' on the first line of output
  * - Clean 4-space aligned indentation on all subsequent lines
  * - Automatic dedenting so nested code snippets are not pushed excessively to the right
  * - Line lengths strictly bounded to terminal width to prevent mobile soft-wrapping to column 0
@@ -110,7 +110,7 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             return container;
           },
 
-          // renderResult: ONLY renders the result output with '  └ ' branch connector.
+          // renderResult: ONLY renders the result output with ' └ ' branch connector.
           // NEVER re-prints the header line (fixes duplicate tool lines).
           renderResult(result: any, options: any, theme: any, context: any) {
             const container = new Container();

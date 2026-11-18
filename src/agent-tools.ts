@@ -1,13 +1,13 @@
 // Subagent tool resolution — model of Claude Code's two-filter design, with a
 // single added invariant that Claude Code does not enforce and we do:
 //
-//   **A subagent can never be more permissive than its parent.**
+// **A subagent can never be more permissive than its parent.**
 //
 // Claude Code's rule is "each subagent inherits the parent conversation's
 // permission rules", applied through two filters:
 //
-//   filter 1  ALWAYS_DENIED          removed from every subagent, always
-//   filter 2  tool pool              what the definition asks for, minus denials
+// filter 1 ALWAYS_DENIED removed from every subagent, always
+// filter 2 tool pool what the definition asks for, minus denials
 //
 // The previous design here instead pinned an absolute read-only list. That was
 // stricter than Claude Code and it broke the plan flow: a subagent was handed
@@ -16,13 +16,13 @@
 // which is the main reason to have subagents at all.
 //
 // Resolution order (each step can only ever remove tools):
-//   1. deny-list first, exactly as documented ("disallowedTools is applied
-//      first, then tools is resolved against the remaining pool")
-//   2. the definition's `tools` allow-list, if present
-//   3. the parent session's pool — the inheritance step
-//   4. plan-mode floor: if the parent is read-only, so is the subagent
-//   5. ALWAYS_DENIED
-//   6. the depth limit, which withholds the agent tool itself
+// 1. deny-list first, exactly as documented ("disallowedTools is applied
+// first, then tools is resolved against the remaining pool")
+// 2. the definition's `tools` allow-list, if present
+// 3. the parent session's pool — the inheritance step
+// 4. plan-mode floor: if the parent is read-only, so is the subagent
+// 5. ALWAYS_DENIED
+// 6. the depth limit, which withholds the agent tool itself
 //
 // `bash` is not treated as read-only anywhere in this file: a shell can write,
 // so it is gated by the same parent-mode check as `write` and `edit`.

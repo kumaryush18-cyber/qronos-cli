@@ -1,4 +1,4 @@
-// #37 U1: in-place self-update. No re-exec (Node has no execve) — a
+// in-place self-update. No re-exec (Node has no execve) — a
 // successful update lands on disk and applies next launch, exactly like
 // Claude Code / gemini-cli (see docs/research/37-cli-self-update-mechanics.md).
 // Every gate and every failure mode falls back to phase-1 behavior

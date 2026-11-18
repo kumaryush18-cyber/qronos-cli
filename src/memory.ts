@@ -1,10 +1,10 @@
 // Layered project memory, Claude-Code style.
 //
 // Resolution order, lowest precedence first, matching CLAUDE.md's layout:
-//   1. ~/.qronos/QRONOS.md          user-level, applies to every project
-//   2. <root>/QRONOS.md             project root
-//   3. <root>/<dir>/QRONOS.md       directory-scoped, for subdirectories of the
-//                                   files in play (cwd and its ancestors only)
+// 1. ~/.qronos/QRONOS.md user-level, applies to every project
+// 2. <root>/QRONOS.md project root
+// 3. <root>/<dir>/QRONOS.md directory-scoped, for subdirectories of the
+// files in play (cwd and its ancestors only)
 // Later sources win, so a project can override a user-level preference and a
 // subdirectory can override the project.
 //

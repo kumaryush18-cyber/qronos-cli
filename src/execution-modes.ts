@@ -34,7 +34,7 @@ export function setExecutionModePersistence(sink: ((mode: ExecutionMode) => void
 
 /**
  * @param dangerouslySkipPermissions --dangerously-skip-permissions was passed.
- * @param restoredMode            a mode previously saved to config.
+ * @param restoredMode a mode previously saved to config.
  *
  * Precedence: an explicit CLI flag always wins over saved state (the user just
  * typed it), and saved state wins over the default. A restored

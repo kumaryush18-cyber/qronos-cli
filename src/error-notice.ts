@@ -1,4 +1,4 @@
-// 2026-09-01 (epic #221 follow-up): one clean, server-owned line when the
+// 2026-09-01 follow-up): one clean, server-owned line when the
 // server rejects a request. pi itself prints the raw error envelope as JSON
 // and retries a 429 three times; an extension cannot suppress either. What it
 // can do is read the same error where pi records it — `turn_end` fires for a
@@ -92,8 +92,17 @@ export function parseErrorEnvelope(errorMessage: unknown): ParsedEnvelope | unde
 
 /** Plain limit line from structured extras; falls back to the server's message. */
 export function formatLimitEnvelope(env: ParsedEnvelope, opts?: { timeZone?: string }): string {
-  // concurrent_session carries a recovery hint (/close-other-session) that the generic line would drop.
-  if (env.code === "concurrent_session" || typeof env.remaining_credits_today !== "number") return env.message;
+  // concurrent_session is a per-account lease held by another window. The server
+  // message names the problem; the fix is our own command, so make sure it is on
+  // screen even when the deploy forgot the hint. (Two windows at once needs a
+  // per-session lease on the server; the CLI already sends its own x-session-id
+  // per window, see provider.ts.)
+  if (env.code === "concurrent_session") {
+    return env.message.includes("/close-other-session")
+      ? env.message
+      : `${env.message} Run /close-other-session to free it.`;
+  }
+  if (typeof env.remaining_credits_today !== "number") return env.message;
   return formatLimitNotice(
     {
       limit: env.limit ?? env.code,

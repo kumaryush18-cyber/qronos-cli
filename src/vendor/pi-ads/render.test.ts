@@ -288,7 +288,7 @@ describe("#61 ad link: CTA visible, tracker URL only as the OSC-8 target", () =>
   const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
   const creative = { headline: "H", body: "B", cta: "get the skill @ slop.cash", accent: "#fff" };
   const clickUrl = "https://api.qronos.me/c/8eb56276-fda6-4aae-a800-b40ad39abcde";
-  // Strip OSC-8 open (`ESC ] 8 ; [id=..];  <url> BEL`) + close so only visible text remains.
+  // Strip OSC-8 open (`ESC ] 8 ; [id=..]; <url> BEL`) + close so only visible text remains.
   const stripOsc8 = (s: string) => s.replace(/\x1b\]8;[^;\x07]*;[^\x07]*\x07/g, "");
 
   test("framed card shows the CTA, hides the raw tracker, keeps the link target", () => {
@@ -311,7 +311,7 @@ describe("#61 ad link: CTA visible, tracker URL only as the OSC-8 target", () =>
 });
 
 // ---------------------------------------------------------------------------
-// U1: whole card is one OSC 8 link with a shared id (R1, R2, R3, R4)
+// whole card is one OSC 8 link with a shared id
 // ---------------------------------------------------------------------------
 
 describe("U1: whole ad card is one clickable link", () => {

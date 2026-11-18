@@ -17,12 +17,12 @@ const CMD_METACHARACTERS = /[\^&|<>()]/g;
  * The URL reaches us from the server (`verification_uri` in the device-flow
  * response), and the wire schema types it as a bare string — so this is the
  * only place its shape is checked. Two gates:
- *   - it must parse, and its scheme must be http/https. A `file:` or custom
- *     scheme handed to `open`/`start` is a launch primitive, not a link.
- *   - the returned `href` is WHATWG-normalized, which percent-encodes spaces,
- *     quotes, `>` and `^`. It does NOT encode `|`, `(` or `)`, which is why
- *     the win32 branch below still escapes the full metacharacter set rather
- *     than trusting normalization alone.
+ * - it must parse, and its scheme must be http/https. A `file:` or custom
+ * scheme handed to `open`/`start` is a launch primitive, not a link.
+ * - the returned `href` is WHATWG-normalized, which percent-encodes spaces,
+ * quotes, `>` and `^`. It does NOT encode `|`, `(` or `)`, which is why
+ * the win32 branch below still escapes the full metacharacter set rather
+ * than trusting normalization alone.
  */
 export function safeBrowserUrl(url: string): string | null {
   try {
@@ -41,13 +41,13 @@ export function safeBrowserUrl(url: string): string | null {
  * win32 is the subtle one. `start` is a cmd.exe builtin, not an executable,
  * so it must run via `cmd /c` — and the previous
  * `spawn("start", [url], { shell: true })` form had two live bugs:
- *   1. `start` treats its first *quoted* argument as a window title. When
- *      the shell layer quoted the URL, `start "<url>"` opened an empty
- *      console window titled with the URL and no browser. The canonical fix
- *      is an explicit empty title: `start "" <url>`.
- *   2. cmd metacharacters split the line: a `&` in a query string (device
- *      verification URIs can carry one) truncates the URL and runs the rest
- *      as a second command. `^&` defers the `&` past cmd's parser.
+ * 1. `start` treats its first *quoted* argument as a window title. When
+ * the shell layer quoted the URL, `start "<url>"` opened an empty
+ * console window titled with the URL and no browser. The canonical fix
+ * is an explicit empty title: `start "" <url>`.
+ * 2. cmd metacharacters split the line: a `&` in a query string (device
+ * verification URIs can carry one) truncates the URL and runs the rest
+ * as a second command. `^&` defers the `&` past cmd's parser.
  * Both fixes follow the long-standing opn/open package recipe:
  * `cmd /c start "" <escaped-url>` with windowsVerbatimArguments so Node's
  * own arg quoting can't re-introduce bug 1.

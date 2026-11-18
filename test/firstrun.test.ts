@@ -3,7 +3,7 @@ import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveJwt } from "../src/credentials";
-import { DEFAULT_BASE_URL, resolveBaseUrl } from "../src/env";
+import { DEFAULT_BASE_URL, resolveBaseUrl, resolveTuiMode } from "../src/env";
 import { createSessionManager } from "../src/pi-launch";
 import { buildProviderConfig, MODEL_ID } from "../src/provider";
 import { CLI_VERSION } from "../src/version";
@@ -108,7 +108,7 @@ function baseDeps(overrides: Partial<RunDeps> & Pick<RunDeps, "baseUrl" | "agent
     launchPi: async () => {},
     log: () => {},
     checkClientVersion: async () => ({ action: "ok" }),
-    // #37 U1: mirrors self-update's own fallback so existing block/notice
+    // mirrors self-update's own fallback so existing block/notice
     // expectations are unchanged unless a test opts in with an override.
     maybeSelfUpdate: async (action) => (action === "notice" ? "notice" : "blocked"),
     ...overrides,
@@ -136,13 +136,13 @@ describe("first-run consent", () => {
         launchPi: async () => {
           piLaunched = true;
         },
-        // #37 R5: the version check itself must never be called on a decline —
+        // the version check itself must never be called on a decline —
         // it would be one more server call, and decline must make zero.
         checkClientVersion: async () => {
           versionCheckCalled = true;
           return { action: "ok" };
         },
-        // #37 U1/R5: self-update is only reached past the consent gate, so a
+        // self-update is only reached past the consent gate, so a
         // decline must never invoke it either.
         maybeSelfUpdate: async (action) => {
           selfUpdateCalled = true;
@@ -890,23 +890,25 @@ describe("provider registration", () => {
     expect(config.models?.[0]?.id).toBe(MODEL_ID);
     const model = config.models?.[0];
     // ProviderModelConfig is a union; only chat models carry contextWindow.
-    expect(model && "contextWindow" in model ? model.contextWindow : undefined).toBe(1_048_576);
-    expect(config.models?.[0]?.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+    // Claude-family models really do have 200k of context; the old blanket
+    // 1,048,576 was a placeholder that made the meter lie.
+    expect(model && "contextWindow" in model ? model.contextWindow : undefined).toBe(200_000);
+    expect(config.models?.[0]?.cost).toEqual({ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 });
   });
 
-  test("#28 R19/KTD-3: threads sessionId through as a static x-session-id header", () => {
+ test("#28 R19/: threads sessionId through as a static x-session-id header", () => {
     const a = buildProviderConfig({
       baseUrl: "http://example.test:4321",
       apiKey: "jwt-abc",
       sessionId: "session-a",
       models: [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }],
     });
-    // #37: x-client-version rides alongside x-session-id on every completion.
+    // x-client-version rides alongside x-session-id on every completion.
     expect(a.headers).toEqual({ "x-session-id": "session-a", "x-client-version": CLI_VERSION });
 
     // Stable across repeated calls with the same sessionId, different across
     // two different sessionIds — a process's identity is fixed for its
-    // lifetime (KTD-3: generated once per launchPi() call).
+ // lifetime: generated once per launchPi() call).
     const aAgain = buildProviderConfig({
       baseUrl: "http://example.test:4321",
       apiKey: "jwt-abc",
@@ -929,6 +931,19 @@ describe("QRONOS_BASE_URL override", () => {
   test("resolveBaseUrl honors the env var and falls back to the default", () => {
     expect(resolveBaseUrl({ QRONOS_BASE_URL: "http://stub.local:9999" })).toBe("http://stub.local:9999");
     expect(resolveBaseUrl({})).toBe(DEFAULT_BASE_URL);
+  });
+});
+
+describe("QRONOS_TUI_MODE override", () => {
+  test("defaults to fullscreen so clicks in the input box can move the cursor", () => {
+    expect(resolveTuiMode({})).toBe("fullscreen");
+    expect(resolveTuiMode({ QRONOS_TUI_MODE: "" })).toBe("fullscreen");
+    expect(resolveTuiMode({ QRONOS_TUI_MODE: "nonsense" })).toBe("fullscreen");
+  });
+
+  test("regular restores inline rendering with the terminal's own scrollback", () => {
+    expect(resolveTuiMode({ QRONOS_TUI_MODE: "regular" })).toBe("regular");
+    expect(resolveTuiMode({ QRONOS_TUI_MODE: " REGULAR " })).toBe("regular");
   });
 });
 

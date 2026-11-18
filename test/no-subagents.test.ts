@@ -1,16 +1,16 @@
-// #28 R20/R20a: the explicit, tested no-subagent / no-second-concurrent-
+// the explicit, tested no-subagent / no-second-concurrent-
 // model-call guarantee. Two describe blocks:
 //
-//   SB1 (structural): buildRuntimeOptions()'s own output — the extension
-//   list is closed, settings pin packages:[] / defaultTools, and the strict
-//   `tools` allowlist is exactly SAFE_TOOLS plus the two legitimate custom
-//   tools. Fails immediately if a future edit adds/renames an extension.
+// (structural): buildRuntimeOptions()'s own output — the extension
+// list is closed, settings pin packages:[] / defaultTools, and the strict
+// `tools` allowlist is exactly SAFE_TOOLS plus the two legitimate custom
+// tools. Fails immediately if a future edit adds/renames an extension.
 //
-//   SB2 (dynamic): a REAL AgentSession, built from buildRuntimeOptions()'s
-//   actual output (not a hand-rolled stand-in), driven through a real
-//   multi-turn tool-calling conversation against a stub upstream. Proves
-//   the shipped distro's own code path never has two completions requests
-//   open at once, and every tool name it ever calls is in the allowed set.
+// (dynamic): a REAL AgentSession, built from buildRuntimeOptions()'s
+// actual output (not a hand-rolled stand-in), driven through a real
+// multi-turn tool-calling conversation against a stub upstream. Proves
+// the shipped distro's own code path never has two completions requests
+// open at once, and every tool name it ever calls is in the allowed set.
 //
 // What this does NOT prove: that a user hasn't hand-edited their own local
 // `~/.qronos/agent/extensions/` directory (see the plan's Gap Analysis) —
@@ -51,17 +51,19 @@ describe("closed extension list (#28 R20, SB1)", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-a");
     expect(opts.settingsManager.getEnableInstallTelemetry()).toBe(false);
     expect(process.env.PI_TELEMETRY).toBe("0");
-    // pi 1.2.0 default changes we pin back to 0.84 behavior.
-    expect(opts.settingsManager.getTuiMode()).toBe("regular");
+    // pi 1.2.0 default changes we pin back to 0.84 behavior. tuiMode is the
+    // exception: fullscreen is what turns on mouse clicks in the editor, so we
+    // keep pi's default and offer QRONOS_TUI_MODE=regular for the old one.
+    expect(opts.settingsManager.getTuiMode()).toBe("fullscreen");
     expect(opts.settingsManager.getThemeSetting()).toBe("qronos-claude");
   });
 
-  test("buildRuntimeOptions registers exactly the twenty-one known extensions — no more, no less", () => {
+  test("buildRuntimeOptions registers exactly the twenty-two known extensions — no more, no less", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-a");
-    // #226: the closed set deliberately grew to six with qronos-buy-tool;
+    // the closed set deliberately grew to six with qronos-buy-tool;
     // 2026-09-01: to seven with qronos-error-notice (one readable line on a
     // 429); 2026-09-03: to eight with qronos-header (the startup header,
-    // U1/U2); 2026-09-03: to nine with qronos-docs-tool (the qronos_docs
+    // ); 2026-09-03: to nine with qronos-docs-tool (the qronos_docs
     // tool, U2). Any further addition must be a reviewed, deliberate edit —
     // never accidental. 2026-10-20: to sixteen with qronos-web-tools (web_search, docs_lookup); to seventeen with qronos-image-tool (generate_image).
     // 0.5.0: to eighteen with qronos-exit-plan (plan mode's exit_plan_mode).
@@ -70,6 +72,8 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // To twenty with qronos-hooks (lifecycle hooks; PreToolUse uses the same
     // tool_call block mechanism as tool-guard and adds no escape hatch).
     // To twenty-one with qronos-agent (task-scoped subagents strictly gated by Option B read-only start).
+    // 2026-11-20: to twenty-two with qronos-thinking-meter (spinner frames
+    // carrying the real context size; no tool, no model call).
     // 2026-10-27: qronos-interrupt renamed to qronos-prompt-history. The name
     // changed because the extension NO LONGER touches Escape, which is pi's
     // app.interrupt binding; it only records submitted prompts for /recall. The
@@ -99,6 +103,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-hooks",
         "qronos-prompt-history",
         "qronos-provider",
+        "qronos-thinking-meter",
         "qronos-tool-guard",
       ].sort(),
     );
@@ -113,10 +118,15 @@ describe("closed extension list (#28 R20, SB1)", () => {
     );
   });
 
-  test("settings carry quietStartup: true (KTD1, hides pi's own header)", () => {
+ test("settings carry quietStartup: true, hides pi's own header)", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-quiet");
     const settings = opts.settingsManager.getGlobalSettings();
     expect(settings.quietStartup).toBe(true);
+  });
+
+  test("settings clear rows on shrink so the closed @ file list stops painting", () => {
+    const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-shrink");
+    expect(opts.settingsManager.getClearOnShrink()).toBe(true);
   });
 
   test("the strict SDK tools allowlist is exactly SAFE_TOOLS plus the custom tools, todo, exit_plan_mode, agent, codemode and tool_search", () => {
@@ -148,7 +158,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     }
   });
 
-  test("resolveModelName (KTD6): catalog name, then model id, then MODEL_ID", () => {
+ test("resolveModelName: catalog name, then model id, then MODEL_ID", () => {
     expect(
       resolveModelName({
         baseUrl: "http://example.test",
@@ -194,7 +204,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SB2: stub upstream shaped like the qronos provider's own baseUrl
+// stub upstream shaped like the qronos provider's own baseUrl
 // (completionsBaseUrl appends /v1; the openai SDK inside pi-ai appends
 // /chat/completions to that) — a raw OpenAI-completions-shaped streaming
 // endpoint, scripted for exactly one tool call.

@@ -1,4 +1,4 @@
-// R4: inline ad card after every `adInlineTurnFrequency`-th assistant turn
+// inline ad card after every `adInlineTurnFrequency`-th assistant turn
 // (default 5), shown for exactly one turn, then cleared. Driven entirely
 // from turn_end (see index.ts) — no turn_start hook needed: the card set at
 // turn N's turn_end is cleared at the *next* turn_end before that turn's own

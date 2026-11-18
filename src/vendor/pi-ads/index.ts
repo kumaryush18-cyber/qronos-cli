@@ -1,4 +1,4 @@
-// pi extension entry point (U7). KTD9 / R5: this extension registers only
+// pi extension entry point.: this extension registers only
 // lifecycle/UI hooks (session_start, turn_end, session_shutdown) — never
 // context, before_provider_request, before_agent_start, message_*, tool_*,
 // or agent_*. See src/sandbox.test.ts for the enforced proof. Ad content
@@ -20,7 +20,7 @@ export interface CreateAdsExtensionOptions {
   fetchImpl?: typeof fetch;
   /** Base64url Gravity context for the /ads/next header; undefined result = header omitted. */
   getGravityContext?: () => string | undefined;
-  /** KTD7: mirrors the currently-shown banner ad's click URL to the caller
+ /**: mirrors the currently-shown banner ad's click URL to the caller
    * (qronos-cli's /support command) — undefined when no ad is shown. */
   onBannerAd?: (clickUrl: string | undefined) => void;
 }
@@ -86,16 +86,22 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
         // Extract prompt from session history if available without adding new hook registrations
         let prompt = "";
         try {
-          const entries = (ctx as any)?.sessionManager?.getBranch?.() || [];
+          const entries = ctx.sessionManager.getBranch();
           if (Array.isArray(entries)) {
             for (let i = entries.length - 1; i >= 0; i--) {
-              const msg = entries[i]?.message || entries[i];
+              const entry = entries[i];
+              if (!entry) continue;
+              // Session entries are a union; only "message" ones carry a message body.
+              const msg = (entry.type === "message" ? entry.message : entry) as {
+                role?: string;
+                content?: unknown;
+              };
               if (msg?.role === "user") {
                 const c = msg.content;
                 if (typeof c === "string") { prompt = c; break; }
                 if (Array.isArray(c)) {
-                  const t = c.find((p: any) => p.type === "text")?.text;
-                  if (t) { prompt = t; break; }
+                  const part = c.find((p: { type?: string }) => p.type === "text") as { text?: string } | undefined;
+                  if (part?.text) { prompt = part.text; break; }
                 }
               }
             }

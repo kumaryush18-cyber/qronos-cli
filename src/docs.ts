@@ -1,4 +1,4 @@
-// R7: the owner-approved qronos guide, verbatim. Do not reword, reorder, or
+// the owner-approved qronos guide, verbatim. Do not reword, reorder, or
 // add lines to this string — it is reviewed copy, not implementer prose.
 // 2026-10-13: added the todo and MCP sections and the /todos and /mcp command
 // lines (CLI 0.4.0); the rest is unchanged.

@@ -5,6 +5,36 @@ All notable changes to `qronos-cli`. Format based on [Keep a Changelog](https://
 The short highlights shown in the CLI at startup live in `src/changelog.ts` (bundled into the
 build); this file is the fuller human record.
 
+## [1.0.5] - 2026-11-18
+
+Editor and terminal polish, plus the "node" name fixed for good.
+
+### Added
+- The working line now shows the real context size next to the spinner, e.g.
+  `⠋ ↓ 12.3k`. The number comes from the live session (`getContextUsage`), never a
+  guess, and falls back to a plain spinner when the size is unknown.
+- **Fullscreen is the default TUI mode.** That is what lets the terminal report mouse
+  clicks, so a click inside the input box puts the cursor where you clicked.
+  `QRONOS_TUI_MODE=regular` restores the old inline mode with native scrollback.
+- `QRONOS_TITLE` sets the text of the terminal tab / window title.
+
+### Fixed
+- Ctrl+C no longer throws away a half-typed prompt. It is unbound; Escape still
+  interrupts and Ctrl+D still exits. The defaults are written into
+  `~/.qronos/agent/keybindings.json` only when a key is missing.
+- The `@` file list now closes the moment the `@` is deleted (rows are cleared on
+  shrink instead of waiting for the next key press).
+- The OS process and the window title say **Qronos CLI** instead of `node`, so VS Code
+  tabs and the process list show the product name.
+- `/paste-image` builds its clipboard commands with argument arrays (no shell string),
+  and saves to `screenshots/` instead of mixing with generated images.
+- Model facts (context window, max output, price) come from a reviewed table instead of
+  a fake 1M window and `$0` cost; unknown models get a safe 128k window and are labelled
+  as unknown.
+- The session argument is parsed once, by `cli-args.ts`, instead of twice.
+- CI publishes only after `typecheck`, `test` and `build` pass, and never runs two
+  publishes at once.
+
 ## [1.0.0] - 2026-11-12
 
 The rename release. One product name everywhere, and the setup screen users asked for.

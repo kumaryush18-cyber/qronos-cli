@@ -58,6 +58,12 @@ Environment Variables:
   QRONOS_BASE_URL            override Qronos backend URL (default https://api.qronos.me)
   QRONOS_NO_AUTO_UPDATE      skip the self-update check on start
   QRONOS_NO_INTRO            skip the first-run intro banner
+  QRONOS_NO_GRAVITY_PIXEL    set to 1 to stop all Gravity ad tracking
+  QRONOS_MODEL               default model id when the server sends no catalog
+  QRONOS_TUI_MODE            fullscreen (default, mouse clicks move the cursor)
+                             or regular (terminal scrollback, no click-to-cursor)
+  QRONOS_TITLE               text shown in the terminal tab title
+                             (default "Qronos CLI"; the title is re-asserted)
 `.trim();
 
 export function versionLine(): string {

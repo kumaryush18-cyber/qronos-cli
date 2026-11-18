@@ -227,14 +227,14 @@ describe("pollForToken — network failure pacing and counter reset", () => {
     // The injected sleep doubles as a scheduling hook: the server for `port`
     // is brought up and torn down between polls, on cue. Timeline
     // (interval 0, all polls hit the same port):
-    //   polls 1-5   port closed -> network failures 1..5 (one below abort)
-    //   sleep #5    bind the port, scripted to answer "pending"
-    //   poll 6      pending -> counter resets to 0
-    //   sleep #6    unbind the port again
-    //   polls 7-11  network failures 1..5 again — WITHOUT the reset this
-    //               run would have aborted at poll 7 (failure #6)
-    //   sleep #11   bind the port, scripted to answer with the token
-    //   poll 12     token issued
+    // polls 1-5 port closed -> network failures 1..5 (one below abort)
+    // sleep #5 bind the port, scripted to answer "pending"
+    // poll 6 pending -> counter resets to 0
+    // sleep #6 unbind the port again
+    // polls 7-11 network failures 1..5 again — WITHOUT the reset this
+    // run would have aborted at poll 7 (failure #6)
+    // sleep #11 bind the port, scripted to answer with the token
+    // poll 12 token issued
     const port = ephemeralPort();
     const url = `http://localhost:${port}`;
     let live: ReturnType<typeof Bun.serve> | undefined;

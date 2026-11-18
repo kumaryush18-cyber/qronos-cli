@@ -1,27 +1,27 @@
-// KTD9 / R5 release gate: "Ad content never enters model context." This is
+// release gate: "Ad content never enters model context." This is
 // the test the plan names as the release gate for the whole extension
 // (bun test packages/pi-ads/src/sandbox.test.ts must pass before any
 // publish). It proves two independent things:
 //
-//   1. Structural: the extension's registered hook surface (recorded via a
-//      fake ExtensionAPI, using the same handler-registration shape pi's own
-//      runner uses internally — `Map<eventName, handler[]>`) contains only
-//      session_start / turn_end / session_shutdown. No context,
-//      before_provider_request, before_agent_start, message_*, tool_*, or
-//      agent_* handler is ever registered, so there is no code path from
-//      which ad content could be spliced into a model request even in
-//      principle.
-//   2. Dynamic: with an active ad carrying a distinctive marker string, a
-//      simulated session (session_start + several turn_end cycles) is driven
-//      through the extension's real code. The marker is confirmed to reach
-//      the UI layer (proving the stub is actually exercised, not a false
-//      negative), the extension never calls any message-surface API
-//      (sendMessage / sendUserMessage / appendEntry / registerTool /
-//      registerMessageRenderer / registerEntryRenderer / registerCommand /
-//      registerMarkdownTransformer), and a request payload run through this
-//      extension's own (empty) context / before_provider_request handler
-//      chains comes out byte-identical to the pristine fixture — the marker
-//      never appears in it.
+// 1. Structural: the extension's registered hook surface (recorded via a
+// fake ExtensionAPI, using the same handler-registration shape pi's own
+// runner uses internally — `Map<eventName, handler[]>`) contains only
+// session_start / turn_end / session_shutdown. No context,
+// before_provider_request, before_agent_start, message_*, tool_*, or
+// agent_* handler is ever registered, so there is no code path from
+// which ad content could be spliced into a model request even in
+// principle.
+// 2. Dynamic: with an active ad carrying a distinctive marker string, a
+// simulated session (session_start + several turn_end cycles) is driven
+// through the extension's real code. The marker is confirmed to reach
+// the UI layer (proving the stub is actually exercised, not a false
+// negative), the extension never calls any message-surface API
+// (sendMessage / sendUserMessage / appendEntry / registerTool /
+// registerMessageRenderer / registerEntryRenderer / registerCommand /
+// registerMarkdownTransformer), and a request payload run through this
+// extension's own (empty) context / before_provider_request handler
+// chains comes out byte-identical to the pristine fixture — the marker
+// never appears in it.
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createAdsExtension } from "./index";
@@ -97,7 +97,7 @@ function stubFetch(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-describe("sandbox gate (KTD9 / R5) — ad content must never enter model context", () => {
+describe("sandbox gate — ad content must never enter model context", () => {
   test("registers only UI-lifecycle hooks, and no ad content reaches a captured model request", async () => {
     const { qronos, handlers, calls } = createFakePi();
     const { ctx, widgetCalls } = fakeCtx();

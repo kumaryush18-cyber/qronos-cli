@@ -1,4 +1,4 @@
-// U2: mirrors usage-tool.test.ts's Proxy stub — a fake ExtensionAPI that
+// mirrors usage-tool.test.ts's Proxy stub — a fake ExtensionAPI that
 // records every call so a structural assertion ("only registerTool, nothing
 // else") is meaningful rather than trivially true.
 import { describe, expect, test } from "bun:test";
@@ -73,7 +73,7 @@ describe("createDocsToolExtension", () => {
     expect(tool.promptSnippet).toBe(
       "Explain qronos itself: what it is, how the free allowance and ads work, credits, and the qronos slash commands",
     );
-    // R9: no argument exists that could mutate anything.
+    // no argument exists that could mutate anything.
     expect(tool.parameters).toEqual({ type: "object", properties: {} });
   });
 

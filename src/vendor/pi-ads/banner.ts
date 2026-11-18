@@ -1,4 +1,4 @@
-// R4/R6: persistent ad banner above the editor. Refreshed on session start,
+// persistent ad banner above the editor. Refreshed on session start,
 // on turn_end (at most once a minute), and every 10 minutes while idle
 // (index.ts owns the cadence). Empty slot (204) or a
 // fetch failure both clear the widget outright — never a stale or half-drawn
@@ -14,7 +14,7 @@ import { setWidgetSafely } from "./widget";
 export const BANNER_WIDGET_ID = "qronos-ad";
 
 export interface BannerRendererOptions {
-  /** KTD7: mirrors the currently-shown banner's click URL out to /support.
+ /**: mirrors the currently-shown banner's click URL out to /support.
    * Called with the ad's click_url after a successful fetch, and with
    * `undefined` when no ad is shown (204 or fetch failure). */
   onBannerAd?: (clickUrl: string | undefined) => void;

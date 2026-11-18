@@ -1,7 +1,7 @@
 // pi prints its own resume hint immediately before process.exit(0) when an
 // interactive session ends:
 //
-//   To resume this session: pi --session <id>
+// To resume this session: pi --session <id>
 //
 // That names `pi`, a binary qronos-cli users do not have — they installed
 // qronos-cli (usually via npx). pi builds the command from APP_NAME, which

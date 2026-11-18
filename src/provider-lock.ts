@@ -24,7 +24,7 @@ interface ModelFinder {
 
 /**
  * The `scopedModels` to hand `createAgentSessionFromServices`: only the qronos
- * catalog models (#140) and Fusion (listed first), so the picker shows nothing the
+ * catalog models and Fusion (listed first), so the picker shows nothing the
  * user's env leaks. Empty (no scope → every provider shows) when
  * QRONOS_KEEP_ENV_PROVIDERS is set, or if none of the ids are registered yet
  * (fail open rather than a picker with zero models).

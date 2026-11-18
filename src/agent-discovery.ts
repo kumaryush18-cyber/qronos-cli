@@ -1,13 +1,13 @@
 // Agent discovery for Qronos CLI subagents.
 //
 // Discovers custom agent definitions from:
-//   1. Project: <root>/.qronos/agents/*.md
-//   2. User:    ~/.qronos/agents/*.md
+// 1. Project: <root>/.qronos/agents/*.md
+// 2. User: ~/.qronos/agents/*.md
 //
 // Also provides built-in Claude Code agent presets:
-//   - "general-purpose": Multi-step research and codebase exploration
-//   - "Explore": Fast read-only codebase scout
-//   - "Plan": Software architect for implementation plans
+// - "general-purpose": Multi-step research and codebase exploration
+// - "Explore": Fast read-only codebase scout
+// - "Plan": Software architect for implementation plans
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

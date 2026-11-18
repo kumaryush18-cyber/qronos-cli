@@ -64,7 +64,7 @@ export const AuthConsentRequestSchema = z.object({
 });
 export type AuthConsentRequest = z.infer<typeof AuthConsentRequestSchema>;
 
-// ---- GET /me, GET /me/stats (#17, #22) ----
+// ---- GET /me, GET /me/stats ----
 
 export const AccountTierSchema = z.enum(["new", "young", "established"]);
 export type AccountTier = z.infer<typeof AccountTierSchema>;
@@ -206,7 +206,7 @@ export const AdminStatsResponseSchema = z.object({
 });
 export type AdminStatsResponse = z.infer<typeof AdminStatsResponseSchema>;
 
-// ---- GET /client-version (#37) ----
+// ---- GET /client-version ----
 
 export const ClientVersionResponseSchema = z.object({
   min: z.string(),
@@ -217,7 +217,7 @@ export const ClientVersionResponseSchema = z.object({
   // trial is a pure box-env toggle — no CLI release. Unset preserves today.
   model: z.string().optional(),
   notice: z.string().optional(),
-  // #140: the selectable model catalog. Each entry's `id` is what the CLI sends
+  // the selectable model catalog. Each entry's `id` is what the CLI sends
   // as the request model (the server resolves it against model_catalog); `name`
   // is the picker label. Optional so a plain response still parses — the CLI
   // falls back to the single `model` field.

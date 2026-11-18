@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.5",
+    highlights: [
+      "Click inside the input box to put the cursor there (fullscreen mode is now the default; QRONOS_TUI_MODE=regular goes back).",
+      "The working line shows the real context size beside the spinner (⠋ ↓ 12.3k).",
+      "Ctrl+C no longer deletes what you typed; Escape interrupts, Ctrl+D exits.",
+      "Window title and process name say Qronos CLI instead of node; the @ file list closes the moment you delete the @.",
+    ],
+  },
+  {
     version: "1.0.4",
     highlights: [
       "Subagent runtime error fallback: automatically falls back and retries with parent session model on model quota or tier failures.",

@@ -3,7 +3,7 @@
 // Ported from pi's examples/extensions/todo.ts. State lives in custom session
 // entries and tool result details (not a file), so the list follows session
 // branches and is rebuilt on resume. Own module (not packages/pi-ads), like
-// usage-tool.ts: ad content must never reach a tool the model can call (KTD5).
+// usage-tool.ts: ad content must never reach a tool the model can call.
 //
 // The widget and the progress line are UI-only and are built from the state,
 // never from tool result `content`, so they cannot reach the model.

@@ -11,12 +11,12 @@ import { highlightsFor } from "./changelog";
 
 /**
  * Returns the what's-new banner to print, or undefined when nothing should
- * show. Rules (KTD4):
- *   - first run (no marker) → seed the marker, show nothing (a new user gets
- *     the onboarding intro, not a "what's new");
- *   - marker older than cliVersion (an update) with recorded highlights → show
- *     them once, advance the marker;
- *   - otherwise (same version, downgrade, or no highlights) → show nothing.
+ * show. Rules:
+ * - first run (no marker) → seed the marker, show nothing (a new user gets
+ * the onboarding intro, not a "what's new");
+ * - marker older than cliVersion (an update) with recorded highlights → show
+ * them once, advance the marker;
+ * - otherwise (same version, downgrade, or no highlights) → show nothing.
  * The marker is always advanced to cliVersion.
  */
 export function maybeWhatsNew(cliVersion: string, agentDir?: string): string | undefined {

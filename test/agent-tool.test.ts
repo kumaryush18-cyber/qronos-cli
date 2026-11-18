@@ -139,7 +139,7 @@ describe("createAgentToolExtension (Item ⑦: Subagents with Option B)", () => {
 describe("Option B: custom agent definitions cannot escalate privileges", () => {
   // Regression for a real hole: a definition's `tools:` list used to REPLACE
   // the read-only default, so `tools: write, edit, bash` in
-  // .qronos/agents/*.md granted a subagent full write access.
+  // qronos/agents/*.md granted a subagent full write access.
   function agentWithTools(tools: string[] | undefined) {
     return {
       name: "x",

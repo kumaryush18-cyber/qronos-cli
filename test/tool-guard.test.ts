@@ -1,4 +1,4 @@
-// #28 R20a: unit test for the tool-guard extension's handler. Same
+// unit test for the tool-guard extension's handler. Same
 // fake-ExtensionAPI technique packages/pi-ads/src/sandbox.test.ts already
 // uses (a Proxy recording `.on()` registrations) — this file only needs the
 // "tool_call" hook, not the full sandbox surface.

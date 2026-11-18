@@ -4,8 +4,8 @@
 // is never an unexpected surprise.
 //
 // Surfaces in two places:
-//   1. /context slash command: detailed breakdown of input, output, cache, and window headroom.
-//   2. Footer status indicator: compact token count and percentage meter.
+// 1. /context slash command: detailed breakdown of input, output, cache, and window headroom.
+// 2. Footer status indicator: compact token count and percentage meter.
 
 export interface ContextStats {
   usedTokens: number;

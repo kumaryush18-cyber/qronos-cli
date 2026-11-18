@@ -1,6 +1,6 @@
 // Decide, before the TUI starts, whether qronos may load the current folder's
 // project resources (.pi/mcp.json MCP servers, .pi/extensions, .pi/settings.json,
-// .agents/skills ...). They can run code, so a cloned repo must not get that
+// agents/skills ...). They can run code, so a cloned repo must not get that
 // by default. pi's own CLI does the same check; the SDK path does not, and
 // SettingsManager defaults to "trusted" unless told otherwise.
 //

@@ -105,6 +105,9 @@ Storing it inline is an explicit opt-in.
 | `QRONOS_NO_INTRO` | `1` skips the first-run intro banner | — |
 | `QRONOS_NO_AUTO_UPDATE` | `1` skips the self-update check | — |
 | `QRONOS_NO_GRAVITY_PIXEL` | `1` disables the analytics pixel | — |
+| `QRONOS_MODEL` | fallback model id when the server sends no catalog | — |
+| `QRONOS_TUI_MODE` | `regular` = inline mode with terminal scrollback; `fullscreen` (default) lets a click in the input box place the cursor | `fullscreen` |
+| `QRONOS_TITLE` | text for the terminal tab title; text only, no colour | `Qronos CLI` |
 | `QRONOS_MAX_SUBAGENT_DEPTH` | how deep subagents may nest | `3` |
 | `QRONOS_MAX_CONCURRENT_SUBAGENTS` | parallel subagents | `8` |
 

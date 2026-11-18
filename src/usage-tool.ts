@@ -1,15 +1,15 @@
-// U5 (#17 client side): a read-only pi tool that reports the caller's own
+// (#17 client side): a read-only pi tool that reports the caller's own
 // qronos usage (spend, remaining budget, token counts, account tier) by
 // calling GET /me/stats with the CLI's own JWT.
 //
 // Deliberately a new module in packages/cli, never added to packages/pi-ads
-// (KTD5): packages/pi-ads/src/sandbox.test.ts structurally asserts the ads
+// packages/pi-ads/src/sandbox.test.ts structurally asserts the ads
 // extension never calls registerTool (its "message surface" is off-limits —
-// see that file's own comment on KTD9/R5), and this tool must never be
+// see that file's own comment on, and this tool must never be
 // reachable from ad content even in principle. A separate module keeps that
 // invariant intact and needs no new workspace package.
 //
-// R9: read-only (GET only; parameters is an empty schema, so no argument
+// read-only (GET only; parameters is an empty schema, so no argument
 // exists that could mutate anything), scoped to the caller's own JWT (the
 // same bearer token the cli already holds for /v1/chat/completions and
 // /me — see pi-launch.ts's getToken wiring), no write path exists anywhere
@@ -27,7 +27,7 @@ export interface CreateUsageToolOptions {
 
 type UsageToolDetails = MeStatsResponse | { ok: false };
 
-// #28 R20a: the one legitimate custom tool name outside SAFE_TOOLS — needed
+// the one legitimate custom tool name outside SAFE_TOOLS — needed
 // by pi-launch.ts's tool-guard allowlist (tool-guard.ts) and the SDK's own
 // strict `tools` allowlist so this tool isn't blocked as if it were rogue.
 export const USAGE_TOOL_NAME = "qronos_usage";

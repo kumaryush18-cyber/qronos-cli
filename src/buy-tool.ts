@@ -1,18 +1,18 @@
-// #226 (6/8 of #221): a pi tool that opens the server's buy-credits page.
+// (6/8 of #221): a pi tool that opens the server's buy-credits page.
 // GET /me with the CLI's own JWT, read the fresh `buy_url` (never cached —
 // the token is short-lived by design), open it with browser.ts's opener AND
 // return the URL as text (SSH sessions/containers have no browser — see
 // browser.ts's own comment that printing is the primary path).
 //
 // Deliberately a new module in packages/cli, never added to packages/pi-ads
-// (KTD5, same reasoning as usage-tool.ts): packages/pi-ads/src/sandbox.test.ts
+//, same reasoning as usage-tool.ts): packages/pi-ads/src/sandbox.test.ts
 // structurally asserts the ads extension never calls registerTool (its
 // "message surface" is off-limits — see that file's own comment on
-// KTD9/R5), and this tool must never be reachable from ad content even in
+// ), and this tool must never be reachable from ad content even in
 // principle. A separate module keeps that invariant intact and needs no new
 // workspace package.
 //
-// R9: read-only (GET only; parameters is an empty schema, so no argument
+// read-only (GET only; parameters is an empty schema, so no argument
 // exists that could mutate anything), scoped to the caller's own JWT (the
 // same bearer token the cli already holds for /v1/chat/completions and
 // /me — see pi-launch.ts's getToken wiring), no write path exists anywhere
@@ -61,7 +61,7 @@ export interface CreateBuyToolOptions {
 
 type BuyToolDetails = { buy_url: string } | { available: false } | { ok: false };
 
-// #226 R20a: the second legitimate custom tool name outside SAFE_TOOLS —
+// the second legitimate custom tool name outside SAFE_TOOLS —
 // needed by pi-launch.ts's tool-guard allowlist (tool-guard.ts) and the
 // SDK's own strict `tools` allowlist so this tool isn't blocked as if it
 // were rogue.

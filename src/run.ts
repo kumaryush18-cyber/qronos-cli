@@ -7,8 +7,9 @@ import type { LaunchOptions } from "./pi-launch";
 import type { SelfUpdateOutcome } from "./self-update";
 import type { ClientVersionCheck } from "./update-check";
 import { CLI_VERSION } from "./version";
+import { DEFAULT_MODEL_ID } from "./provider";
 import { maybeWhatsNew } from "./whats-new";
-import { type RunOptions } from "./cli-args";
+import { type RunOptions, parseCliArgs } from "./cli-args";
 import { PROVIDER_PRESETS } from "./provider";
 import type { FirstRunOutcome } from "./first-run";
 import { activeConnection, loadConnectionFile, resolveConnectionKey } from "./connection-store";
@@ -57,22 +58,24 @@ async function loginFlow(deps: RunDeps): Promise<string> {
   return token;
 }
 
-function parseSessionArg(argv: readonly string[]): { session?: string; error?: string } {
-  const flagIndex = argv.indexOf("--session");
-  if (flagIndex === -1) return {};
-
-  const value = argv[flagIndex + 1];
-  if (!value || value.startsWith("--")) {
+function parseSessionArg(argv: readonly string[], options: RunOptions): { session?: string; error?: string } {
+  // One parser only: cli-args.ts already understands --session, -s, -c and -r.
+  // (The old copy here scanned argv a second time and could disagree with it.)
+  const parsed = parseCliArgs(argv.slice(2));
+  if (parsed.kind === "unknown" && /^--?(s|session)$/.test(parsed.arg)) {
     return { error: "Missing value for --session" };
   }
+  const raw = options.session ?? (parsed.kind === "run" ? parsed.options?.session : undefined);
+  if (!raw) return {};
+  if (raw === "latest") return { session: raw };
 
   try {
-    SessionManager.inMemory(process.cwd(), { id: value });
+    SessionManager.inMemory(process.cwd(), { id: raw });
   } catch (err) {
     return { error: `Invalid --session value: ${err instanceof Error ? err.message : String(err)}` };
   }
 
-  return { session: value };
+  return { session: raw };
 }
 
 export async function run(
@@ -80,7 +83,7 @@ export async function run(
   argv: readonly string[] = process.argv,
   options: RunOptions = {},
 ): Promise<number> {
-  const sessionArg = parseSessionArg(argv);
+  const sessionArg = parseSessionArg(argv, options);
   if (sessionArg.error) {
     deps.log(sessionArg.error);
     return 1;
@@ -283,18 +286,26 @@ export async function run(
     }
   }
 
-  const activeModel = options.model || versionCheck.model || selectedModel || "claude-sonnet-5.5";
+  const activeModel = options.model || versionCheck.model || selectedModel;
+  if (!activeModel && !isDirectThirdParty) {
+    deps.log(
+      `\n[!] The server sent no model catalog. Falling back to "${DEFAULT_MODEL_ID}".\n` +
+        "    If requests fail, pass one explicitly:  qronos --model <id>   (or set QRONOS_MODEL)\n",
+    );
+  }
   const catalogModels = versionCheck.models && versionCheck.models.length > 0
     ? versionCheck.models
-    : (selectedModel ? [{ id: selectedModel, name: selectedModel }] : undefined);
+    : activeModel
+      ? [{ id: activeModel, name: activeModel }]
+      : undefined;
 
   const finalSessionId = await deps.launchPi({
     baseUrl,
     jwt,
     agentDir: deps.agentDir,
-    session: options.session || sessionArg.session,
+    session: sessionArg.session,
     provider: providerKey,
-    model: activeModel,
+    model: activeModel ?? DEFAULT_MODEL_ID,
     models: catalogModels,
     fusion: versionCheck.fusion,
     updateLatest,

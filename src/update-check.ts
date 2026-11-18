@@ -30,13 +30,19 @@ export async function checkClientVersion(
       headers: { "Accept": "application/json" },
     });
     if (mRes.ok) {
-      const json = await mRes.json() as any;
+      const json = (await mRes.json()) as { data?: unknown };
       const list = json?.data;
       if (Array.isArray(list) && list.length > 0) {
-        result.models = list.map((m: any) => ({
-          id: m.id,
-          name: m.display_name || m.name || m.id,
-        }));
+        const parsed: Array<{ id: string; name: string }> = [];
+        for (const row of list as unknown[]) {
+          if (!row || typeof row !== "object") continue;
+          const m = row as { id?: unknown; display_name?: unknown; name?: unknown };
+          if (typeof m.id !== "string" || !m.id) continue;
+          const label = typeof m.display_name === "string" ? m.display_name : typeof m.name === "string" ? m.name : m.id;
+          parsed.push({ id: m.id, name: label });
+        }
+        if (parsed.length === 0) throw new Error("no usable models");
+        result.models = parsed;
         // Select preferred default model: Claude Sonnet 5.5, Claude Opus 5.5, or DeepSeek
         const preferred =
           result.models.find((m) => m.id === "claude-sonnet-5.5") ||

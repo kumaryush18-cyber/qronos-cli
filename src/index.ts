@@ -14,7 +14,23 @@
 // message and exits on failure, and only then dynamically imports the real CLI —
 // which is when undici finally loads, on a runtime we've confirmed can handle it.
 import * as zlib from "node:zlib";
+import { APP_TITLE_TEXT } from "./app-title";
 import { zstdSupportError } from "./node-check";
+
+// Name the OS process, not just the window title.
+//
+// `npm i -g qronos-cli` installs a small shim that runs `node dist/index.js`, so
+// every OS that lists a process by its command shows "node": VS Code's terminal
+// tab (its default title is ${process}), the Windows Task Manager, `ps`. Node can
+// rename the process (argv[0] + PR_SET_NAME on Linux/macOS), which makes those
+// places read the app name even before the window title is set.
+//
+// Windows ignores this (there the console title, set by the app, is what shows).
+try {
+  process.title = APP_TITLE_TEXT;
+} catch {
+  // Some sandboxes refuse the rename; the window title still works.
+}
 
 const err = zstdSupportError(zlib, process.versions.node);
 if (err) {

@@ -11,6 +11,20 @@ export interface CostCmdOptions {
  * Computes exact session token usage (prompt, completion, cache read/write)
  * and resolves billing status between PAYG wallet and Token Plan subscription.
  */
+/** The fields of a session entry this command reads. */
+interface UsageLike {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+interface EntryLike {
+  type?: string;
+  usage?: UsageLike;
+  message?: { role?: string; usage?: UsageLike };
+}
+
 export async function runCost(ctx: ExtensionCommandContext, opts?: CostCmdOptions): Promise<void> {
   let promptTokens = 0;
   let completionTokens = 0;
@@ -18,7 +32,7 @@ export async function runCost(ctx: ExtensionCommandContext, opts?: CostCmdOption
   let cacheWriteTokens = 0;
 
   const entries = ctx.sessionManager.getEntries();
-  for (const entry of entries as any[]) {
+  for (const entry of entries as unknown as EntryLike[]) {
     if (entry.type === "usage" && entry.usage) {
       promptTokens += entry.usage.input || 0;
       completionTokens += entry.usage.output || 0;

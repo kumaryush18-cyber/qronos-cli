@@ -1,4 +1,4 @@
-// U3: proves the KTD7 handoff — createBannerRenderer's onBannerAd option
+// proves thehandoff — createBannerRenderer's onBannerAd option
 // mirrors the currently-shown banner's click URL out to qronos-cli's
 // /support command, and clears it (undefined) whenever no ad is shown.
 import { describe, expect, test } from "bun:test";
@@ -27,7 +27,7 @@ function adResponse(clickUrl: string) {
 const deps: AdsDeps = { baseUrl: "https://api.test", getToken: () => "jwt", sessionId: "s1" };
 const config = loadConfig({});
 
-describe("createBannerRenderer onBannerAd (KTD7)", () => {
+describe("createBannerRenderer onBannerAd", () => {
   test("successful fetch → onBannerAd called with the ad's click_url", async () => {
     const calls: Array<string | undefined> = [];
     const fetchImpl = (async () => adResponse("https://api.qronos.me/c/tok-1")) as unknown as typeof fetch;

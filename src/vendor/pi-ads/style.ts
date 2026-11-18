@@ -1,4 +1,4 @@
-// ALL rendering/styling for pi-ads lives in this one module (R6). Blade
+// ALL rendering/styling for pi-ads lives in this one module. Blade
 // Runner 2049-leaning terminal aesthetic: box-drawing frame, a scanline-style
 // glyph accent (░▒▓) in the header, theme-aware accent color pulled from
 // pi's active theme so the frame matches whatever theme the user has picked.
@@ -92,7 +92,7 @@ export function renderAdCard(
   const top = `╭──${label}${"─".repeat(Math.max(0, innerWidth + 2 - label.length - 2))}╮`;
   const bottom = `╰${"─".repeat(innerWidth + 2)}╯`;
 
-  // KTD2: a short hex digest of the (sanitized) click URL, not the click
+  // a short hex digest of the (sanitized) click URL, not the click
   // token itself, so the id visible in the escape stream is stable for
   // hover-grouping without doubling as a second copy of the tracker.
   const linkId = createHash("sha256").update(url).digest("hex").slice(0, 12);
@@ -104,7 +104,7 @@ export function renderAdCard(
     return `│ ${styled} │`;
   };
 
-  // R1/R2: every row — including both borders — carries the same OSC 8
+  // every row — including both borders — carries the same OSC 8
   // link and id, so a terminal that groups by id treats the whole card as
   // one clickable link, not just the CTA row.
   return [
@@ -126,7 +126,7 @@ export function renderPlainAdLine(
   const headline = sanitizeText(creative.headline);
   const cta = sanitizeText(creative.cta);
   const url = sanitizeText(clickUrl);
-  // #61: same as the card — the CTA carries the destination; the raw tracker
+  // same as the card — the CTA carries the destination; the raw tracker
   // URL is the OSC-8 target only, never visible text.
   const plain = truncateToWidth(`◈ Sponsored: ${headline} — ${cta}`, Math.max(0, columns - 2), "…");
   return theme.fg("dim", osc8(plain, url));

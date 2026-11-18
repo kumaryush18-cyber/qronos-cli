@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { createHeaderExtension, headerLines, LOGO_BLOCKS, type ThemeLike, type TuiLike } from "../src/header";
+import {
+  createHeaderExtension,
+  DEFAULT_TERMINAL_TITLE,
+  headerLines,
+  installTerminalTitle,
+  LOGO_BLOCKS,
+  resolveTerminalTitle,
+  TERMINAL_TITLE,
+  type ThemeLike,
+  type TuiLike,
+} from "../src/header";
 import { CLI_VERSION } from "../src/version";
 
 /** InlineExtension is a union (bare factory fn | {name, factory}); our
@@ -136,6 +146,47 @@ describe("headerLines — width safety", () => {
   });
 });
 
+describe("terminal title", () => {
+  test("default title is the plain app name, no logo glyph", () => {
+    expect(DEFAULT_TERMINAL_TITLE).toBe("Qronos CLI");
+    expect(resolveTerminalTitle({})).toBe("Qronos CLI");
+    expect(resolveTerminalTitle({ QRONOS_TITLE: "   " })).toBe("Qronos CLI");
+  });
+
+  test("the default title is pure ASCII, so no font can show a box", () => {
+    expect(/^[\x20-\x7e]+$/.test(DEFAULT_TERMINAL_TITLE)).toBe(true);
+  });
+
+  test("QRONOS_TITLE overrides the text without a rebuild", () => {
+    expect(resolveTerminalTitle({ QRONOS_TITLE: "Qronos" })).toBe("Qronos");
+  });
+
+  test("installTerminalTitle writes at once and keeps re-writing it", async () => {
+    const titles: string[] = [];
+    const stop = installTerminalTitle({ setTitle: (t) => titles.push(t) }, { heartbeatMs: 10 });
+    expect(titles).toEqual(["Qronos CLI"]);
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    expect(titles.length).toBeGreaterThan(1);
+    stop();
+    const after = titles.length;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(titles.length).toBe(after);
+  });
+
+  test("a terminal that refuses the title write cannot break the session", () => {
+    const stop = installTerminalTitle(
+      {
+        setTitle: () => {
+          throw new Error("no title support");
+        },
+      },
+      { heartbeatMs: 0 },
+    );
+    stop();
+    expect(true).toBe(true);
+  });
+});
+
 describe("createHeaderExtension (registration)", () => {
   function stubPi() {
     const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
@@ -150,10 +201,17 @@ describe("createHeaderExtension (registration)", () => {
   function stubUi() {
     let factory: ((tui: TuiLike, theme: ThemeLike) => unknown) | undefined;
     let calls = 0;
+    const titles: string[] = [];
     return {
       setHeader: (f: (tui: TuiLike, theme: ThemeLike) => unknown) => {
         factory = f;
         calls++;
+      },
+      setTitle: (title: string) => {
+        titles.push(title);
+      },
+      get titles() {
+        return titles;
       },
       get factory() {
         return factory;
@@ -164,10 +222,10 @@ describe("createHeaderExtension (registration)", () => {
     };
   }
 
-  test("registers only session_start", () => {
+  test("registers session_start and session_shutdown only", () => {
     const pi = stubPi();
     asObjectExtension(createHeaderExtension({ modelName: MODEL })).factory(pi as never);
-    expect([...pi.handlers.keys()]).toEqual(["session_start"]);
+    expect([...pi.handlers.keys()]).toEqual(["session_start", "session_shutdown"]);
   });
 
   test("session_start calls setHeader exactly once; render(100) matches headerLines", () => {
@@ -179,6 +237,11 @@ describe("createHeaderExtension (registration)", () => {
 
     pi.handlers.get("session_start")!({}, { ui });
     expect(ui.calls).toBe(1);
+    // The terminal tab title is plain text; it must not say "node", and it
+    // carries the small Q badge in front of the name.
+    expect(ui.titles[0]).toBe(resolveTerminalTitle());
+    expect(TERMINAL_TITLE).toBe("Qronos CLI");
+    pi.handlers.get("session_shutdown")!({}, { ui });
 
     const component = ui.factory!(tui, fakeTheme()) as {
       render(width: number): string[];

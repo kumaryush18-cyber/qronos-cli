@@ -1,14 +1,14 @@
 // Agent tool — Task-scoped subagent execution for Qronos CLI.
 //
 // Matches Claude Code's `Agent` tool:
-//   - Delegated execution with an isolated context window (no parent context pollution)
-//   - Option B Enforcement: Subagents start strictly read-only and cannot mutate files
-//     without explicit plan approval via `exit_plan_mode`.
-//   - Recursion prevention: Subagents cannot call `agent` recursively.
-//   - Specialized subagents: "general-purpose", "Explore", "Plan", or custom from `.qronos/agents/*.md`.
+// - Delegated execution with an isolated context window (no parent context pollution)
+// - Option B Enforcement: Subagents start strictly read-only and cannot mutate files
+// without explicit plan approval via `exit_plan_mode`.
+// - Recursion prevention: Subagents cannot call `agent` recursively.
+// - Specialized subagents: "general-purpose", "Explore", "Plan", or custom from `.qronos/agents/*.md`.
 
-import type { ExtensionAPI, ExtensionToolContext, InlineExtension } from "@earendil-works/pi-coding-agent";
-import type { Message, Model, Tool } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionToolContext, InlineExtension, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { Api, Message, Model, Tool } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { homedir } from "node:os";
@@ -40,9 +40,9 @@ export const SUBAGENT_MAX_OUTPUT_CHARS = 12_000;
  */
 export function resolveSubagentModel(
   requested: string | undefined,
-  sessionModel: any,
-  modelRegistry?: any,
-): { model: any; fallback: boolean } {
+  sessionModel: Model<Api> | undefined,
+  modelRegistry?: ModelRegistry,
+): { model: Model<Api> | undefined; fallback: boolean } {
   if (!requested || requested.trim().toLowerCase() === "inherit") {
     return { model: sessionModel, fallback: false };
   }
@@ -56,10 +56,10 @@ export function resolveSubagentModel(
   // 1. Try finding in modelRegistry under current provider
   if (modelRegistry) {
     if (current?.provider) {
-      const matchInProvider = modelRegistry.find?.(current.provider, requested);
+      const matchInProvider = modelRegistry.find(current.provider, requested);
       if (matchInProvider) return { model: matchInProvider, fallback: false };
     }
-    const allModels: any[] = modelRegistry.getModels?.() || [];
+    const allModels = modelRegistry.getModelsOfType("chat");
     const match = allModels.find(
       (m) =>
         m.id?.toLowerCase() === wanted ||
@@ -74,8 +74,15 @@ export function resolveSubagentModel(
   return { model: sessionModel, fallback: true };
 }
 
-export function resolveModelName(requested: string, sessionModel: unknown, modelRegistry?: unknown): unknown {
-  return resolveSubagentModel(requested, sessionModel, modelRegistry).model;
+/** Request auth shape returned by ModelRegistry.getApiKeyAndHeaders. */
+interface RequestAuth {
+  apiKey?: string;
+  headers?: Record<string, string>;
+}
+
+/** A model may carry extra request headers; the base type does not declare them. */
+function modelHeaders(model: Model<Api> | undefined): Record<string, string> {
+  return (model as (Model<Api> & { headers?: Record<string, string> }) | undefined)?.headers ?? {};
 }
 
 /** Set when a requested model could not be applied, for a one-line notice. */
@@ -199,13 +206,12 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
   });
 
   const subagentTools: Tool[] = [];
-  const allTools: any[] = (ctx as any).getAllTools?.() || ctx.tools || [];
-  for (const t of allTools) {
+  for (const t of ctx.tools) {
     if (allowedToolNames.has(t.name)) {
       subagentTools.push({
         name: t.name,
         description: t.description,
-        parameters: t.parameters as any,
+        parameters: t.parameters as Tool["parameters"],
       });
     }
   }
@@ -239,16 +245,16 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
   const { model: targetModel, fallback } = resolveSubagentModel(
     params.model,
     ctx.model,
-    (ctx as any).modelRegistry,
+    ctx.modelRegistry,
   );
   if (fallback && params.model) {
     unappliedModel = params.model;
   }
 
   // Resolve authorization credentials and headers for subagent completion
-  let auth: { apiKey?: string; headers?: Record<string, string> } = {};
+  let auth: RequestAuth = {};
   try {
-    auth = (await (ctx as any).modelRegistry?.getApiKeyAndHeaders?.(targetModel)) || {};
+    auth = targetModel ? ((await ctx.modelRegistry.getApiKeyAndHeaders(targetModel)) as RequestAuth) : {};
   } catch {}
 
   let apiKey = auth?.apiKey;
@@ -261,8 +267,8 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
   }
 
   let headers: Record<string, string> = {
-    ...(auth?.headers || {}),
-    ...(ctx.model as any)?.headers,
+    ...(auth.headers || {}),
+    ...modelHeaders(ctx.model),
     "x-client-version": CLI_VERSION,
   };
 
@@ -293,9 +299,9 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
         hasFallenBackToParent = true;
         currentModel = ctx.model;
         try {
-          auth = (await (ctx as any).modelRegistry?.getApiKeyAndHeaders?.(currentModel)) || {};
+          auth = currentModel ? ((await ctx.modelRegistry.getApiKeyAndHeaders(currentModel)) as RequestAuth) : {};
           if (auth?.apiKey) apiKey = auth.apiKey;
-          headers = { ...(auth?.headers || {}), ...(ctx.model as any)?.headers, "x-client-version": CLI_VERSION };
+          headers = { ...(auth.headers || {}), ...modelHeaders(ctx.model), "x-client-version": CLI_VERSION };
         } catch {}
         turns--;
         continue;
@@ -314,9 +320,9 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
         hasFallenBackToParent = true;
         currentModel = ctx.model;
         try {
-          auth = (await (ctx as any).modelRegistry?.getApiKeyAndHeaders?.(currentModel)) || {};
+          auth = currentModel ? ((await ctx.modelRegistry.getApiKeyAndHeaders(currentModel)) as RequestAuth) : {};
           if (auth?.apiKey) apiKey = auth.apiKey;
-          headers = { ...(auth?.headers || {}), ...(ctx.model as any)?.headers, "x-client-version": CLI_VERSION };
+          headers = { ...(auth.headers || {}), ...modelHeaders(ctx.model), "x-client-version": CLI_VERSION };
         } catch {}
         turns--;
         continue;
@@ -392,7 +398,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
         const outcome = await ctx.executeTool(toolName, call.arguments);
         const toolResult = outcome.result;
 
-        if (toolName === "exit_plan_mode" && (toolResult?.details as any)?.ok) {
+        if (toolName === "exit_plan_mode" && (toolResult?.details as { ok?: boolean } | undefined)?.ok) {
           planApproved = true;
         }
 

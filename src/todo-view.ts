@@ -32,7 +32,7 @@ function counts(todos: readonly Todo[]) {
 
 /**
  * Widget lines for a list, at most 5. One line when everything fits in `width`:
- *   Todos 2/4  ✓ done  ▸ first open  ○ later open
+ * Todos 2/4 ✓ done ▸ first open ○ later open
  * otherwise a header, the first open item, up to two more open items, and a
  * "+N more" line. Empty list -> no lines.
  */

@@ -2,16 +2,16 @@
 //
 // Finding that shaped this module: pi's CombinedAutocompleteProvider already
 // handles `@path`, but every one of its file lookups starts with
-//     if (!this.fdPath) return [];
+// if (!this.fdPath) return [];
 // and fdPath comes from ensureTool("fd"), which returns undefined in offline
 // mode, on Android, or when the managed download fails. In those cases typing
 // `@src` shows nothing at all: no suggestions, no error, no hint. That silence
 // is the actual gap, not the absence of an @ provider.
 //
 // So this wraps pi's provider rather than replacing it:
-//   - on the fd path, pi's fast .gitignore-aware walk still wins;
-//   - when pi returns nothing for an @ token, a bounded fs walk fills in;
-//   - `@file.ts#12-40` line ranges are added, and they complete as plain paths.
+// - on the fd path, pi's fast .gitignore-aware walk still wins;
+// - when pi returns nothing for an @ token, a bounded fs walk fills in;
+// - `@file.ts#12-40` line ranges are added, and they complete as plain paths.
 //
 // The fs walk is deliberately conservative: it skips heavy directories, caps
 // entries visited, and never follows symlinks, so a huge or cyclic tree cannot
