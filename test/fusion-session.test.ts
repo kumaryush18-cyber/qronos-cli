@@ -190,6 +190,29 @@ describe("Fusion production session routing", () => {
       await session.waitForIdle();
       await waitForFile(filePath);
 
+      // macOS CI failed here with ENOENT while Linux passed, so when the file is
+      // missing say WHY: the tool result carries the refusal reason.
+      if (!existsSync(filePath)) {
+        const summary = session.state.messages.map((message) => {
+          const anyMessage = message as {
+            role: string;
+            stopReason?: string;
+            errorMessage?: string;
+            toolName?: string;
+            content?: unknown;
+          };
+          return {
+            role: anyMessage.role,
+            tool: anyMessage.toolName,
+            stopReason: anyMessage.stopReason,
+            error: anyMessage.errorMessage,
+            content: Array.isArray(anyMessage.content) ? anyMessage.content.length : undefined,
+            text: typeof anyMessage.content === "string" ? anyMessage.content.slice(0, 120) : undefined,
+          };
+        });
+        throw new Error(`write tool produced no file. messages=${JSON.stringify(summary)}`);
+      }
+
       expect(readFileSync(filePath, "utf8")).toBe("written by Fusion\n");
       expect(requestModels).toEqual([
         FUSION_PLANNER_ID,
