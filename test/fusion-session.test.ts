@@ -207,7 +207,9 @@ describe("Fusion production session routing", () => {
             stopReason: anyMessage.stopReason,
             error: anyMessage.errorMessage,
             content: Array.isArray(anyMessage.content) ? anyMessage.content.length : undefined,
-            text: typeof anyMessage.content === "string" ? anyMessage.content.slice(0, 120) : undefined,
+            detail: typeof anyMessage.content === "string"
+              ? anyMessage.content.slice(0, 300)
+              : JSON.stringify(anyMessage.content ?? null).slice(0, 300),
           };
         });
         throw new Error(`write tool produced no file. messages=${JSON.stringify(summary)}`);
