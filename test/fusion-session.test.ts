@@ -16,6 +16,7 @@ import {
 } from "../src/fusion";
 import { PROVIDER_NAME } from "../src/provider";
 import { resolveQronosScope } from "../src/provider-lock";
+import { initExecutionMode } from "../src/execution-modes";
 
 /**
  * Wait for a file a tool run wrote. `waitForIdle()` settles the agent turn, but the
@@ -104,6 +105,10 @@ function trackedResponse(
 }
 
 async function createFusionSession(baseUrl: string, cwd: string, sessionId: string) {
+  // The execution mode is process-global. Another test file may have left it in
+  // plan mode, where the write tool is blocked by design — that made this test
+  // pass on Linux (file order) and fail on macOS.
+  initExecutionMode(false, "auto");
   const opts: LaunchOptions = {
     baseUrl,
     jwt: "test-jwt",
