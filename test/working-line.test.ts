@@ -138,8 +138,10 @@ describe("buildWorkingLine", () => {
   test("shimmer flows a light orange band through the verb", () => {
     const phase = (p: number) => buildWorkingLine({ ...base, shimmerPhase: p });
     expect(phase(0)).not.toBe(phase(0.5));
-    // the band follows the phase, so different times give different colours
-    const colours = new Set(phase(0.5).match(/\x1b\[38;2;[0-9;]+m/g) ?? []);
+    // the band follows the phase, so different times give different colours.
+    // Match BOTH forms: truecolor "38;2;r;g;b" and 256-colour "38;5;n" (CI has
+    // no TTY, so pi reports 256-colour there).
+    const colours = new Set(phase(0.5).match(/\x1b\[38;[0-9;]+m/g) ?? []);
     expect(colours.size).toBeGreaterThan(2);
     // at the top of the band a character is exactly the light orange
     const span = "Galloping…".length + SHIMMER_BAND;
