@@ -1,6 +1,7 @@
 // Responsive, minimalist Claude Code-inspired header with pixel-accurate Qronos block logo.
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { BOLD, lightOrangeAnsi, RESET as COLOR_OFF, SHIMMER_PERIOD_MS, shimmerText } from "./shimmer";
 import { CLI_VERSION } from "./version";
 import { APP_TITLE_TEXT } from "./app-title";
 
@@ -66,12 +67,29 @@ export function updateBannerLines(theme: ThemeLike, latest: string, width: numbe
   ];
 }
 
+/**
+ * "Qronos AI" in brand orange with a light-orange band flowing through it.
+ *
+ * The band position comes from the wall clock, so it moves even when the header
+ * is not repainted for another reason, and it stays in step with the working
+ * line's shimmer.
+ */
+function brandLine(now: number = Date.now()): string {
+  const phase = (now % SHIMMER_PERIOD_MS) / SHIMMER_PERIOD_MS;
+  // Bold, because a terminal cannot change font size: bold is the only way to
+  // make this line read larger than the lines under it.
+  const name = shimmerText("Qronos AI", phase, { bold: true });
+  // The version is the pale orange: same family as the glow, easier to read.
+  return `${name} ${BOLD}${lightOrangeAnsi()}v${CLI_VERSION}${COLOR_OFF}`;
+}
+
 export function headerLines(
   theme: ThemeLike,
   modelName: string,
   expanded: boolean,
   width: number = Number.POSITIVE_INFINITY,
   updateLatest?: string,
+  now: number = Date.now(),
 ): string[] {
   const safeWidth = Math.max(20, width);
   const cleanModel = modelName.replace(/^.*\//, "");
@@ -82,7 +100,7 @@ export function headerLines(
   // Uses theme tokens so it dynamically adapts to look stunning on BOTH light and dark themes!
   const textLines = [
     "",
-    theme.bold(theme.fg("text", `Qronos AI v${CLI_VERSION}`)),
+    brandLine(now),
     theme.fg("muted", "qronos-me · API Gateway"),
     theme.fg("dim", truncateToWidth(cwd, Math.max(10, safeWidth - 23))),
     `${COLOR_TOP}●${RESET} ${theme.fg("text", cleanModel)}`,
@@ -100,6 +118,8 @@ export function headerLines(
     const rawLine = LOGO_BLOCKS[r] || "";
     let coloredLogo = "";
     const isTop = r <= 4;
+    // Plain two-tone logo: no glow here, by request. The light band belongs to
+    // the "Qronos AI" name and the working line only.
     const blockColor = isTop ? COLOR_TOP : COLOR_BOTTOM;
 
     for (const ch of rawLine) {
@@ -137,7 +157,12 @@ export function headerLines(
 export interface CreateHeaderExtensionOptions {
   modelName: string;
   updateLatest?: string;
+  /** Repaint interval for the shimmer. Tests pass 0 to keep it still. */
+  shimmerFrameMs?: number;
 }
+
+/** How often the header repaints so the glow looks like it is moving. */
+export const HEADER_SHIMMER_FRAME_MS = 120;
 
 /**
  * Text shown in the terminal tab / window title.
@@ -214,12 +239,29 @@ export function createHeaderExtension(opts: CreateHeaderExtensionOptions): Inlin
         stopTitle = installTerminalTitle(ctx.ui);
         ctx.ui.setHeader((tui: TuiLike, theme: ThemeLike) => {
           let expanded = false;
+          // The header only repaints when something asks it to. A slow timer is
+          // what makes the light orange actually flow through "Qronos AI".
+          const frameMs = opts.shimmerFrameMs ?? HEADER_SHIMMER_FRAME_MS;
+          const timer =
+            frameMs > 0
+              ? setInterval(() => {
+                  try {
+                    tui.requestRender();
+                  } catch {
+                    // Header gone: the interval is cleared below.
+                  }
+                }, frameMs)
+              : null;
+          if (timer && typeof timer === "object" && typeof timer.unref === "function") timer.unref();
 
           return {
             render(width: number): string[] {
               return headerLines(theme, opts.modelName, expanded, width, opts.updateLatest);
             },
             invalidate(): void {},
+            dispose(): void {
+              if (timer) clearInterval(timer);
+            },
             setExpanded(next: boolean): void {
               expanded = next;
               tui.requestRender();

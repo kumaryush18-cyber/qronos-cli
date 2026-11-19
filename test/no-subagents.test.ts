@@ -72,8 +72,9 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // To twenty with qronos-hooks (lifecycle hooks; PreToolUse uses the same
     // tool_call block mechanism as tool-guard and adds no escape hatch).
     // To twenty-one with qronos-agent (task-scoped subagents strictly gated by Option B read-only start).
-    // 2026-11-20: to twenty-two with qronos-thinking-meter (spinner frames
-    // carrying the real context size; no tool, no model call).
+    // 2026-11-20: twenty-two extensions. qronos-thinking-meter became
+    // qronos-working-line: the Claude-Code-style line above the ad box that
+    // counts output tokens for the whole run. Still no tool, no model call.
     // 2026-10-27: qronos-interrupt renamed to qronos-prompt-history. The name
     // changed because the extension NO LONGER touches Escape, which is pi's
     // app.interrupt binding; it only records submitted prompts for /recall. The
@@ -103,7 +104,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-hooks",
         "qronos-prompt-history",
         "qronos-provider",
-        "qronos-thinking-meter",
+        "qronos-working-line",
         "qronos-tool-guard",
       ].sort(),
     );

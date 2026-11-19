@@ -14,7 +14,7 @@
 // message and exits on failure, and only then dynamically imports the real CLI —
 // which is when undici finally loads, on a runtime we've confirmed can handle it.
 import * as zlib from "node:zlib";
-import { APP_TITLE_TEXT } from "./app-title";
+import { APP_TITLE_TEXT, terminalTitleSequence } from "./app-title";
 import { zstdSupportError } from "./node-check";
 
 // Name the OS process, not just the window title.
@@ -25,11 +25,18 @@ import { zstdSupportError } from "./node-check";
 // rename the process (argv[0] + PR_SET_NAME on Linux/macOS), which makes those
 // places read the app name even before the window title is set.
 //
-// Windows ignores this (there the console title, set by the app, is what shows).
+// Windows cannot rename a process, so there the tab keeps the executable name
+// ("node") until the title escape below is written. Both are done: the rename
+// for task managers and `ps`, the escape for terminal tabs.
 try {
   process.title = APP_TITLE_TEXT;
 } catch {
   // Some sandboxes refuse the rename; the window title still works.
+}
+try {
+  if (process.stdout.isTTY) process.stdout.write(terminalTitleSequence(APP_TITLE_TEXT));
+} catch {
+  // No TTY (piped, CI): nothing to title.
 }
 
 const err = zstdSupportError(zlib, process.versions.node);

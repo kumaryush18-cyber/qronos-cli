@@ -188,6 +188,10 @@ export function buildProviderConfig(opts: ProviderOptions): ProviderConfig {
   const headers: Record<string, string> = {
     "x-session-id": opts.sessionId,
     "x-client-version": CLI_VERSION,
+    // Tells the gateway this is the terminal CLI, not the VS Code extension and
+    // not an unknown SDK caller. The admin live-request panel reads it to show a
+    // "QRONOS CLI" badge instead of "API". See qronos-ai/server/clientTag.ts.
+    "x-qronos-client": "cli",
   };
 
   return {

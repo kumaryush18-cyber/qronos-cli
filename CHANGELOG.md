@@ -5,6 +5,30 @@ All notable changes to `qronos-cli`. Format based on [Keep a Changelog](https://
 The short highlights shown in the CLI at startup live in `src/changelog.ts` (bundled into the
 build); this file is the fuller human record.
 
+## [1.0.6] - 2026-11-19
+
+The working line, the glow, and honest REA.
+
+### Added
+- **Claude-Code-style working line.** A spinner with Claude Code's own 187 playful
+  verbs (`Galloping…`, `Gitifying…`), a new word every 6 s, output tokens counted
+  across the whole run, elapsed time after 30 s, and `✻ Churned for 2m 30s` when the
+  answer arrives. It draws in its own row above the editor, outside the input border.
+- **A light-orange glow** flows through the word every 3 s, and through the
+  `Qronos AI` header name with the version in pale orange. The header line is bold,
+  because a terminal cannot change font size.
+- **`/reverse-engineer-anything` now says what will really work** on your machine
+  (JEB, Hopper, pwntools, adb, apktool, tshark, frida, gdb, rizin, binwalk, unblob).
+  REA ships no engines, so a missing backend used to look like a broken install.
+- The CLI sends `x-qronos-client: cli`, so the Qronos AI admin live-request panel can
+  show **QRONOS CLI** instead of a generic **API** badge.
+
+### Fixed
+- The working-line token counter no longer freezes or resets on every model call.
+- Terminal tab titles are written with the title escape at startup, so terminals that
+  ignore the process name (Windows) no longer show `node`.
+- `/quit` reads **Quit**, not `Quit pi`.
+
 ## [1.0.5] - 2026-11-18
 
 Editor and terminal polish, plus the "node" name fixed for good.

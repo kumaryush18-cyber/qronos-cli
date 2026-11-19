@@ -1,26 +1,20 @@
-// Claude-Code-style working line: spinner + "↓ 12.3k".
+// Output-token counting for the working line (see working-line.ts for the UI).
 //
-// pi draws its own "thinking" line under the editor and only lets an extension
-// change two things: the text (setWorkingMessage) and the animation frames
-// (setWorkingIndicator). Frames are rendered *verbatim* (see pi-tui's Loader:
-// renderIndicatorVerbatim), so the token count can ride inside the frame:
+// 1.0.5 used ctx.getContextUsage().tokens, which only moves when a message is
+// added — while the model writes it does not change, so the number looked
+// frozen at whatever it was (e.g. "6.5k"). This module counts the tokens the
+// model is producing right now instead.
 //
-//     ⠋ ↓ 12.3k  Thinking...
-//
-// That keeps pi's own wording and colour for the message, and gives us the
-// arrow + count Claude Code shows. The number is the real context size from
-// ctx.getContextUsage() — never a guess — and the plain spinner is used when
-// the size is unknown (e.g. right after a compaction).
-import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+// Where the number comes from, in order of trust:
+//   1. message.usage.output — the provider's own count. pi-ai updates it *during*
+//      the stream for Anthropic-style APIs (message_delta.usage.output_tokens).
+//   2. An estimate from the characters received so far (chars / 4), because
+//      OpenAI-style streams only send usage in the final chunk. Without this the
+//      count would sit at 0 and then jump once at the end.
+// Both are kept, and the larger one is shown, so the number only ever goes up.
 
-/** pi's default spinner glyphs, kept so the animation looks unchanged. */
-export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-/** Frame interval pi uses by default; re-stated because we pass our own frames. */
-export const FRAME_INTERVAL_MS = 80;
-
-/** Message streaming fires very often; only rewrite the frames this often. */
-export const MIN_UPDATE_MS = 250;
+/** Rough tokens per character for streaming text. English prose is ~4 chars/token. */
+export const CHARS_PER_TOKEN = 4;
 
 /**
  * Compact token count: 847 -> "847", 12_340 -> "12.3k", 1_240_000 -> "1.2M".
@@ -37,60 +31,74 @@ export function formatTokenCount(tokens: number | null | undefined): string | un
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-/**
- * Spinner frames with the arrow + count appended. Unknown count = plain frames,
- * so the line never shows a made-up number.
- */
-export function buildFrames(
-  tokens: number | null | undefined,
-  glyphs: readonly string[] = SPINNER_FRAMES,
-): string[] {
-  const count = formatTokenCount(tokens);
-  if (!count) return [...glyphs];
-  return glyphs.map((glyph) => `${glyph} ↓ ${count}`);
+/** Streaming estimate: how many tokens the characters received so far are worth. */
+export function estimateTokensFromChars(chars: number): number {
+  if (!Number.isFinite(chars) || chars <= 0) return 0;
+  return Math.round(chars / CHARS_PER_TOKEN);
 }
 
-export interface CreateThinkingMeterOptions {
-  /** Injected clock, for tests. Defaults to Date.now. */
-  now?: () => number;
+/** Minimal shapes of the pi events this module reads. */
+interface AnyMessage {
+  role?: string;
+  usage?: { output?: number } | undefined;
+}
+interface AnyStreamEvent {
+  delta?: unknown;
+  type?: string;
 }
 
 /**
- * Keeps the working-indicator frames in sync with the real context size.
- * Adds no tool, makes no model call, and changes nothing outside the spinner.
+ * Counts output tokens for the current turn.
+ *
+ * A turn can contain several assistant messages (tool call -> tool result ->
+ * next message), so finished messages are added to a base and the streaming one
+ * is added on top. That makes the number grow for the whole turn, like Claude
+ * Code, instead of resetting on every tool call.
  */
-export function createThinkingMeterExtension(opts: CreateThinkingMeterOptions = {}): InlineExtension {
-  const now = opts.now ?? Date.now;
-  return {
-    name: "qronos-thinking-meter",
-    factory(api: ExtensionAPI) {
-      let lastTokens: number | undefined;
-      let lastAt = Number.NEGATIVE_INFINITY;
+export class OutputTokenCounter {
+  private base = 0;
+  private chars = 0;
+  private real = 0;
 
-      const apply = (ctx: Parameters<Parameters<ExtensionAPI["on"]>[1]>[1], force: boolean): void => {
-        let tokens: number | undefined;
-        try {
-          tokens = ctx.getContextUsage()?.tokens ?? undefined;
-        } catch {
-          // No bound session yet (or a compaction just cleared it): plain spinner.
-          tokens = undefined;
-        }
-        if (!force) {
-          if (tokens === lastTokens) return;
-          if (now() - lastAt < MIN_UPDATE_MS) return;
-        }
-        lastAt = now();
-        lastTokens = tokens;
-        ctx.ui.setWorkingIndicator({ frames: buildFrames(tokens), intervalMs: FRAME_INTERVAL_MS });
-      };
+  /** Tokens produced so far in this turn. Monotonic while the turn runs. */
+  tokens(): number {
+    return this.base + Math.max(this.real, estimateTokensFromChars(this.chars));
+  }
 
-      api.on("session_start", (_event, ctx) => {
-        lastTokens = undefined;
-        lastAt = Number.NEGATIVE_INFINITY;
-        apply(ctx, true);
-      });
-      api.on("message_update", (_event, ctx) => apply(ctx, false));
-      api.on("turn_end", (_event, ctx) => apply(ctx, true));
-    },
-  };
+  /** A new assistant message starts streaming: count it from zero again. */
+  messageStart(message: unknown): void {
+    if (!isAssistant(message)) return;
+    this.chars = 0;
+    this.real = 0;
+  }
+
+  /** Streaming update: take the provider count and/or add the new characters. */
+  messageUpdate(message: unknown, streamEvent?: unknown): void {
+    if (!isAssistant(message)) return;
+    const output = message.usage?.output;
+    if (typeof output === "number" && output > this.real) this.real = output;
+    const delta = (streamEvent as AnyStreamEvent | undefined)?.delta;
+    if (typeof delta === "string") this.chars += delta.length;
+  }
+
+  /** Message finished: freeze its count into the turn total. */
+  messageEnd(message: unknown): void {
+    if (!isAssistant(message)) return;
+    const output = message.usage?.output;
+    if (typeof output === "number" && output > this.real) this.real = output;
+    this.base += Math.max(this.real, estimateTokensFromChars(this.chars));
+    this.chars = 0;
+    this.real = 0;
+  }
+
+  /** New turn (or new session): forget the previous total. */
+  reset(): void {
+    this.base = 0;
+    this.chars = 0;
+    this.real = 0;
+  }
+}
+
+function isAssistant(message: unknown): message is AnyMessage {
+  return (message as AnyMessage | undefined)?.role === "assistant";
 }

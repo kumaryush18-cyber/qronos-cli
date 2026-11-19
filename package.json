@@ -1,6 +1,6 @@
 {
   "name": "qronos-cli",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Qronos CLI - Autonomous AI coding agent in your terminal powered by Qronos AI.",
   "license": "MIT",
   "author": "Qronos AI",
@@ -24,7 +24,8 @@
   "files": [
     "dist",
     "skills",
-    "README.md"
+    "README.md",
+    "scripts"
   ],
   "engines": {
     "node": ">=22.19.0"
@@ -33,7 +34,9 @@
     "build": "rm -rf dist && bun build src/index.ts --target=node --outdir dist --splitting --external @earendil-works/pi-coding-agent --banner '#!/usr/bin/env node' && chmod +x dist/index.js",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "postinstall": "node scripts/patch-pi-quit.mjs",
+    "patch:pi": "node scripts/patch-pi-quit.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.2.0",

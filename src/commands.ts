@@ -9,6 +9,7 @@ import { registerBugAutocomplete } from "./bug-report";
 import { CHANGELOG_HIGHLIGHTS } from "./changelog";
 import { openBrowser } from "./browser";
 import { BUY_NOT_AVAILABLE_TEXT, buyPageText, resolveBuyPage } from "./buy-tool";
+import { detectReaBackends, summarizeReaBackends } from "./rea-backends";
 import { fetchUsageText } from "./usage-tool";
 import { runInit } from "./init-cmd";
 import { runCost } from "./cost-cmd";
@@ -44,6 +45,8 @@ export interface CreateCommandsOptions {
   nodeVersion?: string;
   /** Injected in tests; defaults to process.platform. */
   platform?: NodeJS.Platform;
+  /** Injected in tests: the backend readiness check used by /reverse-engineer-anything. */
+  detectReaBackends?: typeof detectReaBackends;
 }
 
 /** Minimal shape of the command context we use — just the notify surface. */
@@ -206,6 +209,7 @@ export async function showUsage(opts: CreateCommandsOptions, ctx: NotifyContext)
 
 // ---- /reverse-engineer-anything ---------------------------------------------
 
+
 const REA_ARGS = ["-y", "rea-agents@6.7.0", "mcp"];
 const REA_DESCRIPTION =
   "Reverse-engineering tools (REA): native binaries, JS/Electron apps, APKs, .NET, websites. Use for lawful, authorized analysis only.";
@@ -241,9 +245,14 @@ export function loadRea(qronos: Pick<ExtensionAPI, "registerMcpServer" | "getMcp
     ctx.ui.notify("Couldn't load REA in this session.", "error");
     return;
   }
+  // Say what can really run here before the user asks for work: REA refuses
+  // with "capability_unavailable" when its backend program is missing, which
+  // reads like a broken install.
+  const backends = (opts.detectReaBackends ?? detectReaBackends)({ env: process.env, platform: opts.platform ?? process.platform });
   ctx.ui.notify(
     "Loading REA (reverse-engineering tools) for this session. The first run downloads rea-agents, so it can take a minute. " +
-      "Deep native analysis needs your own Hopper, Ghidra, or IDA install.",
+      "Deep native analysis needs your own Hopper, Ghidra, or IDA install. " +
+      summarizeReaBackends(backends),
     "info",
   );
 }

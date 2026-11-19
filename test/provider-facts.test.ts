@@ -42,3 +42,28 @@ describe("modelFacts", () => {
     expect(model && "maxTokens" in model ? model.maxTokens : undefined).toBe(4_096);
   });
 });
+
+describe("admin panel client tag", () => {
+  test("the CLI marks itself as the terminal client", () => {
+    // qronos-ai/server/clientTag.ts reads this header and shows "QRONOS CLI"
+    // in the live-request panel instead of the generic "API" badge.
+    const config = buildProviderConfig({
+      providerName: "qronos",
+      apiKey: "sk-test",
+      sessionId: "s",
+    });
+    expect(config.headers?.["x-qronos-client"]).toBe("cli");
+    expect(config.headers?.["x-session-id"]).toBe("s");
+  });
+
+  test("the header survives a custom base url and model", () => {
+    const config = buildProviderConfig({
+      providerName: "qronos",
+      baseUrl: "https://api.qronos.me/v1",
+      apiKey: "sk-test",
+      sessionId: "abc",
+      modelId: "glm-5.3-flash",
+    });
+    expect(config.headers?.["x-qronos-client"]).toBe("cli");
+  });
+});

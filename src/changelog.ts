@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.6",
+    highlights: [
+      "New working line: Claude Code style spinner with playful verbs, a new word every 6 seconds, live output tokens and \"Churned for 2m 30s\" when the answer arrives. It sits above the input box, with a light-orange glow every 3 seconds.",
+      "The Qronos AI header glows too, and its version is pale orange.",
+      "/reverse-engineer-anything now lists what can really run on your machine (JEB, Hopper, pwntools, adb, tshark...), so a missing backend no longer looks like a broken install.",
+      "Qronos AI admin live requests now show QRONOS CLI instead of API.",
+    ],
+  },
+  {
     version: "1.0.5",
     highlights: [
       "Click inside the input box to put the cursor there (fullscreen mode is now the default; QRONOS_TUI_MODE=regular goes back).",

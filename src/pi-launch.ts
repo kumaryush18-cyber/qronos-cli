@@ -29,7 +29,7 @@ import { createAgentToolExtension, AGENT_TOOL_NAME } from "./agent-tool";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
-import { createThinkingMeterExtension } from "./thinking-meter";
+import { createWorkingLineExtension } from "./working-line";
 import { ensureKeybindingDefaults } from "./keybindings";
 import { resolveTuiMode } from "./env";
 import { AGENT_RULES } from "./agent-rules";
@@ -287,10 +287,12 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // (read from turn_end's error envelope). See error-notice.ts.
   const errorNoticeExtension: InlineExtension = createErrorNoticeExtension();
 
-  // 2026-11-20: Claude-Code-style working line. The spinner frames carry the
-  // real context size ("⠋ ↓ 12.3k") so the number sits next to the animation
-  // instead of only in the footer. No tool, no model call.
-  const thinkingMeterExtension: InlineExtension = createThinkingMeterExtension();
+  // 2026-11-20: Claude-Code-style working line ("✢ Crafting… (32s · ↓ 1.2k
+  // tokens · thinking)"). It is a widget above the editor, so it sits outside
+  // the input border and above the ad box, and it counts output tokens for the
+  // whole run (prompt -> final answer), not per model call. No tool, no model
+  // call of its own.
+  const workingLineExtension: InlineExtension = createWorkingLineExtension();
 
   // defense-in-depth block + report for any tool outside
   // ALLOWED_TOOL_NAMES that somehow reaches a tool_call event.
@@ -358,6 +360,9 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const extensionFactories = [
     providerExtension,
     createFusionExtension(models[0]!.id, resolveFusionIds(models.map((m) => m.id), opts.fusion)),
+    // Before ads on purpose: pi stacks aboveEditor widgets in insertion order,
+    // so registering this one first keeps the working line above the ad box.
+    workingLineExtension,
     adsExtension,
     usageToolExtension,
     buyToolExtension,
@@ -365,7 +370,6 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     webToolsExtension,
     imageToolExtension,
     errorNoticeExtension,
-    thinkingMeterExtension,
     toolGuardExtension,
     commandsExtension,
     headerExtension,

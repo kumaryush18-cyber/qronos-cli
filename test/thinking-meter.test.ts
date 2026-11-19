@@ -1,11 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  buildFrames,
-  createThinkingMeterExtension,
+  estimateTokensFromChars,
   formatTokenCount,
-  FRAME_INTERVAL_MS,
-  MIN_UPDATE_MS,
-  SPINNER_FRAMES,
+  OutputTokenCounter,
 } from "../src/thinking-meter";
 
 describe("formatTokenCount", () => {
@@ -35,74 +32,88 @@ describe("formatTokenCount", () => {
   });
 });
 
-describe("buildFrames", () => {
-  test("unknown count falls back to the plain spinner", () => {
-    expect(buildFrames(undefined)).toEqual([...SPINNER_FRAMES]);
-    expect(buildFrames(null)).toEqual([...SPINNER_FRAMES]);
+describe("estimateTokensFromChars", () => {
+  test("four characters are one token", () => {
+    expect(estimateTokensFromChars(0)).toBe(0);
+    expect(estimateTokensFromChars(3)).toBe(1);
+    expect(estimateTokensFromChars(400)).toBe(100);
   });
 
-  test("each frame carries the arrow and the count", () => {
-    const frames = buildFrames(12_340);
-    expect(frames).toHaveLength(SPINNER_FRAMES.length);
-    expect(frames[0]).toBe("⠋ ↓ 12k");
-    expect(frames.every((f) => f.includes("↓ 12k"))).toBe(true);
-  });
-
-  test("frames stay one line wide (no wrapping in narrow terminals)", () => {
-    const frames = buildFrames(1_240_000);
-    expect(frames[0]).toBe("⠋ ↓ 1.2M");
+  test("invalid input counts as zero, never a fake number", () => {
+    expect(estimateTokensFromChars(-10)).toBe(0);
+    expect(estimateTokensFromChars(Number.NaN)).toBe(0);
   });
 });
 
-describe("qronos-thinking-meter extension", () => {
-  function harness(tokens: number | undefined) {
-    const calls: { frames: string[]; intervalMs: number }[] = [];
-    const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
-    const api = {
-      on(type: string, handler: (event: unknown, ctx: unknown) => void) {
-        handlers.set(type, handler);
-        return () => {};
-      },
-    };
-    const ctx = {
-      getContextUsage: () => (tokens === undefined ? undefined : { tokens }),
-      ui: {
-        setWorkingIndicator: (options: { frames: string[]; intervalMs: number }) => calls.push(options),
-      },
-    };
-    const ext = createThinkingMeterExtension({ now: () => 0 }) as { factory: (pi: never) => void };
-    ext.factory(api as never);
-    return { handlers, ctx, calls };
-  }
+describe("OutputTokenCounter", () => {
+  const assistant = (output?: number) => ({ role: "assistant", usage: output === undefined ? {} : { output } });
+  const delta = (text: string) => ({ type: "text_delta", delta: text });
 
-  test("session_start sets frames with the real token count", () => {
-    const { handlers, ctx, calls } = harness(12_340);
-    handlers.get("session_start")!({}, ctx);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.frames[0]).toBe("⠋ ↓ 12k");
-    expect(calls[0]!.intervalMs).toBe(FRAME_INTERVAL_MS);
+  test("starts at zero and grows with the streamed characters", () => {
+    const counter = new OutputTokenCounter();
+    counter.messageStart(assistant());
+    expect(counter.tokens()).toBe(0);
+    counter.messageUpdate(assistant(), delta("a".repeat(400)));
+    expect(counter.tokens()).toBe(100);
+    counter.messageUpdate(assistant(), delta("a".repeat(400)));
+    expect(counter.tokens()).toBe(200);
   });
 
-  test("unknown context size keeps the plain spinner", () => {
-    const { handlers, ctx, calls } = harness(undefined);
-    handlers.get("session_start")!({}, ctx);
-    expect(calls[0]!.frames).toEqual([...SPINNER_FRAMES]);
+  test("the provider's own count wins when it is larger", () => {
+    const counter = new OutputTokenCounter();
+    counter.messageStart(assistant());
+    counter.messageUpdate(assistant(), delta("a".repeat(40))); // estimate 10
+    counter.messageUpdate(assistant(1530), delta("")); // real 1530
+    expect(counter.tokens()).toBe(1530);
   });
 
-  test("message_update is throttled: same count and same instant do not repaint", () => {
-    const { handlers, ctx, calls } = harness(5000);
-    handlers.get("session_start")!({}, ctx);
-    handlers.get("message_update")!({}, ctx);
-    handlers.get("message_update")!({}, ctx);
-    expect(calls).toHaveLength(1);
+  test("the estimate is used when the provider has not reported anything yet", () => {
+    const counter = new OutputTokenCounter();
+    counter.messageStart(assistant());
+    counter.messageUpdate(assistant(0), delta("a".repeat(1200))); // estimate 300
+    expect(counter.tokens()).toBe(300);
   });
 
-  test("registered events are exactly the three the meter needs", () => {
-    const { handlers } = harness(10);
-    expect([...handlers.keys()].sort()).toEqual(["message_update", "session_start", "turn_end"]);
+  test("a run with tool calls keeps adding up instead of restarting", () => {
+    const counter = new OutputTokenCounter();
+    counter.messageStart(assistant());
+    counter.messageUpdate(assistant(), delta("a".repeat(1200)));
+    counter.messageEnd(assistant(310));
+    expect(counter.tokens()).toBe(310);
+    counter.messageStart(assistant());
+    counter.messageUpdate(assistant(), delta("a".repeat(400)));
+    expect(counter.tokens()).toBe(410);
+    counter.messageEnd(assistant(100));
+    expect(counter.tokens()).toBe(410);
   });
 
-  test("throttle window is short enough to feel live", () => {
-    expect(MIN_UPDATE_MS).toBeLessThanOrEqual(500);
+  test("the number never goes down inside a run", () => {
+    const counter = new OutputTokenCounter();
+    counter.messageStart(assistant());
+    let previous = 0;
+    for (const size of [40, 400, 40, 4000, 400, 8000]) {
+      counter.messageUpdate(assistant(), delta("a".repeat(size)));
+      const current = counter.tokens();
+      expect(current).toBeGreaterThanOrEqual(previous);
+      previous = current;
+    }
+  });
+
+  test("reset starts a new run from zero", () => {
+    const counter = new OutputTokenCounter();
+    counter.messageStart(assistant());
+    counter.messageUpdate(assistant(), delta("a".repeat(4000)));
+    counter.messageEnd(assistant(1000));
+    expect(counter.tokens()).toBe(1000);
+    counter.reset();
+    expect(counter.tokens()).toBe(0);
+  });
+
+  test("user and tool messages are ignored", () => {
+    const counter = new OutputTokenCounter();
+    counter.messageStart({ role: "user" });
+    counter.messageUpdate({ role: "user" }, delta("a".repeat(4000)));
+    counter.messageEnd({ role: "user" });
+    expect(counter.tokens()).toBe(0);
   });
 });

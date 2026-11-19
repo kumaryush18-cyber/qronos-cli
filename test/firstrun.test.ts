@@ -904,7 +904,11 @@ describe("provider registration", () => {
       models: [{ id: MODEL_ID, name: "DeepSeek V4 Flash" }],
     });
     // x-client-version rides alongside x-session-id on every completion.
-    expect(a.headers).toEqual({ "x-session-id": "session-a", "x-client-version": CLI_VERSION });
+    expect(a.headers).toEqual({
+      "x-session-id": "session-a",
+      "x-client-version": CLI_VERSION,
+      "x-qronos-client": "cli",
+    });
 
     // Stable across repeated calls with the same sessionId, different across
     // two different sessionIds — a process's identity is fixed for its

@@ -270,6 +270,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     ...(auth.headers || {}),
     ...modelHeaders(ctx.model),
     "x-client-version": CLI_VERSION,
+    "x-qronos-client": "cli",
   };
 
   let currentModel = targetModel;
@@ -301,7 +302,12 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
         try {
           auth = currentModel ? ((await ctx.modelRegistry.getApiKeyAndHeaders(currentModel)) as RequestAuth) : {};
           if (auth?.apiKey) apiKey = auth.apiKey;
-          headers = { ...(auth.headers || {}), ...modelHeaders(ctx.model), "x-client-version": CLI_VERSION };
+          headers = {
+            ...(auth.headers || {}),
+            ...modelHeaders(ctx.model),
+            "x-client-version": CLI_VERSION,
+            "x-qronos-client": "cli",
+          };
         } catch {}
         turns--;
         continue;
@@ -322,7 +328,12 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
         try {
           auth = currentModel ? ((await ctx.modelRegistry.getApiKeyAndHeaders(currentModel)) as RequestAuth) : {};
           if (auth?.apiKey) apiKey = auth.apiKey;
-          headers = { ...(auth.headers || {}), ...modelHeaders(ctx.model), "x-client-version": CLI_VERSION };
+          headers = {
+            ...(auth.headers || {}),
+            ...modelHeaders(ctx.model),
+            "x-client-version": CLI_VERSION,
+            "x-qronos-client": "cli",
+          };
         } catch {}
         turns--;
         continue;
