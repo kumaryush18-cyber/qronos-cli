@@ -67,6 +67,7 @@ Environment Variables:
   QRONOS_ADVISOR_EVERY       review every Nth turn (default 1)
   QRONOS_NOTIFY              0 = no desktop notification when a turn finishes
   QRONOS_FPS                 cap screen redraws, e.g. 30 (default: engine speed)
+  QRONOS_HASHLINE            0 = turn off numbered reads and the apply_patch tool
   QRONOS_TUI_MODE            fullscreen (default, mouse clicks move the cursor)
                              or regular (terminal scrollback, no click-to-cursor)
   QRONOS_TITLE               text shown in the terminal tab title

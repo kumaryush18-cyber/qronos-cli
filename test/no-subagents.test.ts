@@ -75,6 +75,10 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // 2026-11-20: twenty-two extensions. qronos-thinking-meter became
     // qronos-working-line: the Claude-Code-style line above the ad box that
     // counts output tokens for the whole run. Still no tool, no model call.
+    // 2026-11-21 (later): to twenty-eight with qronos-apply-patch (hashline
+    // edits by line range; pi's `edit` stays available) and qronos-lsp (rename,
+    // rename_file, diagnostics, hover through a language server). Neither opens
+    // a model request; the LSP one spawns a subprocess only when called.
     // 2026-11-21: to twenty-six with three oh-my-pi ports, none of which adds a
     // tool: qronos-stream-rules (aborts a turn on a banned pattern; a no-op
     // until .qronos/stream-rules.json exists), qronos-notify (one desktop
@@ -114,6 +118,8 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-working-line",
         "qronos-stream-rules",
         "qronos-notify",
+        "qronos-apply-patch",
+        "qronos-lsp",
         "qronos-tool-guard",
       ].sort(),
     );
@@ -124,7 +130,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     const settings = opts.settingsManager.getGlobalSettings();
     expect(settings.packages).toEqual([]);
     expect([...(settings.defaultTools ?? [])].sort()).toEqual(
-      [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME].sort(),
+      [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME, "apply_patch", "lsp"].sort(),
     );
   });
 
@@ -139,7 +145,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(opts.settingsManager.getClearOnShrink()).toBe(true);
   });
 
-  test("the strict SDK tools allowlist is exactly SAFE_TOOLS plus the custom tools, todo, exit_plan_mode, agent, codemode and tool_search", () => {
+  test("the strict SDK tools allowlist is exactly SAFE_TOOLS plus the custom tools, todo, exit_plan_mode, agent, apply_patch, lsp, codemode and tool_search", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-c");
     expect([...opts.tools].sort()).toEqual(
       [
@@ -154,6 +160,8 @@ describe("closed extension list (#28 R20, SB1)", () => {
         ENTER_PLAN_TOOL_NAME,
         EXIT_PLAN_TOOL_NAME,
         AGENT_TOOL_NAME,
+        "apply_patch",
+        "lsp",
         "codemode",
         "tool_search",
         // MCP patterns, so direct-exposure user servers are declared (2026-10-14).
@@ -206,9 +214,18 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(SUBAGENT_READ_ONLY_TOOLS.has("edit")).toBe(false);
   });
 
-  test("codemode and tool_search are the only new non-MCP names beyond the tools", () => {
+  test("codemode, tool_search, apply_patch and lsp are the only new non-MCP names beyond the tools", () => {
     const known = [...SAFE_TOOLS, USAGE_TOOL_NAME, BUY_TOOL_NAME, DOCS_TOOL_NAME, WEB_SEARCH_TOOL_NAME, DOCS_LOOKUP_TOOL_NAME, IMAGE_TOOL_NAME, TODO_TOOL_NAME, ENTER_PLAN_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME];
-    expect(ALLOWED_TOOL_NAMES.filter((n) => !known.includes(n)).sort()).toEqual(["codemode", "tool_search"]);
+    // 2026-11-21: apply_patch (hashline edits) and lsp (language server actions)
+    // are our own tools, so they must be listed explicitly. Neither runs a model
+    // request, and neither can spawn a background process: lsp starts one
+    // long-lived language server for the session and kills it on shutdown.
+    expect(ALLOWED_TOOL_NAMES.filter((n) => !known.includes(n)).sort()).toEqual([
+      "apply_patch",
+      "codemode",
+      "lsp",
+      "tool_search",
+    ]);
     expect(ALLOWED_TOOL_NAMES.some((n) => n.startsWith("mcp__"))).toBe(false);
   });
 });

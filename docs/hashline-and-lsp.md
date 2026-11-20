@@ -1,0 +1,78 @@
+# Hashline edits and the language server
+
+Two features ported from [oh-my-pi](https://github.com/can1357/oh-my-pi) in November 2026.
+
+## 1. `apply_patch` — edit by line range
+
+Every `read` now shows a tag and line numbers:
+
+```
+[src/api/users.ts#a3f1] (240 lines)
+  1| import { db } from "./db";
+  2|
+ 42| export async function fetchUser(id: string) {
+ 43|   return db.query("select * from users where id = ?", [id]);
+ 44| }
+```
+
+To change lines 42–44, the model sends only the new lines:
+
+```
+*** Begin Patch
+[src/api/users.ts#a3f1]
+PUT 42.=44:
++export async function loadUser(id: string) {
++  return db.query("select * from users where id = ?", [id]);
++}
+*** End Patch
+```
+
+Why this is better than exact-text editing for big files: a three-line change to a 400-line file costs three lines of output, not thirty. And the tag `#a3f1` is a hash of the whole file, so if the file changed after the read, the patch is **refused before anything is written**. The next read shows the new tag.
+
+Operations:
+
+| Op | Meaning |
+|---|---|
+| `PUT N.=M:` | replace lines N to M with the `+` body |
+| `PUT <N:` | insert the body before line N |
+| `PUT >N:` | insert the body after line N |
+| `PUT >$:` | append at the end of the file |
+| `CUT N.=M` | delete lines N to M |
+| `REM` | delete the file |
+| `MV dest` | move or rename the file |
+
+Body lines start with `+`. A lone `+` writes a blank line. Write `++text` for a literal `+text` and `+- text` for a literal `- text`.
+
+Not supported yet: block operations (`N*`) and clipboard registers (`@name`). They are rejected with a clear message rather than half-applied.
+
+`edit` **is still available**. Use `edit` for a single-line change, `apply_patch` when several lines change at once. Turn the feature off completely with `QRONOS_HASHLINE=0` (that also returns reads to plain, unnumbered output).
+
+### Safety rules the tool enforces
+
+- A patch needs a prior read in the same session (no tag, no write).
+- A stale tag is refused, and nothing is written.
+- Line ranges past the end of the file, overlapping ranges, and reversed ranges are refused.
+- A patch whose result is byte-identical to the original is reported as an error, because it almost always means the wrong line numbers.
+- Writes go through pi's own `write` tool, so permissions, hooks and the transcript behave exactly as before.
+
+## 2. `lsp` — ask the language server
+
+| Action | What it does |
+|---|---|
+| `rename` | rename a symbol; every reference in the project is updated |
+| `rename_file` | move a file **and** rewrite the imports (`workspace/willRenameFiles`) |
+| `diagnostics` | the compiler's errors and warnings for a file |
+| `hover` | the type of the expression at a position |
+
+Example: "move `Button.tsx` into `components/ui/`". By hand the agent edits six importers and usually misses one. Through `rename_file`, TypeScript rewrites them itself, so the project still compiles.
+
+Servers are **not** installed for you. If one is missing, the tool says so and gives the install command:
+
+| Language | Server | Install |
+|---|---|---|
+| TypeScript / JavaScript | `typescript-language-server` | `npm install -g typescript-language-server typescript` |
+| Python | `pyright-langserver` | `npm install -g pyright` |
+| Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
+| Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
+
+A server is started the first time it is needed, reused for the session, and killed on exit. Requests time out after 5 seconds, so a hung server cannot freeze the CLI.

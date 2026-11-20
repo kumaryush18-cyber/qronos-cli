@@ -44,6 +44,8 @@ import { createStreamRulesExtension, defaultRulePaths } from "./stream-rules-ext
 import { createNotifyExtension } from "./notify-extension";
 import { notificationsEnabled } from "./notifications";
 import { installFrameRateCap } from "./frame-rate";
+import { createPatchToolExtension, PATCH_TOOL_NAME } from "./hashline/tool";
+import { createLspToolExtension, LSP_TOOL_NAME } from "./lsp/tool";
 import { installEffortHandler } from "./effort-selector";
 import { installFooterRightAlign } from "./footer-align";
 import { readConfigObject, readHooksFile, readStatusLineCommand, writeConfigPatch } from "./cli-config";
@@ -126,6 +128,10 @@ export const ALLOWED_TOOL_NAMES: readonly string[] = [
   ENTER_PLAN_TOOL_NAME,
   EXIT_PLAN_TOOL_NAME,
   AGENT_TOOL_NAME,
+  // Hashline edits and language-server actions. Both are registered by our own
+  // extensions, so they need an explicit entry here as well as in defaultTools.
+  PATCH_TOOL_NAME,
+  LSP_TOOL_NAME,
   "codemode",
   "tool_search",
 ];
@@ -187,7 +193,15 @@ export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[]
       // The picker starts on the first catalog model (the server lists the
       // default first); the user switches with /model.
       defaultModel: models[0]!.id,
-      defaultTools: [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME],
+      defaultTools: [
+        ...SAFE_TOOLS,
+        TODO_TOOL_NAME,
+        EXIT_PLAN_TOOL_NAME,
+        AGENT_TOOL_NAME,
+        // Hashline edits and language-server actions (QRONOS_HASHLINE=0 removes the tool).
+        PATCH_TOOL_NAME,
+        LSP_TOOL_NAME,
+      ],
       packages: [],
       // hides pi's own startup header dump so qronos-header is the only header shown.
       quietStartup: true,
@@ -342,6 +356,20 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const agentToolExtension: InlineExtension = createAgentToolExtension();
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
+  // Hashline edits (ported from can1357/oh-my-pi): `apply_patch` edits by line
+  // range from a tagged read, so a 3-line change to a 400-line file costs 3 lines
+  // of output instead of 30. `edit` stays available too — QRONOS_HASHLINE=0
+  // removes both the tool and the numbered reads.
+  const hashlineEnabled = (process.env.QRONOS_HASHLINE ?? "1").trim() !== "0";
+  const patchToolExtension: InlineExtension = {
+    name: "qronos-apply-patch",
+    factory: createPatchToolExtension({ numberReads: hashlineEnabled }),
+  };
+  // Language server: rename symbols and move files so imports follow.
+  const lspToolExtension: InlineExtension = {
+    name: "qronos-lsp",
+    factory: createLspToolExtension({ cwd: () => process.cwd() }),
+  };
   // Ported from can1357/oh-my-pi. Both are OFF when unconfigured, so the closed
   // extension list below does not grow for users who never asked for them.
   //   advisor:      a cheap reviewer model reads each finished turn
@@ -414,6 +442,8 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     toolSearchExtension,
     createClaudeToolRendererExtension(),
     createPromptHistoryExtension(),
+    patchToolExtension,
+    lspToolExtension,
     // Optional, appended only when configured; undefined entries are dropped.
     advisorExtension,
     streamRulesExtension,
