@@ -28,6 +28,7 @@ import { createExitPlanToolExtension, EXIT_PLAN_TOOL_NAME, ENTER_PLAN_TOOL_NAME 
 import { createAgentToolExtension, AGENT_TOOL_NAME } from "./agent-tool";
 import { AgentRegistry } from "./agent-registry";
 import { createAgentHubExtension } from "./agent-hub";
+import { retryPolicyFromEnv } from "./retry";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
@@ -217,11 +218,33 @@ export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[]
       // press redraws (pi's default is off; it exists for terminals that
       // cannot move the cursor).
       terminal: { clearOnShrink: true },
+      // Retries for a main-chat turn. pi's backoff is exponential (base x 2^n)
+      // with a cap, so a 10 s base and a 60 s cap give 10 s, 20 s, 40 s, 60 s,
+      // 60 s ... up to ten tries. Subagent turns use src/retry.ts, which can
+      // hold the exact 10/30/60 schedule.
+      retry: mainChatRetrySettings(),
       theme: CLAUDE_THEME_NAME,
       enableInstallTelemetry: false,
     },
     { projectTrusted },
   );
+}
+
+/** pi's retry shape, built from the same environment our own loop reads. */
+export function mainChatRetrySettings(): {
+  enabled: boolean;
+  maxRetries: number;
+  baseDelayMs: number;
+  maxAgentDelayMs: number;
+} {
+  const policy = retryPolicyFromEnv();
+  const schedule = policy.scheduleMs.length > 0 ? policy.scheduleMs : [10_000];
+  return {
+    enabled: policy.enabled,
+    maxRetries: policy.maxRetries,
+    baseDelayMs: schedule[0]!,
+    maxAgentDelayMs: policy.maxWaitMs,
+  };
 }
 
 /** Settings for one runtime: pi calls the runtime factory per folder (resume, new, fork, tree). */

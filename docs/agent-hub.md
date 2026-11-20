@@ -111,7 +111,7 @@ A floating panel in the middle of the screen. Open it with **Alt+A** or
 | Key | What it does |
 |---|---|
 | `↑` `↓` | move the selection (stops at the ends) |
-| `Enter` | open this agent's transcript, `Esc` goes back |
+| `Enter` | open this agent's **own chat** (below), `Esc` goes back |
 | `s` | type a message for the selected agent, `Enter` sends it |
 | `k` | stop the selected agent |
 | `r` | run the selected agent again with the same task |
@@ -139,12 +139,81 @@ Widths: the panel asks for 68 columns and shrinks to the terminal. Tested at 24,
 40, 68 and 120 columns, and with a theme that throws, to prove a missing colour
 token cannot blank the screen.
 
+## Part E — one agent's own chat (`src/agent-chat-view.ts`)
+
+Enter on a row opens that agent's conversation. It looks like the main chat,
+because a subagent is only trusted when you can see what it did:
+
+```
+╭──────────────────────────────────────────────────────────────────╮
+│#1 map auth flow                                                  │
+│  Explore · running · 1/10 · 0s                                   │
+│────────────────────────────────────────────────────────────────  │
+│Task from the main agent                                          │
+│  Find every place that touches the auth flow, then list the      │
+│  files.                                                          │
+│                                                                  │
+│✻ Subagent                                                        │
+│  I will start in the auth folder. Three call sites so far.       │
+│                                                                  │
+│ ● read  path: src/auth/session.ts                                │
+│ ✓ 128 lines of session code                                      │
+│ ● grep  pattern: login(, glob: src/**                            │
+│ ✓ 4 matches in 3 files                                           │
+│ → you: skip tests, go straight to the report                     │
+│  ⋯ reasoned 33 characters                                        │
+│✻ Subagent                                                        │
+│  Found three call sites: login, refresh, logout.                 │
+│────────────────────────────────────────────────────────────────  │
+│Esc back · PgUp scroll · s steer · k kill                         │
+╰──────────────────────────────────────────────────────────────────╯
+```
+
+### The words arrive as they are written
+
+The runner streams (`streamSimple`), so text appears token by token instead of
+one wall after a long silence. Thinking is streamed too, then collapsed to one
+dim line (`⋯ reasoned N characters`) so the log stays readable.
+
+### What the log keeps
+
+`src/agent-transcript.ts` is a small capped list: task, words, thinking, tool
+calls, tool results, your steers, notices, errors. Hard limits per agent —
+**300 entries, 2000 characters each**, oldest dropped first, with
+`… N earlier lines hidden` at the top so the screen never pretends the log is
+complete.
+
+### Keys in the chat
+
+| Key | Does |
+|---|---|
+| `↑` `↓` | scroll one line |
+| `PageUp` `PageDown` | scroll ten lines |
+| `Home` | jump to the oldest line |
+| `End` | follow new output again (the footer says `End follow` when you are scrolled up) |
+| `s` | steer this agent |
+| `k` | stop this agent |
+| `r` | run it again |
+| `Esc` | back to the roster |
+
+A retry, an approval wait or an error is visible in this screen too: the header
+says `retrying (2/10)`, a notice line counts down, and a waiting agent shows
+`? needs approval — answer in the main chat`.
+
+### Tests
+
+`test/agent-chat-view.test.ts` — 22 tests: the task block, streamed text joining
+one paragraph, collapsed reasoning, tool rows and failure marks, long results
+trimmed, steers, retry notices, the waiting message, the scroll window (top,
+bottom, clamped), fixed panel height, width fitting at 24/40/68/120, and an empty
+log.
 ## Environment
 
 | Variable | Effect |
 |---|---|
 | `QRONOS_HASHLINE=0` | disables `apply_patch` and numbered reads |
 | `QRONOS_LSP_PATH` | narrows where language servers are looked for (used by tests) |
+| `QRONOS_RETRY=0` | turns model retries off (see [retry.md](retry.md)) |
 
 Agents are not restricted by an env var on purpose: a caller asks for a schema
 per call, and a call without one behaves exactly as before.
@@ -160,7 +229,9 @@ per call, and a call without one behaves exactly as before.
   `checkAgainstSchema`) and 3 schema-type tests (a JSON *string* schema is
   parsed and still enforced; a broken schema fails the call instead of turning
   validation off).
-- `test/agent-hub.test.ts` — 24 tests: rows, icons, elapsed time, the
+- `test/agent-transcript.test.ts` — 19 tests: clipping, argument summaries, the
+  entry cap, hidden count, streamed append per turn.
+- `test/agent-hub.test.ts` — 30 tests: rows, icons, elapsed time, the
   "needs approval" wording, error lines, empty state, width clipping, selection
   clamping, word wrap, the summary line, and every key (`Esc` twice from the
   transcript, arrows, `k`, `s` + send, refusal to steer a finished agent, `r`,

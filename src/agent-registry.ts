@@ -12,6 +12,8 @@
 // as a live roster (Alt+A). Keeping the state separate means C can be a pure
 // renderer over `list()`.
 
+import { Transcript } from "./agent-transcript";
+
 export type AgentStatus = "queued" | "running" | "waiting-approval" | "done" | "failed" | "killed";
 
 export interface AgentStartInput {
@@ -29,6 +31,8 @@ export interface AgentStartInput {
   maxTurns?: number;
   /** Injectable clock, so tests are not timing-dependent. */
   now?: number;
+  /** The agent's own chat log; a fresh one is created when omitted. */
+  transcript?: Transcript;
 }
 
 export interface AgentRecord {
@@ -54,6 +58,10 @@ export interface AgentRecord {
   error?: string;
   /** Messages the user sent to this agent while it was running. */
   steering?: string[];
+  /** This agent's own chat: task, words, every tool, the result. */
+  transcript: Transcript;
+  /** Set while a failed request is waiting to be sent again. */
+  retrying?: { attempt: number; maxAttempts: number; delayMs: number; error: string };
 }
 
 export interface AgentFinishInput {
@@ -92,19 +100,33 @@ export class AgentRegistry {
       model: input.model,
       toolsUsed: [],
       steering: [],
+      transcript: input.transcript ?? new Transcript(),
     };
+    // Every agent's chat starts with the task the parent agent wrote, so the
+    // screen is never blank and the log explains itself.
+    record.transcript.push({ kind: "task", text: input.prompt });
     this.records.set(record.id, record);
     this.emit();
     return record;
   }
 
   /** Mark one turn finished and remember the tool it just used. */
-  progress(id: string, update: { turns?: number; tool?: string } = {}): AgentRecord | undefined {
+  progress(
+    id: string,
+    update: {
+      turns?: number;
+      tool?: string;
+      retry?: { attempt: number; maxAttempts: number; delayMs: number; error: string };
+      retryDone?: boolean;
+    } = {},
+  ): AgentRecord | undefined {
     const record = this.records.get(id);
     if (!record) return undefined;
     if (update.turns !== undefined) record.turns = update.turns;
     if (update.tool && !record.toolsUsed.includes(update.tool)) record.toolsUsed.push(update.tool);
     if (update.tool) record.lastTool = update.tool;
+    if (update.retry) record.retrying = update.retry;
+    if (update.retryDone) record.retrying = undefined;
     this.emit();
     return record;
   }

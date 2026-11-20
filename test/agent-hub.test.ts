@@ -192,14 +192,16 @@ describe("agent hub panel: keys", () => {
     expect(done.called).toBe(1);
   });
 
-  test("Escape from a transcript goes back to the list, not close", () => {
+  test("Enter opens the agent's own chat, Escape goes back, Escape again closes", () => {
     const { registry, panel, done } = build();
     seed(registry);
     panel.handleInput("\r");
-    expect(panel.mode).toBe("transcript");
+    expect(panel.mode).toBe("chat");
     panel.handleInput("\u001b");
     expect(panel.mode).toBe("list");
     expect(done.called).toBe(0);
+    panel.handleInput("\u001b");
+    expect(done.called).toBe(1);
   });
 
   test("arrows move the selection and stop at the ends", () => {
@@ -282,5 +284,94 @@ describe("agent hub panel: keys", () => {
     const before = renders();
     registry.progress(record.id, { turns: 2 });
     expect(renders()).toBe(before);
+  });
+});
+
+describe("agent hub panel: inside one agent's chat", () => {
+  const build = () => {
+    const registry = makeRegistry();
+    let renders = 0;
+    const panel = new AgentHubPanel({
+      registry,
+      theme: plainTheme,
+      done: () => {},
+      requestRender: () => renders++,
+      width: 68,
+      height: 24,
+      now: () => 0,
+    });
+    return { registry, panel };
+  };
+
+  test("the chat shows the task and what the agent did", () => {
+    const { registry, panel } = build();
+    const record = seed(registry);
+    registry.progress(record.id, { turns: 1 });
+    record.transcript.push({ kind: "tool-call", text: "read", tool: "read", args: "path: src/a.ts" });
+    record.transcript.push({ kind: "tool-result", text: "128 lines", tool: "read" });
+    record.transcript.appendAssistant("Found three call sites.", 1);
+
+    panel.handleInput("\r");
+    const text = panel.render(68).join("\n");
+    expect(text).toContain("Task from the main agent");
+    expect(text).toContain("● read  path: src/a.ts");
+    expect(text).toContain("✓ 128 lines");
+    expect(text).toContain("Found three call sites.");
+  });
+
+  test("streamed words appear without pressing anything", () => {
+    const { registry, panel } = build();
+    const record = seed(registry);
+    panel.handleInput("\r");
+    record.transcript.appendAssistant("one ", 1);
+    registry.progress(record.id, { turns: 1 });
+    expect(panel.render(68).join("\n")).toContain("one");
+    record.transcript.appendAssistant("two", 1);
+    registry.progress(record.id, { turns: 1 });
+    expect(panel.render(68).join("\n")).toContain("one two");
+  });
+
+  test("PageUp scrolls back and End follows again", () => {
+    const { registry, panel } = build();
+    const record = seed(registry);
+    for (let n = 1; n <= 60; n++) record.transcript.push({ kind: "assistant", text: `line ${n}`, turn: n });
+    panel.handleInput("\r");
+
+    panel.handleInput("\u001b[5~"); // pageUp
+    expect(panel.scrollBack).toBeGreaterThan(0);
+    expect(panel.render(68).join("\n")).toContain("End follow");
+
+    panel.handleInput("\u001b[F"); // end
+    expect(panel.scrollBack).toBe(0);
+  });
+
+  test("k in the chat stops that agent", () => {
+    const { registry, panel } = build();
+    const record = seed(registry);
+    panel.handleInput("\r");
+    panel.handleInput("k");
+    expect(registry.get(record.id)!.status).toBe("killed");
+  });
+
+  test("s in the chat steers that agent", () => {
+    const { registry, panel } = build();
+    const record = seed(registry);
+    registry.progress(record.id, { turns: 1 });
+    panel.handleInput("\r");
+    panel.handleInput("s");
+    for (const char of "faster") panel.handleInput(char);
+    panel.handleInput("\r");
+    expect(registry.get(record.id)!.steering).toEqual(["faster"]);
+  });
+
+  test("a chat swapped for another agent does not keep the old scroll", () => {
+    const { registry, panel } = build();
+    const first = seed(registry, { description: "first" });
+    seed(registry, { description: "second" });
+    for (let n = 1; n <= 60; n++) first.transcript.push({ kind: "assistant", text: `line ${n}`, turn: n });
+    panel.handleInput("\r");
+    panel.handleInput("\u001b[5~");
+    panel.handleInput("\u001b"); // back to the roster
+    expect(panel.scrollBack).toBe(0);
   });
 });

@@ -24,6 +24,7 @@ import {
   type HubLine,
   type HubLineStyle,
 } from "./agent-hub-view";
+import { buildChatLines, maxScroll, moveScroll, type ChatLine, type ChatLineStyle } from "./agent-chat-view";
 
 export interface CreateAgentHubOptions {
   registry: AgentRegistry;
@@ -32,6 +33,8 @@ export interface CreateAgentHubOptions {
 }
 
 const PANEL_WIDTH = 68;
+/** Height the overlay asks for: enough for a roster or a readable chat. */
+const PANEL_HEIGHT = 24;
 
 export function createAgentHubExtension(opts: CreateAgentHubOptions): InlineExtension {
   return {
@@ -51,8 +54,9 @@ export function createAgentHubExtension(opts: CreateAgentHubOptions): InlineExte
               done,
               requestRender: () => tui.requestRender?.(),
               width: opts.width ?? PANEL_WIDTH,
+              height: PANEL_HEIGHT,
             }),
-          { overlay: true, overlayOptions: { anchor: "center", width: opts.width ?? PANEL_WIDTH, maxHeight: 24 } },
+          { overlay: true, overlayOptions: { anchor: "center", width: opts.width ?? PANEL_WIDTH, maxHeight: PANEL_HEIGHT } },
         );
       };
 
@@ -79,6 +83,8 @@ export interface AgentHubPanelOptions {
   done: () => void;
   requestRender?: () => void;
   width?: number;
+  /** How many lines the overlay gives the panel, chat included. */
+  height?: number;
   now?: () => number;
 }
 
@@ -92,13 +98,18 @@ export class AgentHubPanel {
   private readonly done: () => void;
   private readonly requestRender: () => void;
   private readonly width: number;
+  /** Lines the overlay gives us; the chat window is sized from it. */
+  height: number;
   private readonly unsubscribe: () => void;
   private readonly now: () => number;
 
   selected = 0;
-  mode: "list" | "transcript" = "list";
+  /** "list" = the roster, "chat" = one agent's own conversation. */
+  mode: "list" | "chat" = "list";
   steering = "";
   steeringFor?: string;
+  /** Lines scrolled up from the bottom of a chat. 0 follows new output. */
+  scrollBack = 0;
 
   constructor(options: AgentHubPanelOptions) {
     this.registry = options.registry;
@@ -106,6 +117,7 @@ export class AgentHubPanel {
     this.done = options.done;
     this.requestRender = options.requestRender ?? (() => {});
     this.width = options.width ?? PANEL_WIDTH;
+    this.height = options.height ?? PANEL_HEIGHT;
     this.now = options.now ?? Date.now;
     this.unsubscribe = this.registry.subscribe(() => this.requestRender());
   }
@@ -118,12 +130,26 @@ export class AgentHubPanel {
 
   render(width: number): string[] {
     const panelWidth = Math.max(24, Math.min(this.width, width));
+    if (this.mode === "chat" && this.current()) {
+      // The chat gets the whole screen height the overlay allows, so a long
+      // answer can be read instead of squashed into a roster row.
+      const height = Math.max(6, this.height - 6);
+      const lines = buildChatLines({
+        record: this.current()!,
+        width: panelWidth,
+        height,
+        scrollBack: this.scrollBack,
+        now: this.now(),
+      });
+      const body = lines.map((line) => this.chatStyle(line, panelWidth));
+      return this.box(body, panelWidth);
+    }
     const state = {
       records: this.registry.list(),
       selected: Math.min(this.selected, Math.max(0, this.registry.list().length - 1)),
       width: panelWidth,
       now: this.now(),
-      transcriptFor: this.mode === "transcript" ? this.current() : undefined,
+      transcriptFor: undefined,
       steering: this.steeringFor ? this.steering : undefined,
     };
     const lines = buildHubLines(state);
@@ -162,12 +188,46 @@ export class AgentHubPanel {
     }
 
     if (matchesKey(data, "escape")) {
-      if (this.mode === "transcript") {
+      if (this.mode === "chat") {
         this.mode = "list";
+        this.scrollBack = 0;
         this.requestRender();
       } else {
         this.done();
       }
+      return;
+    }
+
+    if (this.mode === "chat") {
+      const record = this.current();
+      if (!record) {
+        this.mode = "list";
+        return;
+      }
+      const limit = maxScroll(record, Math.max(24, this.width), Math.max(6, this.height - 6));
+      if (matchesKey(data, "up")) {
+        this.scrollBack = moveScroll(this.scrollBack, limit, 1);
+      } else if (matchesKey(data, "down")) {
+        this.scrollBack = moveScroll(this.scrollBack, limit, -1);
+      } else if (matchesKey(data, "pageUp")) {
+        this.scrollBack = moveScroll(this.scrollBack, limit, 10);
+      } else if (matchesKey(data, "pageDown")) {
+        this.scrollBack = moveScroll(this.scrollBack, limit, -10);
+      } else if (matchesKey(data, "home")) {
+        this.scrollBack = limit;
+      } else if (matchesKey(data, "end")) {
+        this.scrollBack = 0;
+      } else if (matchesKey(data, "k")) {
+        this.registry.abort(record.id);
+      } else if (matchesKey(data, "r")) {
+        this.registry.revive(record.id);
+      } else if (matchesKey(data, "s")) {
+        if (record.status === "running" || record.status === "waiting-approval") {
+          this.steeringFor = record.id;
+          this.steering = "";
+        }
+      }
+      this.requestRender();
       return;
     }
 
@@ -189,7 +249,10 @@ export class AgentHubPanel {
     }
 
     if (matchesKey(data, "return")) {
-      this.mode = this.mode === "list" ? "transcript" : "list";
+      if (this.current()) {
+        this.mode = "chat";
+        this.scrollBack = 0;
+      }
       this.requestRender();
       return;
     }
@@ -239,6 +302,46 @@ export class AgentHubPanel {
       // A theme without this token must not break the panel.
       return text;
     }
+  }
+
+  private chatStyle(line: ChatLine, width: number): string {
+    const theme = this.theme as any;
+    let text = line.text;
+    try {
+      switch (line.style as ChatLineStyle) {
+        case "header":
+          text = theme.fg("accent", line.text);
+          break;
+        case "label":
+          text = theme.fg("accent", line.text);
+          break;
+        case "rule":
+        case "hint":
+        case "dim":
+          text = theme.fg("dim", line.text);
+          break;
+        case "tool-ok":
+          text = theme.fg("success", line.text);
+          break;
+        case "tool-fail":
+          text = theme.fg("error", line.text);
+          break;
+        case "error":
+          text = theme.fg("error", line.text);
+          break;
+        case "steer":
+          text = theme.fg("warning", line.text);
+          break;
+        case "notice":
+          text = theme.fg("warning", line.text);
+          break;
+        default:
+          break;
+      }
+    } catch {
+      text = line.text;
+    }
+    return truncateToWidth(text, width, "…", false);
   }
 
   private style(line: HubLine, width: number): string {

@@ -9,7 +9,7 @@
 
 import type { ExtensionAPI, ExtensionToolContext, InlineExtension, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { Api, Message, Model, Tool } from "@earendil-works/pi-ai";
-import { completeSimple } from "@earendil-works/pi-ai/compat";
+import { completeSimple, streamSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { homedir } from "node:os";
 import { discoverSubagents, resolveSubagent, SUBAGENT_READ_ONLY_TOOLS, type AgentDefinition } from "./agent-discovery";
@@ -27,6 +27,8 @@ import { scanSubagentOutput, wrapSubagentReport } from "./agent-scan";
 import { getExecutionMode } from "./execution-modes";
 import { maxConcurrentSubagents } from "./agent-tools";
 import { CLI_VERSION } from "./version";
+import { formatArgs, Transcript } from "./agent-transcript";
+import { formatRetryLine, retryPolicyFromEnv, withRetry, type RetryInfo } from "./retry";
 
 export const AGENT_TOOL_NAME = "agent";
 
@@ -187,6 +189,8 @@ export interface SubagentRunnerParams {
   outputSchema?: unknown;
   /** Messages the user sent while the agent was running. Drained per turn. */
   takeSteering?: () => string[];
+  /** Where this agent's own chat log is written. */
+  transcript?: Transcript;
 }
 
 /** What a schema-checked answer produced. */
@@ -201,6 +205,10 @@ export interface SubagentProgressEvent {
   turns: number;
   tool?: string;
   waitingForApproval?: boolean;
+  /** Set while a failed request is waiting to be sent again. */
+  retry?: RetryInfo;
+  /** Cleared once a retry succeeded. */
+  retryDone?: boolean;
 }
 
 export interface SubagentTurnResult {
@@ -281,6 +289,11 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     },
   ];
 
+  // The Hub opens this log as the agent's own chat. Seeded with the task the
+  // parent agent wrote, so a subagent's screen starts with its instructions.
+  const transcript = params.transcript ?? new Transcript();
+  if (transcript.size === 0) transcript.push({ kind: "task", text: prompt });
+
   let turns = 0;
   const toolsUsed = new Set<string>();
   let finalOutput = "";
@@ -328,15 +341,19 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     // boundary: a request already in flight cannot be edited.
     const steering = params.takeSteering?.() ?? [];
     for (const message of steering) {
+      transcript.push({ kind: "steer", text: message, turn: turns });
       messages.push({
         role: "user",
         content: [{ type: "text", text: `[message from the user while you were working]\n${message}` }],
         timestamp: Date.now(),
       });
     }
-    let response: any;
-    try {
-      response = await completeSimple(
+    // One request, streamed. The stream is what feeds the agent's own chat:
+    // text arrives token by token, so the Hub shows words as they are written
+    // instead of a silent wait followed by a wall of text.
+    let produced = false;
+    const requestOnce = async () => {
+      const stream = streamSimple(
         currentModel as Model<any>,
         {
           systemPrompt,
@@ -349,9 +366,39 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
           signal: ctx.signal,
         },
       );
-    } catch (err: any) {
-      // If a requested model (e.g. paid tier or quota limit) threw an error,
-      // automatically fall back and retry with the working parent session model!
+      for await (const event of stream) {
+        if (event.type === "text_delta") {
+          produced = true;
+          transcript.appendAssistant(event.delta, turns);
+        } else if (event.type === "thinking_delta") {
+          transcript.appendThinking(event.delta, turns);
+        } else if (event.type === "toolcall_delta") {
+          produced = true;
+        }
+      }
+      return await stream.result();
+    };
+
+    const attempt = await withRetry(requestOnce, {
+      policy: retryPolicyFromEnv(),
+      signal: ctx.signal,
+      // A response that says "error" is a failure, not an answer.
+      failureOf: (value: any) =>
+        value?.stopReason === "error" ? value.errorMessage || "Model request failed" : undefined,
+      // Never replay a request that already streamed text or a tool call.
+      canRetry: () => !produced,
+      onRetry: (info) => {
+        const line = formatRetryLine(info);
+        transcript.push({ kind: "notice", text: line, turn: turns });
+        params.onEvent?.({ turns, retry: info });
+      },
+    });
+
+    if (!attempt.ok) {
+      const failureText = attempt.aborted ? "cancelled while waiting to retry" : attempt.error;
+      transcript.push({ kind: "error", text: `Model request failed: ${failureText}`, turn: turns });
+      // Only after every retry is used up do we try the parent's model, so a
+      // temporary hiccup never silently changes which model answers.
       if (!hasFallenBackToParent && currentModel !== ctx.model) {
         hasFallenBackToParent = true;
         currentModel = ctx.model;
@@ -365,41 +412,20 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
             "x-qronos-client": "cli",
           };
         } catch {}
+        transcript.push({ kind: "notice", text: "Trying the session model instead.", turn: turns });
         turns--;
         continue;
       }
+      params.onEvent?.({ turns, retryDone: true });
       return {
-        output: `Subagent encountered model completion error: ${err?.message || String(err)}`,
+        output: `Subagent encountered model completion error: ${failureText}`,
         turns,
         toolsUsed: Array.from(toolsUsed),
       };
     }
 
-    if (response?.stopReason === "error") {
-      // If requested model returned an error (e.g. tier/quota error),
-      // automatically fall back and retry with the working parent session model!
-      if (!hasFallenBackToParent && currentModel !== ctx.model) {
-        hasFallenBackToParent = true;
-        currentModel = ctx.model;
-        try {
-          auth = currentModel ? ((await ctx.modelRegistry.getApiKeyAndHeaders(currentModel)) as RequestAuth) : {};
-          if (auth?.apiKey) apiKey = auth.apiKey;
-          headers = {
-            ...(auth.headers || {}),
-            ...modelHeaders(ctx.model),
-            "x-client-version": CLI_VERSION,
-            "x-qronos-client": "cli",
-          };
-        } catch {}
-        turns--;
-        continue;
-      }
-      return {
-        output: `Subagent failed (${response.stopReason}): ${response.errorMessage || "Model request failed"}`,
-        turns,
-        toolsUsed: Array.from(toolsUsed),
-      };
-    }
+    params.onEvent?.({ turns, retryDone: true });
+    const response: any = attempt.value;
 
     messages.push(response);
 
@@ -460,6 +486,14 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
         continue;
       }
 
+      transcript.push({
+        kind: "tool-call",
+        text: toolName,
+        tool: toolName,
+        args: formatArgs(call.arguments),
+        turn: turns,
+      });
+
       // Execute tool via ExtensionToolContext
       try {
         const outcome = await ctx.executeTool(toolName, call.arguments);
@@ -471,6 +505,15 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
           params.onEvent?.({ turns, waitingForApproval: false });
         }
 
+        const firstPart: any = toolResult?.content?.[0];
+        const resultText = (typeof firstPart?.text === "string" ? firstPart.text : undefined) ?? String(toolResult ?? "done");
+        transcript.push({
+          kind: "tool-result",
+          text: firstLine(resultText),
+          tool: toolName,
+          failed: Boolean(outcome.isError || toolResult?.isError),
+          turn: turns,
+        });
         messages.push({
           role: "toolResult",
           toolCallId: call.id,
@@ -480,6 +523,13 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
           timestamp: Date.now(),
         });
       } catch (err: any) {
+        transcript.push({
+          kind: "tool-result",
+          text: `failed: ${firstLine(err?.message || String(err))}`,
+          tool: toolName,
+          failed: true,
+          turn: turns,
+        });
         messages.push({
           role: "toolResult",
           toolCallId: call.id,
@@ -661,6 +711,7 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
         parentCanWrite: canParentWrite(input.ctx),
         outputSchema: input.outputSchema,
         takeSteering: () => registry.takeSteering(record.id),
+        transcript: record.transcript,
         onEvent: (event) => {
           if (event.waitingForApproval) registry.waitForApproval(record.id);
           else registry.progress(record.id, { turns: event.turns, tool: event.tool });
@@ -921,4 +972,11 @@ export function schemaNote(out: SubagentTurnResult): string[] {
     ];
   }
   return [];
+}
+
+/** The first line of tool output: one line per tool row on screen. */
+function firstLine(text: string, limit = 160): string {
+  const line = (text ?? "").split("\n").find((part) => part.trim() !== "") ?? "";
+  const trimmed = line.trim();
+  return trimmed.length > limit ? `${trimmed.slice(0, limit)}…` : trimmed;
 }
