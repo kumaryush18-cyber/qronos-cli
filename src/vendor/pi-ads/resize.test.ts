@@ -85,7 +85,7 @@ for (const [name, widgetId, show] of [
       expect(Math.max(...wide.map(visibleWidth))).toBeLessThanOrEqual(160);
 
       const narrow = drawAt(content, 110);
-      expect(narrow.length).toBe(4);
+      expect(narrow.length).toBe(5);
       expect(Math.max(...narrow.map(visibleWidth))).toBeLessThanOrEqual(110);
       expect(new Set(narrow.map(visibleWidth)).size).toBe(1); // top, rows, bottom all the same width
     });
@@ -104,7 +104,7 @@ for (const [name, widgetId, show] of [
       const { ctx, widgets } = fakeCtx();
       await fetchedAt160(() => show(ctx));
       const content = widgets.get(widgetId);
-      expect(drawAt(content, 100).length).toBe(4); // framed card at 100
+      expect(drawAt(content, 100).length).toBe(5); // framed card at 100
       const plain = drawAt(content, config.adMinColumns - 1);
       expect(plain.length).toBe(1);
       expect(plain[0]).not.toContain("╭");
@@ -144,7 +144,7 @@ describe("a fetched ad with wide characters stays inside pi's width", () => {
     await createBannerRenderer().render({ ...deps, fetchImpl: cjkFetch }, ctx, config);
 
     const lines = drawAt(widgets.get(BANNER_WIDGET_ID), 80);
-    expect(lines.length).toBeGreaterThanOrEqual(4);
+    expect(lines.length).toBe(5);
     expect(Math.max(...lines.map(piVisibleWidth))).toBeLessThanOrEqual(80);
     expect(new Set(lines.map(piVisibleWidth)).size).toBe(1);
   });
