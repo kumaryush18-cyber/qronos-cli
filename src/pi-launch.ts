@@ -26,6 +26,8 @@ import { createDocsToolExtension, DOCS_TOOL_NAME } from "./docs-tool";
 import { createTodoToolExtension, TODO_TOOL_NAME } from "./todo-tool";
 import { createExitPlanToolExtension, EXIT_PLAN_TOOL_NAME, ENTER_PLAN_TOOL_NAME } from "./exit-plan-tool";
 import { createAgentToolExtension, AGENT_TOOL_NAME } from "./agent-tool";
+import { AgentRegistry } from "./agent-registry";
+import { createAgentHubExtension } from "./agent-hub";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
@@ -353,7 +355,12 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // mode (see exit-plan-tool.ts), so it cannot be used to skip review.
   const exitPlanToolExtension: InlineExtension = createExitPlanToolExtension({});
   // Tier 2 item 7: Subagent tool with Option B read-only start and plan approval gate.
-  const agentToolExtension: InlineExtension = createAgentToolExtension();
+  // One registry for the session: the tool writes it, the Hub panel reads it.
+  const agentRegistry = new AgentRegistry();
+  const agentToolExtension: InlineExtension = createAgentToolExtension({ registry: agentRegistry });
+  // Agent Hub: floating roster on Alt+A or /agents. It only mirrors the
+  // registry — approvals stay in the main chat.
+  const agentHubExtension = createAgentHubExtension({ registry: agentRegistry }) as InlineExtension;
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
   // Hashline edits (ported from can1357/oh-my-pi): `apply_patch` edits by line
@@ -434,6 +441,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     todoToolExtension,
     exitPlanToolExtension,
     agentToolExtension,
+    agentHubExtension,
     fileCompletionExtension,
     hooksExtension,
     toolAliasesExtension,

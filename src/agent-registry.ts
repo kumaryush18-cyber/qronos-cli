@@ -52,6 +52,8 @@ export interface AgentRecord {
   outputChars?: number;
   /** Set when status is failed or killed. */
   error?: string;
+  /** Messages the user sent to this agent while it was running. */
+  steering?: string[];
 }
 
 export interface AgentFinishInput {
@@ -68,6 +70,10 @@ export type RegistryListener = (records: readonly AgentRecord[]) => void;
 export class AgentRegistry {
   private readonly records = new Map<string, AgentRecord>();
   private readonly listeners = new Set<RegistryListener>();
+  /** How to stop one agent, registered by whoever started it. */
+  private readonly aborts = new Map<string, () => void>();
+  /** How to run an agent again, registered by whoever started it. */
+  private readonly revivers = new Map<string, () => void>();
   private nextIndex = 1;
 
   start(input: AgentStartInput): AgentRecord {
@@ -85,6 +91,7 @@ export class AgentRegistry {
       depth: input.depth ?? 1,
       model: input.model,
       toolsUsed: [],
+      steering: [],
     };
     this.records.set(record.id, record);
     this.emit();
@@ -127,6 +134,72 @@ export class AgentRegistry {
     return record;
   }
 
+  /** Register how to stop this agent, so the Hub's `k` can work. */
+  setAbort(id: string, abort: () => void): void {
+    this.aborts.set(id, abort);
+  }
+
+  /** Register how to run this agent again, so the Hub's `r` can work. */
+  setReviver(id: string, revive: () => void): void {
+    this.revivers.set(id, revive);
+  }
+
+  /** Stop one agent. Returns false when it was already finished. */
+  abort(id: string, reason = "stopped by you", now = Date.now()): boolean {
+    const record = this.records.get(id);
+    if (!record) return false;
+    if (record.status !== "running" && record.status !== "waiting-approval" && record.status !== "queued") {
+      return false;
+    }
+    try {
+      this.aborts.get(id)?.();
+    } catch {
+      // A broken abort handler must still leave the record consistent.
+    }
+    this.aborts.delete(id);
+    record.status = "killed";
+    record.endedAt = now;
+    record.error = reason;
+    this.emit();
+    return true;
+  }
+
+  /** Run an agent again with the same task. Returns false when it cannot. */
+  revive(id: string): boolean {
+    const revive = this.revivers.get(id);
+    if (!revive) return false;
+    try {
+      revive();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Send a message to a running agent. It is delivered at the next turn
+   * boundary, because a model request already in flight cannot be edited.
+   */
+  steer(id: string, text: string): boolean {
+    const record = this.records.get(id);
+    if (!record) return false;
+    if (record.status !== "running" && record.status !== "waiting-approval") return false;
+    const message = text.trim();
+    if (message === "") return false;
+    record.steering = [...(record.steering ?? []), message];
+    this.emit();
+    return true;
+  }
+
+  /** Take the queued steering messages, so each one is delivered once. */
+  takeSteering(id: string): string[] {
+    const record = this.records.get(id);
+    if (!record?.steering?.length) return [];
+    const messages = record.steering;
+    record.steering = [];
+    return messages;
+  }
+
   /** Kill any agent that is still running; used on session shutdown. */
   killAll(reason = "session ended", now = Date.now()): AgentRecord[] {
     const killed: AgentRecord[] = [];
@@ -156,6 +229,8 @@ export class AgentRegistry {
 
   clear(): void {
     this.records.clear();
+    this.aborts.clear();
+    this.revivers.clear();
     this.nextIndex = 1;
     this.emit();
   }

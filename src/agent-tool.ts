@@ -185,6 +185,8 @@ export interface SubagentRunnerParams {
   onEvent?: (event: SubagentProgressEvent) => void;
   /** When set, the answer must be JSON matching this schema. */
   outputSchema?: unknown;
+  /** Messages the user sent while the agent was running. Drained per turn. */
+  takeSteering?: () => string[];
 }
 
 /** What a schema-checked answer produced. */
@@ -321,6 +323,17 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
   while (turns < maxTurns) {
     turns++;
     params.onEvent?.({ turns });
+
+    // A message from the user (Agent Hub, `s`) is delivered at the turn
+    // boundary: a request already in flight cannot be edited.
+    const steering = params.takeSteering?.() ?? [];
+    for (const message of steering) {
+      messages.push({
+        role: "user",
+        content: [{ type: "text", text: `[message from the user while you were working]\n${message}` }],
+        timestamp: Date.now(),
+      });
+    }
     let response: any;
     try {
       response = await completeSimple(
@@ -614,6 +627,7 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
     model?: string;
     outputSchema?: unknown;
   }): Promise<{ record: AgentRecord; out: SubagentTurnResult }> => {
+    const controller = new AbortController();
     const record = registry.start({
       description: input.description,
       prompt: input.prompt,
@@ -629,6 +643,11 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
         // A status line is nice to have; losing it must not fail the task.
       }
     };
+    registry.setAbort(record.id, () => controller.abort());
+    registry.setReviver(record.id, () => {
+      // Re-run the same task; the old record stays as history.
+      void runTracked(input).catch(() => {});
+    });
     publish();
     try {
       const out = await runner({
@@ -641,6 +660,7 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
         parentTools: currentToolNames(input.ctx),
         parentCanWrite: canParentWrite(input.ctx),
         outputSchema: input.outputSchema,
+        takeSteering: () => registry.takeSteering(record.id),
         onEvent: (event) => {
           if (event.waitingForApproval) registry.waitForApproval(record.id);
           else registry.progress(record.id, { turns: event.turns, tool: event.tool });

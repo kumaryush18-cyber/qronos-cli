@@ -91,9 +91,13 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // app.interrupt binding; it only records submitted prompts for /recall. The
     // count is unchanged at twenty-one, and the extension still registers no
     // tool and makes no model call.
+    // 2026-11-22: to twenty-nine with qronos-agent-hub: the Agent Hub panel that
+    // shows the subagent roster on Alt+A or /agents (part C). It reads the same
+    // registry as qronos-agent, registers no tool and makes no model call.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "qronos-ads",
+        "qronos-agent-hub",
         "qronos-buy-tool",
         "qronos-commands",
         "qronos-docs-tool",
