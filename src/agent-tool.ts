@@ -13,6 +13,7 @@ import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { homedir } from "node:os";
 import { discoverSubagents, resolveSubagent, SUBAGENT_READ_ONLY_TOOLS, type AgentDefinition } from "./agent-discovery";
+import { AgentRegistry, formatAgentSummary, type AgentRecord } from "./agent-registry";
 import { maxSubagentDepth, resolveSubagentTools } from "./agent-tools";
 import { scanSubagentOutput, wrapSubagentReport } from "./agent-scan";
 import { getExecutionMode } from "./execution-modes";
@@ -165,6 +166,15 @@ export interface SubagentRunnerParams {
   depth?: number;
   /** Model id from the call or the definition, overriding the parent's model. */
   model?: string;
+  /** Live progress for the Agent Hub registry; never affects the result. */
+  onEvent?: (event: SubagentProgressEvent) => void;
+}
+
+/** A turn boundary inside a subagent, reported to the registry. */
+export interface SubagentProgressEvent {
+  turns: number;
+  tool?: string;
+  waitingForApproval?: boolean;
 }
 
 export interface SubagentTurnResult {
@@ -278,6 +288,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
 
   while (turns < maxTurns) {
     turns++;
+    params.onEvent?.({ turns });
     let response: any;
     try {
       response = await completeSimple(
@@ -407,10 +418,12 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
       // Execute tool via ExtensionToolContext
       try {
         const outcome = await ctx.executeTool(toolName, call.arguments);
+        params.onEvent?.({ turns, tool: toolName });
         const toolResult = outcome.result;
 
         if (toolName === "exit_plan_mode" && (toolResult?.details as { ok?: boolean } | undefined)?.ok) {
           planApproved = true;
+          params.onEvent?.({ turns, waitingForApproval: false });
         }
 
         messages.push({
@@ -514,11 +527,73 @@ function canParentWrite(ctx: ExtensionToolContext): boolean {
 export interface CreateAgentToolOptions {
   runner?: SubagentRunner;
   userHomeDir?: string;
+  /** Shared session registry; defaults to one owned by this extension. */
+  registry?: AgentRegistry;
 }
 
 export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): InlineExtension {
   const runner = opts.runner ?? defaultSubagentRunner;
   const userHome = opts.userHomeDir ?? homedir();
+  const registry = opts.registry ?? new AgentRegistry();
+
+  /**
+   * Run one subagent while keeping the Hub registry honest: it always leaves a
+   * final state, even when the runner throws or the turn budget runs out.
+   */
+  const runTracked = async (input: {
+    agentDef: AgentDefinition;
+    prompt: string;
+    description: string;
+    cwd: string;
+    ctx: ExtensionToolContext;
+    model?: string;
+  }): Promise<{ record: AgentRecord; out: SubagentTurnResult }> => {
+    const record = registry.start({
+      description: input.description,
+      prompt: input.prompt,
+      type: input.agentDef.name,
+      model: input.model,
+      maxTurns: SUBAGENT_MAX_TURNS,
+    });
+    const publish = () => {
+      const text = formatAgentSummary(registry.list());
+      try {
+        input.ctx.ui?.setStatus?.("qronos-agents", text || undefined);
+      } catch {
+        // A status line is nice to have; losing it must not fail the task.
+      }
+    };
+    publish();
+    try {
+      const out = await runner({
+        agentDef: input.agentDef,
+        prompt: input.prompt,
+        description: input.description,
+        cwd: input.cwd,
+        ctx: input.ctx,
+        model: input.model,
+        parentTools: currentToolNames(input.ctx),
+        parentCanWrite: canParentWrite(input.ctx),
+        onEvent: (event) => {
+          if (event.waitingForApproval) registry.waitForApproval(record.id);
+          else registry.progress(record.id, { turns: event.turns, tool: event.tool });
+          publish();
+        },
+      });
+      registry.finish(record.id, {
+        status: "done",
+        turns: out.turns,
+        toolsUsed: out.toolsUsed,
+        outputChars: out.output.length,
+      });
+      publish();
+      return { record, out };
+    } catch (error: any) {
+      registry.finish(record.id, { status: "failed", error: error?.message || String(error) });
+      publish();
+      throw error;
+    }
+  };
 
   return {
     name: "qronos-agent",
@@ -565,15 +640,13 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
               async (task) => {
                 const def = resolveSubagent(task.subagent_type, projectRoot, userHome);
                 try {
-                  const out = await runner({
+                  const { out } = await runTracked({
                     agentDef: def,
                     prompt: task.prompt,
                     description: task.description,
                     cwd: projectRoot,
                     ctx,
                     model: params.model,
-                    parentTools: currentToolNames(ctx),
-                    parentCanWrite: canParentWrite(ctx),
                   });
                   return { def, task, out, error: undefined as string | undefined };
                 } catch (err: any) {
@@ -620,15 +693,13 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
 
           ctx.ui?.notify?.(`⚡ Running subagent [${agentDef.name}]: ${params.description}`, "info");
 
-          const result = await runner({
+          const { out: result } = await runTracked({
             agentDef,
             prompt: params.prompt,
             description: params.description,
             cwd: projectRoot,
             ctx,
             model: params.model,
-            parentTools: currentToolNames(ctx),
-            parentCanWrite: canParentWrite(ctx),
           });
 
           const summary = [

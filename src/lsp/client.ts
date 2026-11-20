@@ -79,6 +79,9 @@ export class LspClient {
   private buffer = "";
   private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private readonly diagnostics = new Map<string, unknown[]>();
+  /** How many times the server published for a file, so a caller can tell
+   * "an empty answer arrived" from "an answer arrived earlier". */
+  private readonly diagnosticVersions = new Map<string, number>();
   private readonly notificationHandlers: ((message: JsonRpcMessage) => void)[] = [];
   private disposed = false;
 
@@ -161,7 +164,10 @@ export class LspClient {
     // Server -> client notifications we care about.
     if (message.method === "textDocument/publishDiagnostics") {
       const params = message.params as { uri?: string; diagnostics?: unknown[] } | undefined;
-      if (params?.uri) this.diagnostics.set(params.uri, params.diagnostics ?? []);
+      if (params?.uri) {
+        this.diagnostics.set(params.uri, params.diagnostics ?? []);
+        this.diagnosticVersions.set(params.uri, (this.diagnosticVersions.get(params.uri) ?? 0) + 1);
+      }
     }
     if (message.id !== undefined && message.method) {
       // A server request (e.g. workspace/configuration). Answer with null so the
@@ -195,6 +201,28 @@ export class LspClient {
 
   notify(method: string, params: unknown): void {
     this.write({ jsonrpc: "2.0", method, params });
+  }
+
+  /** True once the server has published for this file, even if the list is empty. */
+  hasPublishedDiagnostics(uri: string): boolean {
+    return this.diagnostics.has(uri);
+  }
+
+  /**
+   * Forget the last published diagnostics for a file.
+   *
+   * Called when a fresh document is opened or changed: the old answer describes
+   * the old content, and returning it would report "no problems" for a file we
+   * just made broken.
+   */
+  clearDiagnostics(uri: string): void {
+    this.diagnostics.delete(uri);
+    this.diagnosticVersions.delete(uri);
+  }
+
+  /** Number of publishes the server has made for this file. */
+  publishedVersion(uri: string): number {
+    return this.diagnosticVersions.get(uri) ?? 0;
   }
 
   outsideDiagnostics(uri: string): unknown[] {

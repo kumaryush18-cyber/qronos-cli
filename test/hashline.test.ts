@@ -2,13 +2,13 @@
 // cover the failure paths as hard as the happy path: a stale tag, a line range
 // past the end, two overlapping ranges, and a patch that changes nothing.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyOps, splitLines, summarize } from "../src/hashline/apply";
 import { parsePatch, PatchParseError, unescapeBody } from "../src/hashline/parse";
 import { countLines, fileTag, numberLines, TagStore } from "../src/hashline/tag";
-import { runPatch } from "../src/hashline/tool";
+import { createPatchToolExtension, fileKey, runPatch } from "../src/hashline/tool";
 
 const SAMPLE = ["line one", "line two", "line three", "line four", "line five"].join("\n") + "\n";
 
@@ -336,5 +336,122 @@ PUT 1.=1:
     );
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("disk full");
+  });
+});
+
+describe("path keys (same file, different spelling)", () => {
+  function setup() {
+    const dir = mkdtempSync(join(tmpdir(), "qronos-key-"));
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "a.ts"), SAMPLE, "utf8");
+    return { dir, store: new TagStore() };
+  }
+
+  test("fileKey makes an absolute and a relative path agree", () => {
+    const { dir } = setup();
+    expect(fileKey(dir, join(dir, "src", "a.ts"))).toBe("src/a.ts");
+    expect(fileKey(dir, "./src/a.ts")).toBe("src/a.ts");
+    expect(fileKey(dir, "src/a.ts")).toBe("src/a.ts");
+  });
+
+  test("a file outside the working directory keeps its absolute key", () => {
+    const key = fileKey("/tmp/project", "/elsewhere/b.ts");
+    expect(key.startsWith("/") || key.startsWith("C:")).toBe(true);
+    expect(key.endsWith("b.ts")).toBe(true);
+  });
+
+  test("a read recorded by absolute path can be patched by relative path", async () => {
+    const { dir, store } = setup();
+    const absolute = join(dir, "src", "a.ts");
+    // This is what the read hook now stores.
+    store.record(fileKey(dir, absolute), SAMPLE, 1, countLines(SAMPLE));
+    const tag = store.get("src/a.ts")!.tag;
+
+    const result = await runPatch(
+      `*** Begin Patch
+[src/a.ts#${tag}]
+PUT 2.=2:
++line TWO
+*** End Patch`,
+      { store, cwd: () => dir },
+    );
+
+    expect(result.isError).toBeFalsy();
+    expect(readFileSync(absolute, "utf8")).toContain("line TWO");
+  });
+
+  test("a real stale tag is still reported as stale, not as unseen", async () => {
+    const { dir, store } = setup();
+    const absolute = join(dir, "src", "a.ts");
+    store.record(fileKey(dir, absolute), SAMPLE, 1, countLines(SAMPLE));
+    const tag = store.get("src/a.ts")!.tag;
+    writeFileSync(absolute, "line one\nline changed\n", "utf8");
+
+    const result = await runPatch(
+      `*** Begin Patch
+[src/a.ts#${tag}]
+PUT 2.=2:
++line TWO
+*** End Patch`,
+      { store, cwd: () => dir },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("changed since it was read");
+  });
+});
+
+describe("read hook uses the session folder", () => {
+  test("a read in another folder is tagged from that folder, not the process one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "qronos-readhook-"));
+    const content = "first\nsecond\nthird\n";
+    writeFileSync(join(dir, "a.ts"), content, "utf8");
+
+    let handler: any;
+    let registered: any;
+    const pi = {
+      on: (name: string, fn: any) => {
+        if (name === "tool_result") handler = fn;
+        return () => {};
+      },
+      registerTool: (tool: any) => {
+        registered = tool;
+      },
+    } as any;
+
+    createPatchToolExtension({ numberReads: true })!(pi);
+    expect(handler).toBeDefined();
+
+    const result = await handler(
+      {
+        toolName: "read",
+        isError: false,
+        input: { path: "a.ts" },
+        content: [{ type: "text", text: "first\nsecond\nthird" }],
+      },
+      { cwd: dir },
+    );
+
+    expect(result.content[0].text).toStartWith("[a.ts#");
+    expect(result.content[0].text).toContain("1| first");
+    expect(result.content[0].text).toContain("3| third");
+
+    // The tag must be the tag of the file in that folder.
+    const tag = /#([0-9a-f]{4})\]/.exec(result.content[0].text)![1];
+    expect(tag).toBe(fileTag(content));
+
+    // The tool shares the hook's tag store, so the tag it showed must be accepted.
+    const outcome = await registered.execute(
+      "call-1",
+      { patch: `*** Begin Patch\n[a.ts#${tag}]\nPUT 2.=2:\n+SECOND\n*** End Patch` },
+      undefined,
+      undefined,
+      { cwd: dir, executeTool: async (name: string, args: any) => {
+        if (name === "write") writeFileSync(args.path, args.content, "utf8");
+        return { result: { content: [{ type: "text", text: "ok" }] }, isError: false };
+      } } as any,
+    );
+    expect(outcome.isError).toBeFalsy();
+    expect(readFileSync(join(dir, "a.ts"), "utf8")).toBe("first\nSECOND\nthird\n");
   });
 });

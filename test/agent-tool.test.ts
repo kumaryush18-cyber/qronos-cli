@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
+import { AgentRegistry } from "../src/agent-registry";
 import {
   AGENT_TOOL_NAME,
   createAgentToolExtension,
@@ -236,5 +237,101 @@ describe("Option B: subagent output is capped", () => {
     expect(out.length).toBeLessThan(huge.length);
     expect(out).toContain("subagent output truncated");
     expect(out.startsWith("y")).toBe(true);
+  });
+});
+
+describe("agent registry wiring (Agent Hub part A)", () => {
+  const build = (runner: any, registry: AgentRegistry) => {
+    let tool: any = null;
+    const statuses: Array<[string, string | undefined]> = [];
+    const pi = { registerTool: (t: any) => (tool = t) } as unknown as ExtensionAPI;
+    (createAgentToolExtension({ runner, registry }) as any).factory(pi);
+    const ctx = {
+      cwd: "/test/project",
+      ui: {
+        notify: () => {},
+        setStatus: (key: string, text?: string) => statuses.push([key, text]),
+      },
+    } as unknown as ExtensionToolContext;
+    return { tool, ctx, statuses };
+  };
+
+  test("a successful subagent is registered, then marked done", async () => {
+    const registry = new AgentRegistry();
+    const runner = async (params: any) => {
+      params.onEvent?.({ turns: 1, tool: "read" });
+      params.onEvent?.({ turns: 2, tool: "grep" });
+      return { output: "found it", turns: 2, toolsUsed: ["read", "grep"] };
+    };
+    const { tool, ctx } = build(runner, registry);
+
+    await tool.execute("c1", { description: "find auth", prompt: "go", subagent_type: "Explore" }, undefined, undefined, ctx);
+
+    const [record] = registry.list();
+    expect(record.description).toBe("find auth");
+    expect(record.type).toBe("Explore");
+    expect(record.status).toBe("done");
+    expect(record.turns).toBe(2);
+    expect(record.toolsUsed).toEqual(["read", "grep"]);
+    expect(record.outputChars).toBe("found it".length);
+  });
+
+  test("a throwing runner leaves the agent marked failed, and the error still reaches the model", async () => {
+    const registry = new AgentRegistry();
+    const runner = async () => {
+      throw new Error("model went away");
+    };
+    const { tool, ctx } = build(runner, registry);
+
+    await expect(
+      tool.execute("c1", { description: "boom", prompt: "go" }, undefined, undefined, ctx),
+    ).rejects.toThrow("model went away");
+
+    const [record] = registry.list();
+    expect(record.status).toBe("failed");
+    expect(record.error).toBe("model went away");
+  });
+
+  test("the footer status line follows the registry", async () => {
+    const registry = new AgentRegistry();
+    const runner = async (params: any) => {
+      params.onEvent?.({ turns: 1 });
+      return { output: "ok", turns: 1, toolsUsed: [] };
+    };
+    const { tool, ctx, statuses } = build(runner, registry);
+
+    await tool.execute("c1", { description: "status test", prompt: "go" }, undefined, undefined, ctx);
+
+    const texts = statuses.filter(([key]) => key === "qronos-agents").map(([, text]) => text);
+    expect(texts[0]).toContain("1 agent");
+    expect(texts.at(-1)).toContain("done");
+  });
+
+  test("fan-out registers one agent per task", async () => {
+    const registry = new AgentRegistry();
+    const runner = async (params: any) => {
+      params.onEvent?.({ turns: 1, tool: "read" });
+      return { output: "ok", turns: 1, toolsUsed: ["read"] };
+    };
+    const { tool, ctx } = build(runner, registry);
+
+    await tool.execute(
+      "c1",
+      {
+        description: "fan out",
+        prompt: "ignored",
+        tasks: [
+          { description: "one", prompt: "a" },
+          { description: "two", prompt: "b" },
+          { description: "three", prompt: "c" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(registry.list().map((r) => r.description)).toEqual(["one", "two", "three"]);
+    expect(registry.list().every((r) => r.status === "done")).toBe(true);
   });
 });

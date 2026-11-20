@@ -9,8 +9,8 @@
 // Servers are started lazily, one per server spec, and killed on shutdown. If a
 // server is missing the tool answers with the install command — it never pretends
 // to have worked.
-import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { LspClient, type LspClientOptions } from "./client";
@@ -24,7 +24,11 @@ export const LSP_TOOL_NAME = "lsp";
  * file. The first request in a session pays for loading the whole project
  * (measured at ~2.5 s on a small repo), later ones answer immediately.
  */
-export const DIAGNOSTICS_WAIT_MS = 5000;
+export const DIAGNOSTICS_WAIT_MS = 8000;
+/** How long a rename waits for the project to load before asking for edits. */
+export const PROJECT_LOAD_WAIT_MS = 4000;
+/** How long the compiler must stay quiet before its answer is trusted. */
+export const DIAGNOSTICS_QUIET_MS = 1200;
 
 export const LSP_PARAMS = Type.Object({
   action: Type.Union([
@@ -43,6 +47,13 @@ export const LSP_PARAMS = Type.Object({
 
 export interface LspToolDeps {
   cwd: () => string;
+  /**
+   * Working directory of the running session. It beats process.cwd(), because a
+   * session can be started in one folder while the process runs in another, and
+   * resolving "user.ts" against the wrong folder makes the tool look at a file
+   * that does not exist.
+   */
+  sessionCwd?: () => string | undefined;
   /** Test seam: replace the real client with a stub. */
   startClient?: (options: LspClientOptions) => Promise<LspClientLike>;
   /** Test seam for the file write path. */
@@ -60,6 +71,12 @@ export interface LspClientLike {
   request(method: string, params: unknown, timeoutMs?: number): Promise<unknown>;
   notify(method: string, params: unknown): void;
   outsideDiagnostics(uri: string): unknown[];
+  /** True once the server published for this file, even with no problems. */
+  hasPublishedDiagnostics?(uri: string): boolean;
+  /** Forget a stale publish for this file. */
+  clearDiagnostics?(uri: string): void;
+  /** Publishes made so far for this file. */
+  publishedVersion?(uri: string): number;
   dispose(): void;
 }
 
@@ -90,7 +107,9 @@ export function createLspToolExtension(deps: LspToolDeps): ExtensionFactory {
     const start = deps.startClient ?? ((options) => LspClient.start(options));
     const created = start({
       command: server.command,
-      args: serverArgs(server.spec),
+      // A bundled server is launched as `node <entry> --stdio`, so its own args
+      // come first and the spec's args follow.
+      args: [...(server.args ?? []), ...serverArgs(server.spec)],
       cwd: deps.cwd(),
       initializationOptions: initializeOptionsFor(deps.cwd(), server.spec),
     }).catch((error) => {
@@ -125,8 +144,12 @@ export function createLspToolExtension(deps: LspToolDeps): ExtensionFactory {
         "After a rename, run `lsp` diagnostics on the touched files and fix anything it reports.",
       ],
       parameters: LSP_PARAMS,
-      async execute(_toolCallId, params) {
-        return runLspAction(params as LspParams, { ...deps, getClient });
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        return runLspAction(params as LspParams, {
+          ...deps,
+          cwd: () => ctx?.cwd || deps.sessionCwd?.() || deps.cwd(),
+          getClient,
+        });
       },
     });
   };
@@ -163,10 +186,22 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
   const write = deps.writeFile ?? ((path: string, content: string) => writeFileSync(path, content, "utf8"));
   const move = deps.renameFile ?? ((from: string, to: string) => renameSync(from, to));
 
-  const targetPath = params.action === "rename_file" ? params.from : params.file;
-  if (!targetPath) return fail("this action needs a file path");
+  const requested = params.action === "rename_file" ? params.from : params.file;
+  if (!requested) return fail("this action needs a file path");
+  // A model will often pass "app.ts" instead of the absolute path it saw. Use
+  // one absolute path for discovery, existence checks and the server URI, so a
+  // relative path cannot be reported as "does not exist".
+  const targetPath = isAbsolute(requested) ? requested : resolve(cwd, requested);
 
-  const discover = deps.resolveServer ?? ((path: string) => resolveServerForPath(path));
+  // QRONOS_LSP_PATH narrows where servers are looked for. It exists so the
+  // bundled copy can be proven to work without touching the machine's PATH.
+  const discover =
+    deps.resolveServer ??
+    ((path: string) => {
+      const lookupPath = process.env.QRONOS_LSP_PATH;
+      const env = lookupPath ? { ...process.env, PATH: lookupPath } : process.env;
+      return resolveServerForPath(path, env);
+    });
   const { server, reason } = discover(targetPath);
   if (!server) return fail(reason ?? "no language server available");
 
@@ -177,12 +212,12 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
     return fail((error as Error).message);
   }
 
-  const absolute = targetPath.startsWith("/") ? targetPath : `${cwd}/${targetPath}`;
+  const absolute = targetPath;
   const uri = pathToUri(absolute);
 
   if (params.action === "rename_file") {
     if (!params.to) return fail("rename_file needs `to`");
-    const toAbsolute = params.to.startsWith("/") ? params.to : `${cwd}/${params.to}`;
+    const toAbsolute = isAbsolute(params.to) ? params.to : resolve(cwd, params.to);
     if (!existsSync(absolute)) return fail(`${targetPath} does not exist`);
     mkdirSync(dirname(toAbsolute), { recursive: true });
 
@@ -224,20 +259,38 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
   client.notify("textDocument/didOpen", {
     textDocument: { uri, languageId: languageIdFor(targetPath), version: 1, text: content },
   });
+  // The previous publish describes the previous content, so it must not be read
+  // as the answer for the file as it is now.
+  (client as { clearDiagnostics?: (uri: string) => void }).clearDiagnostics?.(uri);
 
   if (params.action === "diagnostics") {
     // Diagnostics arrive asynchronously as a notification, so asking immediately
     // after didOpen returns "none" even for a file full of errors. Wait for the
     // notification, but never more than two seconds.
-    const published = await waitForDiagnostics(client, uri, deps.diagnosticsWaitMs ?? DIAGNOSTICS_WAIT_MS);
-    const pulled = (await client
-      .request("textDocument/diagnostic", { textDocument: { uri } })
-      .catch(() => null)) as { items?: unknown[] } | null;
+    const { items: published, settled } = await waitForDiagnostics(
+      client,
+      uri,
+      deps.diagnosticsWaitMs ?? DIAGNOSTICS_WAIT_MS,
+    );
+    // Pull diagnostics are only trusted when the server answers. Not every
+    // server implements them (typescript-language-server 6 replies -32601), and
+    // an unsupported pull must never be read as "no problems found".
+    const pulled = settled
+      ? null
+      : ((await client.request("textDocument/diagnostic", { textDocument: { uri } }).catch(() => null)) as {
+          items?: unknown[];
+        } | null);
     const items = (published.length > 0 ? published : pulled?.items ?? []) as {
       message?: string;
       severity?: number;
       range?: { start?: { line?: number } };
     }[];
+    if (items.length === 0 && !settled) {
+      const seconds = Math.round((deps.diagnosticsWaitMs ?? DIAGNOSTICS_WAIT_MS) / 1000);
+      return text(
+        `${targetPath}: no answer from the compiler after ${seconds}s — it may still be loading the project. Run diagnostics again.`,
+      );
+    }
     if (items.length === 0) return text(`${targetPath}: no diagnostics`);
     const lines = items.map((item) => {
       const line = (item.range?.start?.line ?? 0) + 1;
@@ -249,14 +302,41 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
   if (params.action === "rename") {
     if (!params.new_name) return fail("rename needs `new_name`");
     if (!params.line || !params.column) return fail("rename needs 1-based `line` and `column`");
-    const reply = (await client.request("textDocument/rename", {
-      textDocument: { uri },
-      position: { line: params.line - 1, character: params.column - 1 },
-      newName: params.new_name,
-    })) as WorkspaceEdit | null;
+    // Loading the project takes a moment. A rename asked for before the project
+    // is loaded only sees the open file, so the importers of the symbol are
+    // silently missed. Asking for diagnostics first makes the compiler load the
+    // whole project, and then the rename covers it.
+    await waitForDiagnostics(client, uri, PROJECT_LOAD_WAIT_MS);
+
+    const position = { line: params.line - 1, character: params.column - 1 };
+    const requestRename = async () =>
+      (await client.request("textDocument/rename", {
+        textDocument: { uri },
+        position,
+        newName: params.new_name,
+      })) as WorkspaceEdit | null;
+
+    let reply = await requestRename();
+    if (countEdits(reply) === 0) {
+      // The first request pays for loading the project. Without a second try a
+      // rename can come back with edits for the open file and none for the files
+      // that import it.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      reply = await requestRename();
+    }
+    const oldName = wordAt(content, position.line, position.character);
     const edited = applyWorkspaceEdit(reply, { read, write });
     if (edited.length === 0) return fail("the language server returned no edits (is the cursor on a renameable symbol?)");
-    return text(`renamed to ${params.new_name}; updated ${edited.join(", ")}`);
+
+    // A rename that leaves an importer behind is worse than no rename: one file
+    // changed, another now references a name that no longer exists. Say it.
+    const leftovers = oldName && oldName !== params.new_name ? findReferences(absolute, oldName, cwd) : [];
+    if (leftovers.length > 0) {
+      return text(
+        `renamed ${oldName} -> ${params.new_name}; updated ${edited.join(", ")}.\nWARNING: the old name is still used in ${leftovers.length} file(s): ${leftovers.join(", ")}. Fix those too.`,
+      );
+    }
+    return text(`renamed ${oldName ?? "symbol"} -> ${params.new_name}; updated ${edited.join(", ")}`);
   }
 
   // hover
@@ -269,14 +349,101 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
   return text(value || "no type information at that position");
 }
 
-/** Poll for published diagnostics until one arrives or the wait runs out. */
-export async function waitForDiagnostics(client: LspClientLike, uri: string, timeoutMs: number): Promise<unknown[]> {
+/**
+ * Poll for published diagnostics.
+ *
+ * `settled` is false when nothing arrived before the deadline. The difference
+ * matters: "no problems" and "the compiler has not answered yet" must not read
+ * the same to the model.
+ */
+export async function waitForDiagnostics(
+  client: LspClientLike,
+  uri: string,
+  timeoutMs: number,
+): Promise<{ items: unknown[]; settled: boolean }> {
   const deadline = Date.now() + timeoutMs;
+  // TypeScript sends a quick "syntax only" answer, often an empty one, and the
+  // real type errors a moment later. Accepting the first publish would report a
+  // broken file as clean, so a publish only counts once the server has been
+  // quiet for a short while after it.
+  const quietMs = Math.min(DIAGNOSTICS_QUIET_MS, Math.max(10, Math.floor(timeoutMs / 2)));
+  let lastVersion = -1;
+  let lastChangeAt = Date.now();
   for (;;) {
-    const diagnostics = client.outsideDiagnostics(uri);
-    if (diagnostics.length > 0 || Date.now() >= deadline) return diagnostics;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const items = client.outsideDiagnostics(uri);
+    if (items.length > 0) return { items, settled: true };
+
+    const version =
+      client.publishedVersion?.(uri) ?? (client.hasPublishedDiagnostics?.(uri) ? 1 : 0);
+    const now = Date.now();
+    if (version !== lastVersion) {
+      lastVersion = version;
+      lastChangeAt = now;
+    }
+    if (version > 0 && now - lastChangeAt >= quietMs) return { items, settled: true };
+    if (now >= deadline) return { items, settled: false };
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+/** How many text edits a rename reply carries. */
+export function countEdits(edit: WorkspaceEdit | null | undefined): number {
+  if (!edit) return 0;
+  const changes = (edit as { changes?: Record<string, unknown[]> }).changes;
+  if (changes) return Object.values(changes).reduce((total, list) => total + (list?.length ?? 0), 0);
+  const documentChanges = (edit as { documentChanges?: unknown[] }).documentChanges;
+  return documentChanges?.length ?? 0;
+}
+
+/** The identifier around a 0-based line/character, used to report leftovers. */
+export function wordAt(text: string, line: number, character: number): string | undefined {
+  const lines = text.split("\n");
+  const target = lines[line];
+  if (target === undefined) return undefined;
+  const isWord = (ch: string) => /[A-Za-z0-9_$]/.test(ch);
+  if (!isWord(target[character] ?? "")) return undefined;
+  let start = character;
+  let end = character;
+  while (start > 0 && isWord(target[start - 1]!)) start--;
+  while (end < target.length && isWord(target[end]!)) end++;
+  return target.slice(start, end) || undefined;
+}
+
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "out", ".next", "coverage"]);
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".py", ".rs", ".go"];
+
+/** Files under cwd that still mention `name`, as project-relative paths. */
+export function findReferences(renamedFile: string, name: string, cwd: string, limit = 6): string[] {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`\\b${escaped}\\b`);
+  const found: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (found.length >= limit || depth > 8) return;
+    let entries: { name: string; isDirectory: () => boolean }[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (found.length >= limit) return;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) walk(full, depth + 1);
+        continue;
+      }
+      if (full === renamedFile) continue;
+      if (!SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) continue;
+      try {
+        if (statSync(full).size > 1_000_000) continue;
+        if (pattern.test(readFileSync(full, "utf8"))) found.push(relative(cwd, full) || full);
+      } catch {
+        // A file we cannot read is not evidence either way.
+      }
+    }
+  };
+  walk(cwd, 0);
+  return found;
 }
 
 /** Write every file the server wants changed, returning the touched paths. */

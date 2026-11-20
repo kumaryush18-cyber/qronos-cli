@@ -1,10 +1,16 @@
 // Which language server to run for which file.
 //
-// We do not install servers. If one is missing the tool says so and the model
-// falls back to plain edits — an LSP that silently does nothing is worse than no
-// LSP at all.
+// The TypeScript server and its compiler ship WITH qronos-cli (optional
+// dependencies), so `lsp` works on a fresh install with nothing else to do.
+// A project-local or global install still wins where one exists, because a
+// project should be edited with the compiler version it was written against.
+//
+// Other languages are not bundled: Pyright/Rust/Go servers are large, native,
+// and versioned with their toolchains. For those the tool says what to install
+// instead of pretending to work.
 import { existsSync, realpathSync } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface ServerSpec {
   /** Human name, used in messages. */
@@ -67,8 +73,39 @@ export function findOnPath(command: string, env: Record<string, string | undefin
 
 export interface ResolvedServer {
   spec: ServerSpec;
-  /** Absolute path of the executable. */
+  /** Absolute path of the executable (or the Node.js binary for a bundled entry). */
   command: string;
+  /** Extra arguments; carries the bundled module path when command is Node.js. */
+  args?: string[];
+}
+
+/**
+ * Directory of the packages that ship with qronos-cli.
+ *
+ * The module may live at dist/index.js (published) or src/lsp/servers.ts (in the
+ * repository), so the answer is found by walking up to the nearest node_modules
+ * that actually contains the TypeScript server. A guessed "one level up" is
+ * wrong in exactly one of those two layouts, which is why it is not guessed.
+ */
+export function bundledModulesDir(): string {
+  const starts = [dirname(fileURLToPath(import.meta.url)), process.cwd()];
+  for (const start of starts) {
+    let dir = start;
+    for (let depth = 0; depth < 6; depth++) {
+      const candidate = join(dir, "node_modules");
+      if (existsSync(join(candidate, "typescript-language-server"))) return candidate;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..", "node_modules");
+}
+
+/** The TypeScript server entry that ships with the CLI, when it was installed. */
+export function bundledTypescriptServer(): string | undefined {
+  const entry = join(bundledModulesDir(), "typescript-language-server", "lib", "cli.mjs");
+  return existsSync(entry) ? entry : undefined;
 }
 
 export function resolveServerForPath(
@@ -81,10 +118,18 @@ export function resolveServerForPath(
   if (!spec) return { reason: `no language server configured for ${path}` };
 
   const command = findOnPath(spec.command, env);
-  if (!command) {
-    return { reason: `${spec.name} is not installed. Install it with: ${spec.install}` };
+  if (command) return { server: { spec, command } };
+
+  // Not on PATH: for TypeScript the bundled copy is enough, and it runs through
+  // the current Node.js binary, so no launcher script or .bin shim is needed.
+  if (spec.command === "typescript-language-server") {
+    const entry = env.QRONOS_TSSERVER_ENTRY?.trim() || bundledTypescriptServer();
+    if (entry && existsSync(entry)) {
+      return { server: { spec, command: process.execPath, args: [entry, ...spec.args] } };
+    }
   }
-  return { server: { spec, command } };
+
+  return { reason: `${spec.name} is not installed. Install it with: ${spec.install}` };
 }
 
 /**
@@ -105,6 +150,11 @@ export function findTsserverPath(
 
   const local = join(cwd, "node_modules", "typescript", "lib", "tsserver.js");
   if (existsSync(local)) return local;
+
+  // The copy that ships with qronos-cli, so a project without a local install
+  // still gets a working server.
+  const bundled = join(bundledModulesDir(), "typescript", "lib", "tsserver.js");
+  if (existsSync(bundled)) return bundled;
 
   const tsc = findOnPath("tsc", env);
   if (tsc) {

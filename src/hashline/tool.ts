@@ -15,7 +15,7 @@
 // The tag is a hash of the whole file, so a patch quoting `#a3f1` is refused if
 // the file changed after the read.
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionFactory, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { applyOps, splitLines, summarize } from "./apply";
@@ -49,7 +49,7 @@ export function createPatchToolExtension(options: PatchToolOptions = {}): Extens
 
     // --- read hook: show line numbers and the file's tag -------------------
     if (numberReads) {
-      qronos.on("tool_result", async (event) => {
+      qronos.on("tool_result", async (event, ctx) => {
         if (event.toolName !== "read" || event.isError) return;
         const path = typeof event.input?.path === "string" ? event.input.path : undefined;
         if (!path) return;
@@ -59,7 +59,10 @@ export function createPatchToolExtension(options: PatchToolOptions = {}): Extens
         const text = block.text;
         if (!text || text.startsWith("[")) return;
 
-        const absolute = resolvePath(cwd(), path);
+        // The session's folder, not the process's: a read of "user.ts" must mean
+        // the file in the project being worked on.
+        const base = ctx?.cwd || cwd();
+        const absolute = resolvePath(base, path);
         let full: string;
         try {
           full = readFileSync(absolute, "utf8");
@@ -74,7 +77,7 @@ export function createPatchToolExtension(options: PatchToolOptions = {}): Extens
         const shownCount = text.split("\n").filter((line, index, all) => !(index === all.length - 1 && line === "")).length;
         const lineCount = limit === undefined ? Math.min(shownCount, allLines.length - (offset - 1)) : Math.min(limit, shownCount);
 
-        const seen = store.record(path, full, offset, lineCount);
+        const seen = store.record(fileKey(base, absolute), full, offset, lineCount);
         const numbered = numberLines(text.replace(/\n$/, ""), offset);
         const replaced = [{ type: "text" as const, text: `${tagHeader(path, seen.tag, seen)}\n${numbered}\n` }, ...event.content.slice(1)];
         return { content: replaced };
@@ -96,7 +99,10 @@ export function createPatchToolExtension(options: PatchToolOptions = {}): Extens
       ],
       parameters: PATCH_PARAMS,
       async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-        return runPatch(params.patch, { store, cwd, ctx });
+        // The session's own folder wins over the process folder: they can differ
+        // when a session is launched for a project other than the current one.
+        const sessionCwd = ctx?.cwd || cwd();
+        return runPatch(params.patch, { store, cwd: () => sessionCwd, ctx });
       },
     });
   };
@@ -154,7 +160,7 @@ export async function runPatch(patch: string, deps: RunPatchDeps): Promise<ToolO
         if (!hasFile) return fail(`[${section.path}] does not exist, nothing to MV`);
         mkdirSync(dirname(target), { recursive: true });
         renameSync(absolute, target);
-        deps.store.recordAfterWrite(op.destination, readFileSync(target, "utf8"));
+        deps.store.recordAfterWrite(fileKey(deps.cwd(), target), readFileSync(target, "utf8"));
         lines.push(`moved ${normalizePath(section.path)} -> ${normalizePath(op.destination)}`);
         break;
       }
@@ -170,7 +176,7 @@ export async function runPatch(patch: string, deps: RunPatchDeps): Promise<ToolO
       return fail(`[${section.path}] is larger than ${MAX_PATCH_FILE_BYTES} bytes; use the edit tool`);
     }
 
-    const check = deps.store.check(section.path, section.tag, original);
+    const check = deps.store.check(fileKey(deps.cwd(), absolute), section.tag, original);
     if (!check.ok) {
       if (check.reason === "unseen") {
         return fail(
@@ -238,4 +244,19 @@ function summarizeOutcome(outcome: unknown): string {
 
 export function resolvePath(cwd: string, path: string): string {
   return isAbsolute(path) ? path : resolve(join(cwd, path));
+}
+
+/**
+ * The key a file is remembered under.
+ *
+ * The model may read `/repo/src/a.ts`, then patch `src/a.ts` — both are the same
+ * file, so both must hit the same tag, and neither may be treated as "never
+ * read". Keys are therefore always relative to the working directory and use
+ * forward slashes on every platform.
+ */
+export function fileKey(cwd: string, path: string): string {
+  const absolute = resolvePath(cwd, path);
+  const rel = relative(resolve(cwd), absolute);
+  const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  return normalizePath(inside ? rel : absolute);
 }

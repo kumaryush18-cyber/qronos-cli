@@ -66,7 +66,7 @@ Not supported yet: block operations (`N*`) and clipboard registers (`@name`). Th
 
 Example: "move `Button.tsx` into `components/ui/`". By hand the agent edits six importers and usually misses one. Through `rename_file`, TypeScript rewrites them itself, so the project still compiles.
 
-Servers are **not** installed for you. If one is missing, the tool says so and gives the install command.
+**TypeScript needs no setup.** The TypeScript server and compiler ship inside `qronos-cli` as optional dependencies, so `lsp` works on a fresh install. A project-local TypeScript still wins, because a project should be edited with the compiler it was written against. Other languages are **not** bundled — their servers are large and versioned with their toolchains — so for those the tool says what to install.
 
 The TypeScript server also needs a TypeScript install it can drive. Qronos CLI looks for it in this order: `QRONOS_TSSERVER_PATH`, then the project's own `node_modules/typescript`, then the one beside a global `tsc`. It is passed to the server through `initializationOptions`, because `typescript-language-server` 6 removed the `--tsserver-path` flag.
 
@@ -79,6 +79,23 @@ The TypeScript server also needs a TypeScript install it can drive. Qronos CLI l
 
 A server is started the first time it is needed, reused for the session, and killed on exit. Requests time out after 5 seconds, so a hung server cannot freeze the CLI.
 
-`diagnostics` waits up to 5 seconds for the compiler to publish results, because the first request in a session pays for loading the project (measured at about 2.5 seconds on a small repo). Later requests answer immediately.
+`diagnostics` waits up to 8 seconds for the compiler, because the first request in a session pays for loading the project (measured at about 2.5 seconds on a small repo). TypeScript answers twice: a quick syntax-only pass, then the real type check about a second later. The tool therefore trusts an answer only after the compiler has been quiet for 1.2 seconds, otherwise a broken file would be reported as clean. If nothing arrives at all it says "no answer from the compiler", which is not the same as "no problems".
 
 For `rename_file` to find the importers, the project needs a `tsconfig.json` (or equivalent) so the compiler knows which files belong to it. Without one, TypeScript only knows the files that were opened, and the server may report "no import changes were needed".
+
+## End-to-end check
+
+`scripts/e2e-all.sh` runs six real scenarios against a scratch workspace, with a
+real model and the real tools: read shows a tag, `apply_patch` renames a
+function, a stale tag is refused, `rename_file` moves a file and rewrites its
+imports, `diagnostics` reports a type error, and `rename` updates the other file
+that uses the symbol. It prints PASS/FAIL per scenario.
+
+```bash
+scripts/e2e-all.sh                       # all six, ~6 minutes
+bun run scripts/e2e-check.ts "a prompt"  # one prompt, prints every tool call
+```
+
+`QRONOS_E2E_CWD` chooses the workspace, `QRONOS_E2E_MODEL` the model, and
+`QRONOS_E2E_BETWEEN` runs a shell command between two prompts (used to change a
+file behind the model's back and prove the stale tag is refused).
