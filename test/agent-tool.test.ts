@@ -480,3 +480,77 @@ describe("typed results (Agent Hub part B)", () => {
     });
   });
 });
+
+describe("schema argument types", () => {
+  const build = (runner: any) => {
+    let tool: any = null;
+    const pi = { registerTool: (t: any) => (tool = t) } as unknown as ExtensionAPI;
+    (createAgentToolExtension({ runner, registry: new AgentRegistry() }) as any).factory(pi);
+    const ctx = { cwd: "/test/project", ui: { notify: () => {}, setStatus: () => {} } } as unknown as ExtensionToolContext;
+    return { tool, ctx };
+  };
+
+  const SCHEMA = { type: "object", required: ["score"], properties: { score: { type: "integer" } } };
+
+  test("a schema sent as a JSON string is still enforced", async () => {
+    let seen: unknown;
+    const runner = async (params: any) => {
+      seen = params.outputSchema;
+      return { output: '{"score":1}', turns: 1, toolsUsed: [], structured: { value: { score: 1 }, firstTry: true } };
+    };
+    const { tool, ctx } = build(runner);
+    await tool.execute(
+      "c",
+      { description: "d", prompt: "p", output_schema: JSON.stringify(SCHEMA) },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(seen).toEqual(SCHEMA);
+  });
+
+  test("a broken schema string fails the call instead of skipping validation", async () => {
+    let called = false;
+    const runner = async () => {
+      called = true;
+      return { output: "", turns: 1, toolsUsed: [] };
+    };
+    const { tool, ctx } = build(runner);
+    const result = await tool.execute(
+      "c",
+      { description: "d", prompt: "p", output_schema: "{not json}" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(called).toBe(false);
+    expect(result.details.ok).toBe(false);
+    expect(result.details.reason).toBe("bad-schema");
+    expect(result.content[0].text).toContain("not valid JSON");
+  });
+
+  test("a broken per-task schema fails the whole fan-out before any subagent runs", async () => {
+    let called = false;
+    const runner = async () => {
+      called = true;
+      return { output: "", turns: 1, toolsUsed: [] };
+    };
+    const { tool, ctx } = build(runner);
+    const result = await tool.execute(
+      "c",
+      {
+        description: "fan out",
+        prompt: "p",
+        tasks: [
+          { description: "one", prompt: "a" },
+          { description: "two", prompt: "b", output_schema: 42 },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(called).toBe(false);
+    expect(result.details.reason).toBe("bad-schema");
+  });
+});

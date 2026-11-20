@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   describeSchema,
   extractJson,
+  normalizeSchemaInput,
   repairPrompt,
   schemaInstruction,
   validateJsonSchema,
@@ -132,5 +133,33 @@ describe("prompt helpers", () => {
     expect(text).toContain("- files: is required");
     expect(text).toContain("- risks[0].severity:");
     expect(text).toContain("only the corrected JSON");
+  });
+});
+
+describe("normalizeSchemaInput", () => {
+  test("an object passes through", () => {
+    const schema = { type: "object" };
+    expect(normalizeSchemaInput(schema)).toEqual({ schema });
+  });
+
+  test("a JSON string is parsed, so validation is not silently skipped", () => {
+    expect(normalizeSchemaInput('{"type":"object"}')).toEqual({ schema: { type: "object" } });
+  });
+
+  test("no schema stays no schema", () => {
+    expect(normalizeSchemaInput(undefined)).toEqual({});
+    expect(normalizeSchemaInput("")).toEqual({});
+    expect(normalizeSchemaInput(null)).toEqual({});
+  });
+
+  test("a broken string is an error, not a pass", () => {
+    const result = normalizeSchemaInput("{type: object}");
+    expect(result.schema).toBeUndefined();
+    expect(result.error).toContain("not valid JSON");
+  });
+
+  test("a number or array is refused with a readable message", () => {
+    expect(normalizeSchemaInput(5).error).toContain("must be a JSON Schema object");
+    expect(normalizeSchemaInput([1, 2]).error).toContain("an array");
   });
 });

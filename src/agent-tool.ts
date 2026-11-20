@@ -16,6 +16,7 @@ import { discoverSubagents, resolveSubagent, SUBAGENT_READ_ONLY_TOOLS, type Agen
 import { AgentRegistry, formatAgentSummary, type AgentRecord } from "./agent-registry";
 import {
   extractJson,
+  normalizeSchemaInput,
   repairPrompt,
   schemaInstruction,
   validateJsonSchema,
@@ -674,6 +675,29 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
         async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<any> {
           const projectRoot = ctx.cwd || process.cwd();
 
+          // A schema of the wrong type must fail loudly, never fall back to
+          // "no schema": a silently unvalidated answer is worse than an error.
+          const normalised = normalizeSchemaInput(params.output_schema);
+          if (normalised.error) {
+            return {
+              content: [{ type: "text" as const, text: `Error: ${normalised.error}` }],
+              details: { ok: false, reason: "bad-schema" },
+            };
+          }
+          const outputSchema = normalised.schema;
+          const taskSchemas = new Map<number, { schema?: unknown; error?: string }>();
+          for (const [index, task] of (params.tasks ?? []).entries()) {
+            taskSchemas.set(index, normalizeSchemaInput(task.output_schema));
+          }
+          for (const [, entry] of taskSchemas) {
+            if (entry.error) {
+              return {
+                content: [{ type: "text" as const, text: `Error: task output_schema: ${entry.error}` }],
+                details: { ok: false, reason: "bad-schema" },
+              };
+            }
+          }
+
           // Fan-out mode: independent tasks run concurrently under a cap. Only
           // the top level may fan out; nested subagents run one task each so the
           // tree cannot multiply exponentially.
@@ -692,11 +716,11 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
             }
 
             // Fold the single-task fields in so both call styles work.
-            const expanded = tasks.map((t) => ({
+            const expanded = tasks.map((t, index) => ({
               description: t.description,
               prompt: t.prompt,
               subagent_type: t.subagent_type ?? params.subagent_type,
-              output_schema: t.output_schema,
+              output_schema: taskSchemas.get(index)?.schema,
             }));
 
             ctx.ui?.notify?.(`⚡ Running ${expanded.length} subagents in parallel`, "info");
@@ -714,7 +738,7 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
                     cwd: projectRoot,
                     ctx,
                     model: params.model,
-                    outputSchema: task.output_schema ?? params.output_schema,
+                    outputSchema: task.output_schema ?? outputSchema,
                   });
                   return { def, task, out, error: undefined as string | undefined };
                 } catch (err: any) {
@@ -775,7 +799,7 @@ export function createAgentToolExtension(opts: CreateAgentToolOptions = {}): Inl
             cwd: projectRoot,
             ctx,
             model: params.model,
-            outputSchema: params.output_schema,
+            outputSchema,
           });
 
           const summary = [

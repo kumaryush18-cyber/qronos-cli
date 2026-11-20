@@ -27,6 +27,31 @@ export interface ValidationResult {
 
 const MAX_REPORTED_ISSUES = 8;
 
+/**
+ * Normalise the schema a caller passed.
+ *
+ * Models often send the schema as a JSON *string* even when the tool declares an
+ * object. Treating that as "no schema" would turn validation off silently, which
+ * is the one failure this whole file exists to prevent, so a string is parsed and
+ * anything that is not a schema is refused.
+ */
+export function normalizeSchemaInput(value: unknown): { schema?: unknown; error?: string } {
+  if (value === undefined || value === null) return {};
+  if (typeof value === "boolean") return { schema: value };
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text === "") return {};
+    try {
+      const parsed = JSON.parse(text);
+      return normalizeSchemaInput(parsed);
+    } catch {
+      return { error: "output_schema is a string but not valid JSON. Pass a JSON Schema object." };
+    }
+  }
+  if (typeof value === "object" && !Array.isArray(value)) return { schema: value };
+  return { error: `output_schema must be a JSON Schema object, got ${Array.isArray(value) ? "an array" : typeof value}.` };
+}
+
 /** Validate a value against a JSON Schema subset. */
 export function validateJsonSchema(value: unknown, schema: unknown, path = ""): ValidationResult {
   const issues: SchemaIssue[] = [];

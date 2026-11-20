@@ -47,7 +47,7 @@ const { session } = await createAgentSessionFromServices({
 const toolLines: string[] = [];
 session.subscribe((event: any) => {
   if (event.type === "tool_execution_start") {
-    console.log(`\n[tool] ${event.toolName} ${JSON.stringify(event.args ?? {}).slice(0, 300)}`);
+    console.log(`\n[tool] ${event.toolName} ${JSON.stringify(event.args ?? {}).slice(0, event.toolName === "agent" ? 1500 : 300)}`);
   }
   if (event.type === "tool_execution_end") {
     const text = event.result?.content?.[0]?.text ?? "";
