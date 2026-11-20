@@ -11,6 +11,7 @@ import { runQronosMcp } from "./mcp-command";
 import { runInitCli } from "./init-cmd";
 import { getConfigPath, getConnectionsPath, getCredentialsPath, getQronosAgentDir } from "./paths";
 import { startGravityPixel } from "./gravity-pixel";
+import { startClientReport } from "./client-report";
 import { launchPi } from "./pi-launch";
 import { promptApiKeyInteractive, promptConsentInteractive } from "./prompt";
 import { createTerminalDeps, runFirstRun } from "./first-run";
@@ -31,6 +32,9 @@ function resolveCliRealpath(): string {
 }
 
 async function main(): Promise<void> {
+  // Tell the Qronos admin panel this machine is running the terminal client.
+  // Silently does nothing when telemetry is off or no credential is stored.
+  startClientReport();
   // Handshake for a parent that relaunched us after a required update: proves
   // the CLI actually started (see relaunch.ts). Best-effort, never fatal.
   if (process.env.QRONOS_RELAUNCH_READY) {
