@@ -133,29 +133,27 @@ export function renderPlainAdLine(
 }
 
 /** Narrowest render width the framed card fits: 20 inner + 4 frame + 1 margin column. */
-const CARD_MIN_COLUMNS = 25;
+export const CARD_MIN_COLUMNS = 25;
 
 /**
- * pi widget factory for an ad. pi calls `render(width)` with the live terminal
- * width on every paint, so the card (or the below-`adMinColumns` plain line)
- * is re-laid-out after a resize instead of keeping the width it had at fetch
- * time. Lines get one leading space, the same one-column margin pi gives a
- * string[] widget; the card is already built 2 columns narrower than `width`.
+ * The ad's lines at a given width: the framed card when it fits, otherwise the
+ * single plain line. Pure — no mouse, no browser; `clickable.ts` adds both.
+ *
+ * A line wider than `width` makes pi's renderer throw, so the card is never
+ * drawn where it cannot fit (even if AD_MIN_COLUMNS is set low), and nothing is
+ * drawn when there is no column to draw in.
  */
-export function adWidget(creative: AdCreative, clickUrl: string, adMinColumns: number) {
-  return (_tui: unknown, theme: ThemeLike) => ({
-    // A line wider than `width` makes pi's renderer throw, so never draw the
-    // card where it cannot fit (even if AD_MIN_COLUMNS is set low), and draw
-    // nothing at all when there is no column to draw in.
-    render: (width: number): string[] =>
-      width < 1
-        ? []
-        : (width >= Math.max(adMinColumns, CARD_MIN_COLUMNS)
-            ? renderAdCard(creative, clickUrl, theme, width)
-            : [renderPlainAdLine(creative, clickUrl, theme, width)]
-          ).map((line) => ` ${line}`),
-    invalidate() {},
-  });
+export function adLines(
+  creative: AdCreative,
+  clickUrl: string,
+  theme: ThemeLike,
+  width: number,
+  adMinColumns: number,
+): string[] {
+  if (width < 1) return [];
+  return width >= Math.max(adMinColumns, CARD_MIN_COLUMNS)
+    ? renderAdCard(creative, clickUrl, theme, width)
+    : [renderPlainAdLine(creative, clickUrl, theme, width)];
 }
 
 // ---------------------------------------------------------------------------

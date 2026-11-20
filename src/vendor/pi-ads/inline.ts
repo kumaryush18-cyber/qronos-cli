@@ -9,7 +9,7 @@ import type { Config } from "@qronos/shared";
 import type { AdsDeps } from "./api";
 import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";
-import { adWidget } from "./style";
+import { adWidget } from "./clickable";
 import { setWidgetSafely } from "./widget";
 
 export const INLINE_WIDGET_ID = "qronos-ad-inline";

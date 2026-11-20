@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { AdCreative } from "@qronos/shared";
-import { adWidget } from "./style";
+import { adWidget } from "./clickable";
 
 const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
 const URL_ = "https://qronos.me/c/tok-1";
