@@ -66,7 +66,9 @@ Not supported yet: block operations (`N*`) and clipboard registers (`@name`). Th
 
 Example: "move `Button.tsx` into `components/ui/`". By hand the agent edits six importers and usually misses one. Through `rename_file`, TypeScript rewrites them itself, so the project still compiles.
 
-Servers are **not** installed for you. If one is missing, the tool says so and gives the install command:
+Servers are **not** installed for you. If one is missing, the tool says so and gives the install command.
+
+The TypeScript server also needs a TypeScript install it can drive. Qronos CLI looks for it in this order: `QRONOS_TSSERVER_PATH`, then the project's own `node_modules/typescript`, then the one beside a global `tsc`. It is passed to the server through `initializationOptions`, because `typescript-language-server` 6 removed the `--tsserver-path` flag.
 
 | Language | Server | Install |
 |---|---|---|
@@ -76,3 +78,7 @@ Servers are **not** installed for you. If one is missing, the tool says so and g
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 
 A server is started the first time it is needed, reused for the session, and killed on exit. Requests time out after 5 seconds, so a hung server cannot freeze the CLI.
+
+`diagnostics` waits up to 5 seconds for the compiler to publish results, because the first request in a session pays for loading the project (measured at about 2.5 seconds on a small repo). Later requests answer immediately.
+
+For `rename_file` to find the importers, the project needs a `tsconfig.json` (or equivalent) so the compiler knows which files belong to it. Without one, TypeScript only knows the files that were opened, and the server may report "no import changes were needed".

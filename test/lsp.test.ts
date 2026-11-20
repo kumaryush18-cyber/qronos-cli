@@ -16,8 +16,8 @@ import {
   uriToPath,
   type TextEdit,
 } from "../src/lsp/edits";
-import { findOnPath, resolveServerForPath } from "../src/lsp/servers";
-import { hoverContents, languageIdFor, runLspAction } from "../src/lsp/tool";
+import { findOnPath, findTsserverPath, initializeOptionsFor, LANGUAGE_SERVERS, resolveServerForPath } from "../src/lsp/servers";
+import { hoverContents, languageIdFor, runLspAction, waitForDiagnostics } from "../src/lsp/tool";
 
 describe("JSON-RPC framing", () => {
   test("encodes a length header and parses it back", () => {
@@ -132,6 +132,7 @@ describe("server discovery", () => {
 
 describe("runLspAction with a stub server", () => {
   const fakeServer = {
+    diagnosticsWaitMs: 50,
     resolveServer: () => ({
       server: {
         spec: { name: "fake", command: "fake-ls", args: [], extensions: [".ts"], install: "npx fake" },
@@ -293,5 +294,64 @@ describe("runLspAction with a stub server", () => {
     expect(hoverContents([{ value: "a" }, "b"])).toBe("a\nb");
     expect(hoverContents({ value: "c" })).toBe("c");
     expect(hoverContents(undefined)).toBe("");
+  });
+});
+
+describe("tsserver discovery", () => {
+  test("the project's own TypeScript wins over a global one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "qronos-ts-"));
+    mkdirSync(join(dir, "node_modules", "typescript", "lib"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "typescript", "lib", "tsserver.js"), "// tsserver\n");
+    expect(findTsserverPath(dir, { PATH: "" })).toBe(join(dir, "node_modules", "typescript", "lib", "tsserver.js"));
+  });
+
+  test("QRONOS_TSSERVER_PATH overrides everything", () => {
+    const dir = mkdtempSync(join(tmpdir(), "qronos-ts-"));
+    const explicit = join(dir, "custom-tsserver.js");
+    writeFileSync(explicit, "// tsserver\n");
+    expect(findTsserverPath("/nonexistent", { PATH: "", QRONOS_TSSERVER_PATH: explicit })).toBe(explicit);
+  });
+
+  test("no TypeScript anywhere is simply undefined", () => {
+    expect(findTsserverPath("/nonexistent", { PATH: "" })).toBeUndefined();
+  });
+
+  test("initialize options carry the tsserver path for TypeScript only", () => {
+    const dir = mkdtempSync(join(tmpdir(), "qronos-ts-"));
+    mkdirSync(join(dir, "node_modules", "typescript", "lib"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "typescript", "lib", "tsserver.js"), "// tsserver\n");
+    const [ts, , rust] = LANGUAGE_SERVERS;
+    expect(initializeOptionsFor(dir, ts, { PATH: "" })).toEqual({
+      tsserver: { path: join(dir, "node_modules", "typescript", "lib", "tsserver.js") },
+    });
+    expect(initializeOptionsFor(dir, rust, { PATH: "" })).toBeUndefined();
+  });
+});
+
+describe("waitForDiagnostics", () => {
+  test("returns as soon as the compiler publishes something", async () => {
+    let calls = 0;
+    const client = {
+      request: async () => null,
+      notify: () => {},
+      dispose: () => {},
+      outsideDiagnostics: () => (++calls > 2 ? [{ message: "boom" }] : []),
+    };
+    const items = await waitForDiagnostics(client, "file:///a.ts", 1000);
+    expect(items.length).toBe(1);
+    expect(calls).toBeGreaterThan(2);
+  });
+
+  test("gives up after the timeout instead of hanging", async () => {
+    const client = {
+      request: async () => null,
+      notify: () => {},
+      dispose: () => {},
+      outsideDiagnostics: () => [],
+    };
+    const started = Date.now();
+    const items = await waitForDiagnostics(client, "file:///a.ts", 120);
+    expect(items).toEqual([]);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100);
   });
 });

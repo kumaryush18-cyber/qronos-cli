@@ -15,9 +15,16 @@ import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { LspClient, type LspClientOptions } from "./client";
 import { applyTextEdits, collectEdits, pathToUri, uriToPath, type WorkspaceEdit } from "./edits";
-import { resolveServerForPath, type ResolvedServer } from "./servers";
+import { initializeOptionsFor, resolveServerForPath, serverArgs, type ResolvedServer } from "./servers";
 
 export const LSP_TOOL_NAME = "lsp";
+
+/**
+ * How long to wait for the compiler to publish diagnostics for a freshly opened
+ * file. The first request in a session pays for loading the whole project
+ * (measured at ~2.5 s on a small repo), later ones answer immediately.
+ */
+export const DIAGNOSTICS_WAIT_MS = 5000;
 
 export const LSP_PARAMS = Type.Object({
   action: Type.Union([
@@ -44,6 +51,8 @@ export interface LspToolDeps {
   renameFile?: (from: string, to: string) => void;
   /** Test seam: which server to use for a path (defaults to PATH discovery). */
   resolveServer?: (path: string) => { server?: ResolvedServer; reason?: string };
+  /** How long to wait for compiler diagnostics (default DIAGNOSTICS_WAIT_MS). */
+  diagnosticsWaitMs?: number;
 }
 
 /** The slice of LspClient the tool uses, so tests do not need a process. */
@@ -79,7 +88,12 @@ export function createLspToolExtension(deps: LspToolDeps): ExtensionFactory {
     const existing = clients.get(key);
     if (existing) return existing;
     const start = deps.startClient ?? ((options) => LspClient.start(options));
-    const created = start({ command: server.command, args: server.spec.args, cwd: deps.cwd() }).catch((error) => {
+    const created = start({
+      command: server.command,
+      args: serverArgs(server.spec),
+      cwd: deps.cwd(),
+      initializationOptions: initializeOptionsFor(deps.cwd(), server.spec),
+    }).catch((error) => {
       clients.delete(key);
       throw error;
     });
@@ -172,12 +186,34 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
     if (!existsSync(absolute)) return fail(`${targetPath} does not exist`);
     mkdirSync(dirname(toAbsolute), { recursive: true });
 
-    const reply = (await client.request("workspace/willRenameFiles", {
-      files: [{ oldUri: uri, newUri: pathToUri(toAbsolute) }],
-    })) as WorkspaceEdit | null;
+    // The server only knows about files someone opened. Without this the rename
+    // succeeds and every import silently keeps pointing at the old path.
+    client.notify("textDocument/didOpen", {
+      textDocument: { uri, languageId: languageIdFor(targetPath), version: 1, text: read(absolute) },
+    });
+
+    const ask = () =>
+      client.request("workspace/willRenameFiles", {
+        files: [{ oldUri: uri, newUri: pathToUri(toAbsolute) }],
+      }) as Promise<WorkspaceEdit | null>;
+
+    let reply = await ask();
+    if (!collectEdits(reply).size) {
+      // The first request can race the server loading the project; one short
+      // retry is cheap and turns "no edits" into the real answer.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      reply = await ask();
+    }
 
     const edited = applyWorkspaceEdit(reply, { read, write });
+    client.notify("textDocument/didClose", { textDocument: { uri } });
     move(absolute, toAbsolute);
+    client.notify("workspace/didChangeWatchedFiles", {
+      changes: [
+        { uri, type: 3 },
+        { uri: pathToUri(toAbsolute), type: 1 },
+      ],
+    });
     const summary = edited.length > 0 ? `updated imports in ${edited.join(", ")}` : "no import changes were needed";
     return text(`moved ${targetPath} -> ${params.to}; ${summary}`);
   }
@@ -190,10 +226,13 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
   });
 
   if (params.action === "diagnostics") {
-    const published = client.outsideDiagnostics(uri);
-    const pulled = (await client.request("textDocument/diagnostic", { textDocument: { uri } }).catch(() => null)) as
-      | { items?: unknown[] }
-      | null;
+    // Diagnostics arrive asynchronously as a notification, so asking immediately
+    // after didOpen returns "none" even for a file full of errors. Wait for the
+    // notification, but never more than two seconds.
+    const published = await waitForDiagnostics(client, uri, deps.diagnosticsWaitMs ?? DIAGNOSTICS_WAIT_MS);
+    const pulled = (await client
+      .request("textDocument/diagnostic", { textDocument: { uri } })
+      .catch(() => null)) as { items?: unknown[] } | null;
     const items = (published.length > 0 ? published : pulled?.items ?? []) as {
       message?: string;
       severity?: number;
@@ -228,6 +267,16 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
   })) as { contents?: unknown } | null;
   const value = hoverContents(hover?.contents);
   return text(value || "no type information at that position");
+}
+
+/** Poll for published diagnostics until one arrives or the wait runs out. */
+export async function waitForDiagnostics(client: LspClientLike, uri: string, timeoutMs: number): Promise<unknown[]> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const diagnostics = client.outsideDiagnostics(uri);
+    if (diagnostics.length > 0 || Date.now() >= deadline) return diagnostics;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 /** Write every file the server wants changed, returning the touched paths. */

@@ -65,6 +65,8 @@ export interface LspClientOptions {
   command: string;
   args?: string[];
   cwd: string;
+  /** Passed to `initialize`; some servers (TypeScript) need it to find their compiler. */
+  initializationOptions?: Record<string, unknown>;
   /** Milliseconds allowed for the initialize handshake and for each request. */
   timeoutMs?: number;
 }
@@ -118,8 +120,14 @@ export class LspClient {
     await client.request("initialize", {
       processId: process.pid,
       rootUri: pathToFileURL(options.cwd).href,
+      workspaceFolders: [{ uri: pathToFileURL(options.cwd).href, name: "workspace" }],
+      ...(options.initializationOptions ? { initializationOptions: options.initializationOptions } : {}),
       capabilities: {
-        workspace: { workspaceEdit: { documentChanges: true } },
+        workspace: {
+          workspaceEdit: { documentChanges: true },
+          didChangeWatchedFiles: { dynamicRegistration: true },
+          workspaceFolders: true,
+        },
         textDocument: {
           rename: { prepareSupport: false },
           hover: { contentFormat: ["plaintext"] },

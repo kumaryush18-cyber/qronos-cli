@@ -3,8 +3,8 @@
 // We do not install servers. If one is missing the tool says so and the model
 // falls back to plain edits — an LSP that silently does nothing is worse than no
 // LSP at all.
-import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
 
 export interface ServerSpec {
   /** Human name, used in messages. */
@@ -85,4 +85,60 @@ export function resolveServerForPath(
     return { reason: `${spec.name} is not installed. Install it with: ${spec.install}` };
   }
   return { server: { spec, command } };
+}
+
+/**
+ * typescript-language-server needs a TypeScript install it can drive, and it
+ * refuses to start without one ("Could not find a valid TypeScript
+ * installation"). A project usually has its own copy, which is also the version
+ * the project was written against, so that one wins:
+ *   1. QRONOS_TSSERVER_PATH (explicit override)
+ *   2. <cwd>/node_modules/typescript/lib/tsserver.js (the project's version)
+ *   3. the copy that ships beside a global `tsc`
+ */
+export function findTsserverPath(
+  cwd: string,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = env.QRONOS_TSSERVER_PATH?.trim();
+  if (explicit && existsSync(explicit)) return explicit;
+
+  const local = join(cwd, "node_modules", "typescript", "lib", "tsserver.js");
+  if (existsSync(local)) return local;
+
+  const tsc = findOnPath("tsc", env);
+  if (tsc) {
+    try {
+      const real = realpathSync(tsc);
+      const candidate = join(dirname(real), "..", "lib", "tsserver.js");
+      if (existsSync(candidate)) return candidate;
+    } catch {
+      // A broken symlink on PATH is not worth failing over.
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extra args for the server. typescript-language-server 6 removed
+ * `--tsserver-path` (it now rejects unknown options), so the TypeScript
+ * location is passed through initializationOptions instead; see
+ * initializeOptionsFor().
+ */
+export function serverArgs(spec: ServerSpec): string[] {
+  return [...spec.args];
+}
+
+/**
+ * `initialize` options per server. For TypeScript this is where the tsserver
+ * script goes, which is how version 6+ accepts it.
+ */
+export function initializeOptionsFor(
+  cwd: string,
+  spec: ServerSpec,
+  env: Record<string, string | undefined> = process.env,
+): Record<string, unknown> | undefined {
+  if (spec.command !== "typescript-language-server") return undefined;
+  const tsserver = findTsserverPath(cwd, env);
+  return tsserver ? { tsserver: { path: tsserver } } : undefined;
 }
