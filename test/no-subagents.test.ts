@@ -75,6 +75,13 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // 2026-11-20: twenty-two extensions. qronos-thinking-meter became
     // qronos-working-line: the Claude-Code-style line above the ad box that
     // counts output tokens for the whole run. Still no tool, no model call.
+    // 2026-11-21: to twenty-six with three oh-my-pi ports, none of which adds a
+    // tool: qronos-stream-rules (aborts a turn on a banned pattern; a no-op
+    // until .qronos/stream-rules.json exists), qronos-notify (one desktop
+    // notification per long turn) and qronos-advisor (a reviewer model, only
+    // when QRONOS_ADVISOR is set). The advisor is the single exception to "no
+    // second model call": it runs AFTER turn_end, one at a time, and is off by
+    // default, so two completions requests are still never open together.
     // 2026-10-27: qronos-interrupt renamed to qronos-prompt-history. The name
     // changed because the extension NO LONGER touches Escape, which is pi's
     // app.interrupt binding; it only records submitted prompts for /recall. The
@@ -105,6 +112,8 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-prompt-history",
         "qronos-provider",
         "qronos-working-line",
+        "qronos-stream-rules",
+        "qronos-notify",
         "qronos-tool-guard",
       ].sort(),
     );

@@ -3,6 +3,7 @@ import { realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { openBrowser } from "./browser";
 import { HELP_TEXT, parseCliArgs, versionLine } from "./cli-args";
+import { COMPLETION_SHELLS, completionInstallHint, completionScript, isCompletionShell } from "./completions";
 import { readAutoUpdate } from "./cli-config";
 import { clearJwt, loadJwt } from "./credentials";
 import { resolveBaseUrl } from "./env";
@@ -57,6 +58,17 @@ async function main(): Promise<void> {
   if (command.kind === "init") {
     const code = await runInitCli();
     process.exit(code);
+  }
+  if (command.kind === "completions") {
+    if (!isCompletionShell(command.shell)) {
+      console.error(`qronos-cli: unsupported shell "${command.shell || "(none)"}". Use one of: ${COMPLETION_SHELLS.join(", ")}`);
+      process.exit(2);
+    }
+    // Script to stdout so it can be redirected; the hint to stderr so it cannot
+    // end up inside the sourced file.
+    process.stdout.write(completionScript(command.shell));
+    console.error(completionInstallHint(command.shell));
+    process.exit(0);
   }
   if (command.kind === "unknown") {
     console.error(`qronos-cli: unknown argument "${command.arg}"\n\n${HELP_TEXT}`);

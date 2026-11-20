@@ -38,6 +38,12 @@ import { loadMemoryPrompt } from "./memory-io";
 import { getUserMemoryPath } from "./paths";
 import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
+import { createAdvisorExtension } from "./advisor";
+import { parseAdvisorConfig } from "./advisor-core";
+import { createStreamRulesExtension, defaultRulePaths } from "./stream-rules-extension";
+import { createNotifyExtension } from "./notify-extension";
+import { notificationsEnabled } from "./notifications";
+import { installFrameRateCap } from "./frame-rate";
 import { installEffortHandler } from "./effort-selector";
 import { installFooterRightAlign } from "./footer-align";
 import { readConfigObject, readHooksFile, readStatusLineCommand, writeConfigPatch } from "./cli-config";
@@ -336,6 +342,29 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const agentToolExtension: InlineExtension = createAgentToolExtension();
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
+  // Ported from can1357/oh-my-pi. Both are OFF when unconfigured, so the closed
+  // extension list below does not grow for users who never asked for them.
+  //   advisor:      a cheap reviewer model reads each finished turn
+  //   stream rules: stop a turn the moment a banned pattern is streamed
+  const advisorConfig = parseAdvisorConfig(process.env as Record<string, string | undefined>);
+  const advisorExtension = createAdvisorExtension({ config: advisorConfig });
+  const streamRulesRuntime = createStreamRulesExtension({
+    ...defaultRulePaths(process.cwd(), opts.agentDir),
+  });
+  if (streamRulesRuntime.warnings.length > 0) {
+    for (const warning of streamRulesRuntime.warnings) console.error(`qronos-cli: ${warning}`);
+  }
+  // Registered even with zero rules: the factory returns immediately, so an
+  // empty rule file costs nothing and the extension list stays predictable.
+  const streamRulesExtension: InlineExtension = {
+    name: "qronos-stream-rules",
+    factory: streamRulesRuntime.extension,
+  };
+  // One desktop notification per finished turn. The notifier itself is a no-op
+  // on a terminal that cannot show it (notifications.ts decides), so the
+  // extension is always registered and the gate never depends on ambient env.
+  const notifyExtension: InlineExtension = { name: "qronos-notify", factory: createNotifyExtension()! };
+  void notificationsEnabled;
   // Tier 2 item 6: lifecycle hooks. User-level hooks.json first, then project
   // hooks; both are merged so a project can add to (not silently replace) the
   // user's hooks. Parsed per runtime build so an edit takes effect on reload.
@@ -385,7 +414,11 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     toolSearchExtension,
     createClaudeToolRendererExtension(),
     createPromptHistoryExtension(),
-  ];
+    // Optional, appended only when configured; undefined entries are dropped.
+    advisorExtension,
+    streamRulesExtension,
+    notifyExtension,
+  ].filter((extension): extension is InlineExtension => extension !== undefined);
 
   const settingsManager = buildSettingsManager(opts, models, opts.projectTrusted === true);
 
@@ -530,6 +563,8 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
   // values so the choice is discoverable.
   installSmoothScrolling();
   ensureUiDefaults(opts.agentDir);
+  // QRONOS_FPS caps redraws for battery/SSH; no-op when unset.
+  installFrameRateCap(process.env as Record<string, string | undefined>);
   const cwd = process.cwd();
   const sessionDir = getSessionDir(cwd, opts.agentDir);
   const sm = await createSessionManager(cwd, sessionDir, opts.session);

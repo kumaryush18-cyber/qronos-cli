@@ -18,6 +18,7 @@ export type CliCommand =
   | { kind: "version" }
   | { kind: "logout" }
   | { kind: "mcp"; args: string[] }
+  | { kind: "completions"; shell: string }
   | { kind: "unknown"; arg: string };
 
 export const HELP_TEXT = `
@@ -36,6 +37,7 @@ Usage:
   qronos-cli --dangerously-skip-permissions  skip all permission confirmation prompts
   qronos-cli logout                      remove stored sign-in credentials
   qronos-cli mcp <command>               manage Model Context Protocol tools (qronos-cli mcp --help)
+  qronos-cli completions <bash|zsh|fish> print a shell completion script
   qronos-cli --version                   print CLI version
   qronos-cli --help                      show this help
 
@@ -60,6 +62,11 @@ Environment Variables:
   QRONOS_NO_INTRO            skip the first-run intro banner
   QRONOS_NO_GRAVITY_PIXEL    set to 1 to stop all Gravity ad tracking
   QRONOS_MODEL               default model id when the server sends no catalog
+  QRONOS_ADVISOR             1 = a cheap reviewer model reads each finished turn,
+                             off = default, or a model id to use that model
+  QRONOS_ADVISOR_EVERY       review every Nth turn (default 1)
+  QRONOS_NOTIFY              0 = no desktop notification when a turn finishes
+  QRONOS_FPS                 cap screen redraws, e.g. 30 (default: engine speed)
   QRONOS_TUI_MODE            fullscreen (default, mouse clicks move the cursor)
                              or regular (terminal scrollback, no click-to-cursor)
   QRONOS_TITLE               text shown in the terminal tab title
@@ -75,6 +82,8 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
   if (first === undefined) return { kind: "run", options: {} };
 
   if (first === "mcp") return { kind: "mcp", args: rest };
+  // Completion scripts must never start a session: print and exit.
+  if (first === "completions") return { kind: "completions", shell: rest.join(" ").trim() };
   if (first === "init") return { kind: "init" };
   if (first === "--help" || first === "-h" || first === "help") return { kind: "help" };
   if (first === "--version" || first === "-v" || first === "version") return { kind: "version" };
