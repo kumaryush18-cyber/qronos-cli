@@ -52,6 +52,10 @@ session.subscribe((event: any) => {
   if (event.type === "tool_execution_end") {
     const text = event.result?.content?.[0]?.text ?? "";
     console.log(`[tool ${event.toolName}${event.isError ? " FAILED" : ""}] ${String(text).slice(0, 700)}`);
+    const details = event.result?.details;
+    if (details && typeof details === "object" && "structured" in details) {
+      console.log(`[details] ${JSON.stringify((details as any).structured).slice(0, 500)}`);
+    }
     toolLines.push(`${event.toolName}${event.isError ? " FAILED" : ""}`);
   }
 });
@@ -64,6 +68,10 @@ try {
     const [last] = [...session.messages].reverse().filter((m: any) => m.role === "assistant");
     const text = (last as any)?.content?.filter?.((p: any) => p.type === "text").map((p: any) => p.text).join("\n") ?? "";
     console.log(`=== answer ${index + 1} (${Math.round((Date.now() - started) / 1000)}s)\n${text}`);
+    if (!text) {
+      const last = [...session.messages].reverse().find((m: any) => m.role === "assistant") as any;
+      console.log(`=== no text: stopReason=${last?.stopReason} error=${String(last?.errorMessage ?? "").slice(0, 200)}`);
+    }
     // A shell command to run between prompts, so a test can change a file
     // behind the model's back (that is what makes a stale tag observable).
     const between = process.env.QRONOS_E2E_BETWEEN;

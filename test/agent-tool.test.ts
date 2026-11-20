@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { AgentRegistry } from "../src/agent-registry";
+import { checkAgainstSchema } from "../src/agent-tool";
 import {
   AGENT_TOOL_NAME,
   createAgentToolExtension,
@@ -333,5 +334,149 @@ describe("agent registry wiring (Agent Hub part A)", () => {
 
     expect(registry.list().map((r) => r.description)).toEqual(["one", "two", "three"]);
     expect(registry.list().every((r) => r.status === "done")).toBe(true);
+  });
+});
+
+describe("typed results (Agent Hub part B)", () => {
+  const REPORT_SCHEMA = {
+    type: "object",
+    required: ["summary", "files"],
+    properties: { summary: { type: "string" }, files: { type: "array", items: { type: "string" } } },
+  };
+
+  const build = (runner: any) => {
+    let tool: any = null;
+    const pi = { registerTool: (t: any) => (tool = t) } as unknown as ExtensionAPI;
+    (createAgentToolExtension({ runner, registry: new AgentRegistry() }) as any).factory(pi);
+    const ctx = { cwd: "/test/project", ui: { notify: () => {}, setStatus: () => {} } } as unknown as ExtensionToolContext;
+    return { tool, ctx };
+  };
+
+  test("the schema reaches the runner", async () => {
+    let seen: unknown;
+    const runner = async (params: any) => {
+      seen = params.outputSchema;
+      return { output: "{}", turns: 1, toolsUsed: [], structured: { value: {}, firstTry: true } };
+    };
+    const { tool, ctx } = build(runner);
+    await tool.execute("c", { description: "d", prompt: "p", output_schema: REPORT_SCHEMA }, undefined, undefined, ctx);
+    expect(seen).toEqual(REPORT_SCHEMA);
+  });
+
+  test("a matching answer comes back as a value in details", async () => {
+    const value = { summary: "fine", files: ["a.ts"] };
+    const runner = async () => ({
+      output: JSON.stringify(value),
+      turns: 2,
+      toolsUsed: [],
+      structured: { value, firstTry: true },
+    });
+    const { tool, ctx } = build(runner);
+    const result = await tool.execute(
+      "c",
+      { description: "d", prompt: "p", output_schema: REPORT_SCHEMA },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(result.details.structured).toEqual(value);
+    expect(result.details.schemaMismatched).toBe(false);
+    expect(result.content[0].text).toContain("Schema: satisfied");
+    expect(result.content[0].text).toContain(JSON.stringify(value));
+  });
+
+  test("a repaired answer says so", async () => {
+    const value = { summary: "fixed", files: ["b.ts"] };
+    const runner = async () => ({
+      output: JSON.stringify(value),
+      turns: 3,
+      toolsUsed: [],
+      structured: { value, firstTry: false },
+    });
+    const { tool, ctx } = build(runner);
+    const result = await tool.execute(
+      "c",
+      { description: "d", prompt: "p", output_schema: REPORT_SCHEMA },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(result.content[0].text).toContain("after one repair turn");
+  });
+
+  test("a mismatched answer is never silently accepted", async () => {
+    const runner = async () => ({
+      output: "I looked around but found nothing useful.",
+      turns: 2,
+      toolsUsed: [],
+      schemaIssues: [{ path: "files", message: "is required" }],
+    });
+    const { tool, ctx } = build(runner);
+    const result = await tool.execute(
+      "c",
+      { description: "d", prompt: "p", output_schema: REPORT_SCHEMA },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(result.details.structured).toBeNull();
+    expect(result.details.schemaMismatched).toBe(true);
+    expect(result.content[0].text).toContain("NOT satisfied");
+    expect(result.content[0].text).toContain("- files: is required");
+  });
+
+  test("no schema means no schema notes at all", async () => {
+    const runner = async () => ({ output: "plain prose", turns: 1, toolsUsed: [] });
+    const { tool, ctx } = build(runner);
+    const result = await tool.execute("c", { description: "d", prompt: "p" }, undefined, undefined, ctx);
+    expect(result.content[0].text).not.toContain("Schema:");
+    expect(result.details.structured).toBeNull();
+  });
+
+  test("fan-out returns one structured entry per task, in order", async () => {
+    const runner = async (params: any) => {
+      const value = { summary: params.description, files: [params.description] };
+      return { output: JSON.stringify(value), turns: 1, toolsUsed: [], structured: { value, firstTry: true } };
+    };
+    const { tool, ctx } = build(runner);
+    const result = await tool.execute(
+      "c",
+      {
+        description: "fan out",
+        prompt: "ignored",
+        output_schema: REPORT_SCHEMA,
+        tasks: [
+          { description: "one", prompt: "a" },
+          { description: "two", prompt: "b" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(result.details.structured).toEqual([
+      { summary: "one", files: ["one"] },
+      { summary: "two", files: ["two"] },
+    ]);
+    expect(result.details.schemaMismatched).toBe(0);
+  });
+
+  test("checkAgainstSchema separates 'not JSON' from 'wrong shape'", () => {
+    expect(checkAgainstSchema("no json here", REPORT_SCHEMA).issues[0].message).toBe(
+      "the answer is not valid JSON",
+    );
+    expect(checkAgainstSchema('{"summary":"x"}', REPORT_SCHEMA).issues[0]).toEqual({
+      path: "files",
+      message: "is required",
+    });
+    expect(checkAgainstSchema('{"summary":"x","files":["a"]}', REPORT_SCHEMA).value).toEqual({
+      summary: "x",
+      files: ["a"],
+    });
+    // Fenced JSON is accepted: the model often wraps it.
+    expect(checkAgainstSchema('```json\n{"summary":"x","files":[]}\n```', REPORT_SCHEMA).value).toEqual({
+      summary: "x",
+      files: [],
+    });
   });
 });
