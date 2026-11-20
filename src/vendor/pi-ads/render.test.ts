@@ -325,9 +325,9 @@ describe("U1: whole ad card is one clickable link", () => {
     return m[1]!;
   };
 
-  test("every one of the five lines carries the same id and the click URL, plus a close sequence", () => {
+  test("every line of the card carries the same id and the click URL, plus a close sequence", () => {
     const lines = renderAdCard(creative, clickUrl, theme, 80);
-    expect(lines.length).toBe(5);
+    expect(lines.length).toBe(4);
     const ids = lines.map(idOf);
     expect(new Set(ids).size).toBe(1);
     for (const line of lines) {
@@ -344,34 +344,53 @@ describe("U1: whole ad card is one clickable link", () => {
     expect(idA1).not.toBe(idB);
   });
 
-  test("visible text with escapes stripped is byte-identical to the pre-change output at 60, 80, 140 cols", () => {
+  test("the card's visible text is stable at 60, 80 and 140 cols", () => {
+    // Pinned on purpose: a layout change should be a reviewed edit here, not a
+    // silent shift on the user's screen. The card is four rows: brand rail,
+    // headline, body + right-aligned CTA, hairline base.
     const expected: Record<number, string[]> = {
       60: [
-        "╭── Sponsored ◈ ─────────────────────────────────────────╮",
-        "│ Headline                                               │",
-        "│ Body copy                                              │",
-        "│ ▸ Click here                                           │",
-        "╰────────────────────────────────────────────────────────╯",
+        "╭─▬▬▬── sponsored ─────────────────────────────────────╮",
+        "│ ✦ Headline                                           │",
+        "│   Body copy                             Click here ↗ │",
+        "╰──────────────────────────────────────────────────────╯",
       ],
       80: [
-        "╭── Sponsored ◈ ─────────────────────────────────────────────────────────────╮",
-        "│ Headline                                                                   │",
-        "│ Body copy                                                                  │",
-        "│ ▸ Click here                                                               │",
-        "╰────────────────────────────────────────────────────────────────────────────╯",
+        "╭─▬▬▬── sponsored ─────────────────────────────────────────────────────────╮",
+        "│ ✦ Headline                                                               │",
+        "│   Body copy                                                 Click here ↗ │",
+        "╰──────────────────────────────────────────────────────────────────────────╯",
       ],
       140: [
-        "╭── Sponsored ◈ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮",
-        "│ Headline                                                                                                                               │",
-        "│ Body copy                                                                                                                              │",
-        "│ ▸ Click here                                                                                                                           │",
-        "╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯",
+        "╭─▬▬▬── sponsored ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮",
+        "│ ✦ Headline                                                                                                                           │",
+        "│   Body copy                                                                                                             Click here ↗ │",
+        "╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯",
       ],
     };
     for (const width of [60, 80, 140] as const) {
       const lines = renderAdCard(creative, clickUrl, theme, width).map(stripOsc8);
       expect(lines).toEqual(expected[width]!);
     }
+  });
+
+  test("the brand rail and the disclosure are both on the top border", () => {
+    const top = renderAdCard(creative, clickUrl, theme, 80).map(stripOsc8)[0]!;
+    expect(top).toContain("▬▬▬");
+    expect(top).toContain("sponsored");
+  });
+
+  test("a card too narrow for the rail drops the flourish but keeps the disclosure", () => {
+    const lines = renderAdCard(creative, clickUrl, theme, 26).map(stripOsc8);
+    expect(lines[0]).toContain("sponsored");
+    expect(lines[0]).not.toContain("▬▬▬");
+  });
+
+  test("with no body the CTA moves up instead of leaving a blank row", () => {
+    const lines = renderAdCard({ ...creative, body: "" }, clickUrl, theme, 80).map(stripOsc8);
+    expect(lines).toHaveLength(4);
+    expect(lines[1]).toContain("Headline");
+    expect(lines[2]).toContain("Click here");
   });
 
   test("the CTA text is still visible and the raw /c/ URL is still not visible", () => {

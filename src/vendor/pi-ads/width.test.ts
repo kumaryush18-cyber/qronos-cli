@@ -22,7 +22,10 @@ function expectFits(lines: string[], width: number) {
 }
 
 function expectFramed(lines: string[], width: number) {
-  expect(lines.length).toBe(5);
+  // The card is four rows: brand rail + headline + body/CTA + hairline base.
+  // A narrow card may add a row to give the CTA its own line.
+  expect(lines.length).toBeGreaterThanOrEqual(4);
+  expect(lines.length).toBeLessThanOrEqual(5);
   expectFits(lines, width);
   expect(new Set(lines.map(visibleWidth)).size).toBe(1); // borders line up
 }
