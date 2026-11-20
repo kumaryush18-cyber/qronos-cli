@@ -31,7 +31,7 @@ import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
 import { createWorkingLineExtension } from "./working-line";
 import { ensureKeybindingDefaults } from "./keybindings";
-import { ensureUiDefaults } from "./ui-defaults";
+import { ensureUiDefaults, installSmoothScrolling } from "./ui-defaults";
 import { resolveTuiMode } from "./env";
 import { AGENT_RULES } from "./agent-rules";
 import { loadMemoryPrompt } from "./memory-io";
@@ -525,8 +525,10 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
   // its keybinding manager, which happens inside the InteractiveMode below, so
   // the defaults have to be on disk before that.
   ensureKeybindingDefaults(opts.agentDir);
-  // Scrolling defaults: one line per wheel notch and an always-visible bar, so a
-  // long answer scrolls smoothly instead of jumping in six-line blocks.
+  // Smooth scrolling is ours to guarantee: the resolver is patched so "auto"
+  // becomes one line per wheel notch, and the settings file records the same
+  // values so the choice is discoverable.
+  installSmoothScrolling();
   ensureUiDefaults(opts.agentDir);
   const cwd = process.cwd();
   const sessionDir = getSessionDir(cwd, opts.agentDir);

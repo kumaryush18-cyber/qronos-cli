@@ -13,6 +13,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getQronosAgentDir } from "./paths";
 
 export const UI_DEFAULTS: Readonly<Record<string, unknown>> = {
@@ -22,6 +23,33 @@ export const UI_DEFAULTS: Readonly<Record<string, unknown>> = {
 
 export function settingsPath(agentDir: string = getQronosAgentDir()): string {
   return join(agentDir, "settings.json");
+}
+
+/**
+ * Smooth scrolling is Qronos CLI's job, not the user's.
+ *
+ * pi resolves the wheel step from settings and falls back to "auto", which turns
+ * a fast spin into six-line jumps on Windows and Linux. Patching the resolver
+ * keeps the behaviour ours: "auto" becomes exactly one line per notch, while a
+ * number the user typed themselves (3, 5, ...) is left alone, so nobody is locked
+ * out of their own preference.
+ */
+export function installSmoothScrolling(): void {
+  const proto = SettingsManager.prototype as unknown as {
+    getFullscreenWheelScrollLines: () => unknown;
+    getFullscreenScrollbar: () => unknown;
+  };
+  const originalLines = proto.getFullscreenWheelScrollLines;
+  const originalBar = proto.getFullscreenScrollbar;
+
+  proto.getFullscreenWheelScrollLines = function patchedWheelLines(this: unknown) {
+    const value = originalLines.call(this);
+    return value === "auto" ? 1 : value;
+  };
+  proto.getFullscreenScrollbar = function patchedScrollbar(this: unknown) {
+    const value = originalBar.call(this);
+    return value === undefined || value === "auto" || value === "hidden" ? "always" : value;
+  };
 }
 
 /** Merge the missing keys into `settings.json`. Returns true when the file changed. */
