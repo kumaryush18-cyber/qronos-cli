@@ -35,6 +35,8 @@ export interface WorkflowAgentResult {
   error?: string;
   /** Tokens this agent cost, when the provider reports them. */
   usage?: WorkflowUsage;
+  /** True when this answer came from the journal instead of a model call. */
+  replayed?: boolean;
 }
 
 export type WorkflowAgentRunner = (
@@ -88,6 +90,8 @@ export type WorkflowEvent =
   | { type: "phase"; at: number; name: string; depth: number }
   | { type: "log"; at: number; message: string; depth: number }
   | { type: "agent_start"; at: number; id: string; label: string; phase?: string; depth: number }
+  | { type: "paused"; at: number; depth: number }
+  | { type: "resumed"; at: number; depth: number }
   | {
       type: "agent_end";
       at: number;
@@ -101,6 +105,12 @@ export type WorkflowEvent =
       depth: number;
       /** The answer, capped. The journal stores it so a resumed run can replay. */
       text?: string;
+      /** True when this answer came from the journal instead of a model call. */
+      replayed?: boolean;
+      /** The call's scope and position, and a hash of the request it answered. */
+      scope?: string;
+      index?: number;
+      fingerprint?: string;
     }
   | {
       type: "run_end";
@@ -125,6 +135,8 @@ export interface WorkflowAgentRecord {
   usage?: WorkflowUsage;
   /** 1 for a top-level workflow, 2 inside a nested one. */
   depth: number;
+  /** True when this agent's answer was replayed from the journal, not called. */
+  replayed?: boolean;
 }
 
 /** Per-phase totals, so the panel can say who did how much. */
@@ -152,6 +164,10 @@ export interface WorkflowRunResult {
   truncated: boolean;
   /** Total tokens over every agent in this run, nested workflows included. */
   tokens: WorkflowUsage;
+  /** How many agents were answered from the journal instead of a model call. */
+  replayed?: number;
+  /** Tokens the replayed agents had already spent in the earlier attempt. */
+  replayedTokens?: WorkflowUsage;
 }
 
 export class WorkflowLimitError extends Error {

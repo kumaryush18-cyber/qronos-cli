@@ -29,6 +29,8 @@ import {
 import { extractJson, validateJsonSchema } from "./agent-schema";
 import { parseWorkflowMeta, runWorkflowScript, type WorkflowMeta } from "./workflow-sandbox";
 import { createSlotPool, type SlotPool } from "./workflow-slots";
+import { createResumableWallClock } from "./workflow-clock";
+import { agentKey, fingerprintOf, type WorkflowReplay } from "./workflow-replay";
 
 export interface WorkflowRuntimeOptions {
   runAgent: WorkflowAgentRunner;
@@ -48,6 +50,15 @@ export interface WorkflowRuntimeOptions {
    * and a chat subagent cannot add up to twice the concurrency limit.
    */
   slots?: SlotPool;
+  /** Saved answers from an earlier attempt, when this run is a resume. */
+  replay?: WorkflowReplay;
+  /** Internal: this run's scope inside its parent, so call keys stay stable. */
+  scope?: string;
+  /**
+   * The moment the SCRIPT should see as "now". A resumed run passes the original
+   * run's start time, so the script's own decisions repeat exactly.
+   */
+  scriptNow?: number;
 }
 
 /** State that must be shared by a run and its children, never copied. */
@@ -58,6 +69,13 @@ export interface SharedState {
   truncated: boolean;
   semaphore: SlotPool;
   controller: AbortController;
+  /** Agents answered from the journal, and the tokens they had already spent. */
+  replayed: number;
+  replayedUsage: WorkflowUsage;
+  /** Set while the user has paused the run. New agents wait here. */
+  paused: boolean;
+  /** Calls waiting for a resume, woken together. */
+  pauseWaiters: Array<() => void>;
 }
 
 /** Depth-limited JSON clone, so a script cannot hand back an object graph. */
@@ -113,6 +131,14 @@ export class WorkflowRuntime {
   private readonly shared: SharedState;
   private readonly depth: number;
   private readonly args: unknown;
+  private readonly replay?: WorkflowReplay;
+  private readonly scope: string;
+  private readonly scriptNow?: number;
+  /** Calls started in this scope, so a replay asks for the same position. */
+  private scopeCalls = 0;
+  /** Children get their own scope; this count keeps two calls apart. */
+  private childCalls = 0;
+  private readonly wallClock: ReturnType<typeof createResumableWallClock>;
 
   private readonly phases: string[] = [];
   private readonly logs: string[] = [];
@@ -128,6 +154,9 @@ export class WorkflowRuntime {
     this.runScript = options.runScript ?? runWorkflowScript;
     this.depth = options.depth ?? 1;
     this.args = options.args;
+    this.replay = options.replay;
+    this.scope = options.scope ?? "";
+    this.scriptNow = options.scriptNow;
     this.shared =
       options.shared ?? {
         started: 0,
@@ -136,7 +165,44 @@ export class WorkflowRuntime {
         truncated: false,
         semaphore: options.slots ?? createSlotPool(this.config.concurrency),
         controller: new AbortController(),
+        replayed: 0,
+        replayedUsage: emptyUsage(),
+        paused: false,
+        pauseWaiters: [],
       };
+    this.wallClock = createResumableWallClock(this.config.wallClockMs, { now: () => this.now() });
+  }
+
+  /**
+   * Pause: stop starting new agents. The ones already talking to the model are
+   * allowed to finish, because killing them would throw away tokens already paid
+   * for. The wall clock stops too: a paused run must not burn its ten minutes.
+   */
+  pause(): void {
+    if (this.shared.paused) return;
+    this.shared.paused = true;
+    this.wallClock.pause();
+    this.emit({ type: "paused", at: this.now(), depth: this.depth });
+  }
+
+  /** Resume a paused run. Nothing is replayed: it simply carries on. */
+  resumeLive(): void {
+    if (!this.shared.paused) return;
+    this.shared.paused = false;
+    const waiters = this.shared.pauseWaiters.splice(0);
+    for (const wake of waiters) wake();
+    this.wallClock.start(() => this.shared.controller.abort());
+    this.emit({ type: "resumed", at: this.now(), depth: this.depth });
+  }
+
+  get paused(): boolean {
+    return this.shared.paused;
+  }
+
+  /** Block here while paused. Every agent call passes through this gate. */
+  private async waitWhilePaused(): Promise<void> {
+    if (!this.shared.paused) return;
+    await new Promise<void>((resolve) => this.shared.pauseWaiters.push(resolve));
   }
 
   get signal(): AbortSignal {
@@ -176,15 +242,14 @@ export class WorkflowRuntime {
     this.emit({ type: "log", at: this.now(), message: line, depth: this.depth });
   }
 
-  /** Reserve one agent slot from the ONE budget shared by every nested run. */
-  private reserve(): string {
+  /** Take one agent from the ONE budget shared by every nested run. */
+  private reserve(): void {
     if (this.shared.started >= this.config.maxAgents) {
       throw new WorkflowLimitError(
         `agent budget exhausted: this workflow already started ${this.config.maxAgents} agents (QRONOS_WORKFLOW_MAX_AGENTS)`,
       );
     }
     this.shared.started += 1;
-    return `wf-${this.shared.started}`;
   }
 
   async agent(
@@ -193,8 +258,44 @@ export class WorkflowRuntime {
   ): Promise<WorkflowAgentResult> {
     const text = typeof prompt === "string" ? prompt : String(prompt);
     if (text.trim() === "") return { ok: false, text: "", error: "empty prompt" };
-    const id = this.reserve();
+
+    // The position of this call inside its scope. A replay asks for the same
+    // position again, which is why the counter moves before anything is awaited.
+    const index = this.scopeCalls;
+    this.scopeCalls += 1;
+    const id = agentKey(this.scope, index);
     const label = (options.label ?? text).trim().slice(0, 80).replace(/\n/g, " ");
+    const request: WorkflowAgentRequest = {
+      prompt: text,
+      label,
+      schema: options.schema,
+      agentType: options.agent,
+      model: typeof options.model === "string" && options.model.trim() !== "" ? options.model.trim() : undefined,
+    };
+    const fingerprint = fingerprintOf({ prompt: text, agent: request.agentType, model: request.model });
+
+    // A saved answer costs nothing: no slot, no model, no budget. It must still
+    // pass the same schema check, because the schema may have changed.
+    const saved = this.replay?.lookup(this.scope, index, {
+      prompt: text,
+      agent: request.agentType,
+      model: request.model,
+    });
+    if (saved?.hit) {
+      const replayed = this.checkSchema(saved.result, options.schema);
+      this.emit({ type: "agent_start", at: this.now(), id, label, phase: this.currentPhase, depth: this.depth });
+      this.record({ id, label, index, fingerprint, checked: replayed, durationMs: 0, replayed: true });
+      return replayed;
+    }
+
+    // A paused run starts nothing new. Waiting here, before the budget and the
+    // slot, means a paused run holds no resources.
+    await this.waitWhilePaused();
+    if (this.shared.controller.signal.aborted) {
+      return { ok: false, text: "", error: "the workflow was stopped before this agent started" };
+    }
+
+    this.reserve();
     this.emit({
       type: "agent_start",
       at: this.now(),
@@ -207,13 +308,6 @@ export class WorkflowRuntime {
     await this.shared.semaphore.acquire();
     const startedAt = this.now();
     try {
-      const request: WorkflowAgentRequest = {
-        prompt: text,
-        label,
-        schema: options.schema,
-        agentType: options.agent,
-        model: typeof options.model === "string" && options.model.trim() !== "" ? options.model.trim() : undefined,
-      };
       let result: WorkflowAgentResult;
       try {
         result = await this.runAgent(request, this.shared.controller.signal);
@@ -225,37 +319,57 @@ export class WorkflowRuntime {
         };
       }
       const checked = this.checkSchema(result, options.schema);
-      const durationMs = this.now() - startedAt;
-      const record: WorkflowAgentRecord = {
-        id,
-        label,
-        ok: checked.ok,
-        error: checked.error,
-        phase: this.currentPhase,
-        durationMs,
-        usage: checked.usage,
-        depth: this.depth,
-      };
-      this.shared.agents.push(record);
-      this.shared.usage = addUsage(this.shared.usage, checked.usage);
-      this.bumpPhase(record);
-      this.emit({
-        type: "agent_end",
-        at: this.now(),
-        id,
-        label,
-        ok: checked.ok,
-        error: checked.error,
-        phase: this.currentPhase,
-        durationMs,
-        usage: checked.usage,
-        depth: this.depth,
-        text: capEventText(checked.text),
-      });
+      this.record({ id, label, index, fingerprint, checked, durationMs: this.now() - startedAt, replayed: false });
       return checked;
     } finally {
       this.shared.semaphore.release();
     }
+  }
+
+  /** Book one finished agent: the record, the totals, the phase and the event. */
+  private record(entry: {
+    id: string;
+    label: string;
+    index: number;
+    fingerprint: string;
+    checked: WorkflowAgentResult;
+    durationMs: number;
+    replayed: boolean;
+  }): void {
+    const { id, label, checked, durationMs, replayed, index, fingerprint } = entry;
+    const record: WorkflowAgentRecord = {
+      id,
+      label,
+      ok: checked.ok,
+      error: checked.error,
+      phase: this.currentPhase,
+      durationMs,
+      usage: checked.usage,
+      depth: this.depth,
+      replayed,
+    };
+    this.shared.agents.push(record);
+    if (replayed) this.shared.replayed += 1;
+    else this.shared.usage = addUsage(this.shared.usage, checked.usage);
+    if (replayed) this.shared.replayedUsage = addUsage(this.shared.replayedUsage, checked.usage);
+    this.bumpPhase(record);
+    this.emit({
+      type: "agent_end",
+      at: this.now(),
+      id,
+      label,
+      ok: checked.ok,
+      error: checked.error,
+      phase: this.currentPhase,
+      durationMs,
+      usage: checked.usage,
+      depth: this.depth,
+      text: capEventText(checked.text),
+      replayed,
+      scope: this.scope,
+      index,
+      fingerprint,
+    });
   }
 
   private bumpPhase(record: WorkflowAgentRecord): void {
@@ -263,7 +377,9 @@ export class WorkflowRuntime {
     const entry = this.phaseTiming.get(record.phase) ?? { agents: 0, failed: 0, tokens: 0, durationMs: 0 };
     entry.agents += 1;
     if (!record.ok) entry.failed += 1;
-    entry.tokens += record.usage?.total ?? 0;
+    // A replayed agent spent nothing this time, so the phase totals still add up
+    // to the run's token total. Its old cost is reported separately.
+    entry.tokens += record.replayed ? 0 : record.usage?.total ?? 0;
     entry.durationMs += record.durationMs;
     this.phaseTiming.set(record.phase, entry);
   }
@@ -328,7 +444,13 @@ export class WorkflowRuntime {
       args: this.args,
       depth: this.depth + 1,
       shared: this.shared,
+      replay: this.replay,
+      scriptNow: this.scriptNow ?? this.startedAt,
+      // A child gets its own scope, so its call positions are separate from the
+      // parent's and stay stable across a replay.
+      scope: `${this.scope}w${this.childCalls}/`,
     });
+    this.childCalls += 1;
     // The child inherits the phases named so far, so its agents are attributed
     // to the phase the parent was in when it called workflow().
     if (this.currentPhase) child.phase(this.currentPhase);
@@ -362,28 +484,30 @@ export class WorkflowRuntime {
     const meta = parseWorkflowMeta(script);
     const topLevel = this.depth === 1;
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
-    // The wall clock covers the top-level run only: a child runs inside it.
+    // The wall clock covers the top-level run only: a child runs inside it. It is
+    // a pausable countdown, so a run paused for an hour keeps its full budget.
     const timeout = topLevel
       ? new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
+          this.wallClock.start(() => {
             timedOut = true;
             this.shared.controller.abort();
             reject(new WorkflowTimeoutError(this.config.wallClockMs));
-          }, this.config.wallClockMs);
-          if (typeof timer === "object" && "unref" in timer) (timer as { unref(): void }).unref();
+          });
         })
       : new Promise<never>(() => {});
 
     let value: unknown;
     let error: string | undefined;
     try {
-      value = await Promise.race([this.runScript(script, this.helpers()), timeout]);
+      value = await Promise.race([
+        this.runScript(script, this.helpers(), { now: this.scriptNow ?? this.startedAt }),
+        timeout,
+      ]);
     } catch (caught) {
       error = caught instanceof Error ? caught.message : String(caught);
     } finally {
-      if (timer) clearTimeout(timer);
+      this.wallClock.stop();
     }
 
     let finalValue: unknown;
@@ -412,6 +536,8 @@ export class WorkflowRuntime {
       durationMs,
       truncated: this.shared.truncated,
       tokens: topLevel ? { ...this.shared.usage } : addUsage(this.shared.usage, undefined),
+      replayed: this.shared.replayed,
+      replayedTokens: topLevel ? { ...this.shared.replayedUsage } : undefined,
     };
     this.emit({
       type: "run_end",

@@ -33,6 +33,10 @@ export type JournalEntry =
       script: string;
       maxAgents: number;
       wallClockMs: number;
+      /** Work passed in as `args`, when it can survive a JSON round trip. */
+      args?: unknown;
+      /** Set when this run replays the journal of an earlier one. */
+      resumedFrom?: string;
     }
   | { kind: "phase"; at: number; name: string }
   | { kind: "agent_start"; at: number; id: string; label: string; phase?: string }
@@ -48,9 +52,25 @@ export type JournalEntry =
       text?: string;
       /** Redacted structured value, when a schema was used. */
       data?: unknown;
+      /** Stable call name (scope plus position). A replay matches on this. */
+      key?: string;
+      scope?: string;
+      index?: number;
+      /** Hash of the request, so a changed prompt replays nothing after it. */
+      fingerprint?: string;
+      /** True when this answer came from the journal rather than a model call. */
+      replayed?: boolean;
     }
   | { kind: "log"; at: number; message: string }
-  | { kind: "run_end"; at: number; ok: boolean; error?: string; tokens: WorkflowUsage; durationMs: number };
+  | {
+      kind: "run_end";
+      at: number;
+      ok: boolean;
+      error?: string;
+      tokens: WorkflowUsage;
+      durationMs: number;
+      replayed?: number;
+    };
 
 export function journalDir(agentDir: string): string {
   return join(agentDir, "workflow-runs");
@@ -139,7 +159,7 @@ export class WorkflowJournal {
     const answers = new Map<string, { ok: boolean; text: string; data?: unknown; usage?: WorkflowUsage; error?: string }>();
     for (const entry of this.read()) {
       if (entry.kind !== "agent_end") continue;
-      answers.set(entry.id, {
+      answers.set(entry.key ?? entry.id, {
         ok: entry.ok,
         text: entry.text ?? "",
         data: entry.data,
@@ -148,6 +168,12 @@ export class WorkflowJournal {
       });
     }
     return answers;
+  }
+
+  /** The `run_start` entry, which carries the script a resume needs. */
+  runStart(): Extract<JournalEntry, { kind: "run_start" }> | undefined {
+    const first = this.read()[0];
+    return first?.kind === "run_start" ? first : undefined;
   }
 
   /** True when the run reached its end entry. */
@@ -203,4 +229,52 @@ export function pruneJournals(dir: string, now = Date.now()): number {
 
 export function journalExists(agentDir: string, runId: string): boolean {
   return existsSync(journalPath(agentDir, runId));
+}
+
+/** What `/workflows saved` shows: a run on disk that can be resumed. */
+export interface SavedRun {
+  runId: string;
+  name: string;
+  startedAt: number;
+  agents: number;
+  /** True when the run already reached its end entry. */
+  finished: boolean;
+  ok?: boolean;
+  tokens?: WorkflowUsage;
+  /** Set when this record is itself a resume of an earlier run. */
+  resumedFrom?: string;
+}
+
+/**
+ * Every run on disk, newest first.
+ *
+ * A run with no `run_end` is an interrupted run. A run with a `run_end` that
+ * failed is also worth showing: it can be resumed to try the failed part again.
+ */
+export function listSavedRuns(dir: string): SavedRun[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
+  } catch {
+    return [];
+  }
+  const runs: SavedRun[] = [];
+  for (const name of names) {
+    const journal = new WorkflowJournal(join(dir, name));
+    const entries = journal.read();
+    const start = entries[0]?.kind === "run_start" ? entries[0] : undefined;
+    if (!start) continue;
+    const end = [...entries].reverse().find((entry) => entry.kind === "run_end");
+    runs.push({
+      runId: start.id || name.replace(/\.jsonl$/, ""),
+      name: start.name,
+      startedAt: start.at,
+      agents: entries.filter((entry) => entry.kind === "agent_end" && !entry.replayed).length,
+      finished: end !== undefined,
+      ok: end?.kind === "run_end" ? end.ok : undefined,
+      tokens: end?.kind === "run_end" ? end.tokens : undefined,
+      resumedFrom: start.resumedFrom,
+    });
+  }
+  return runs.sort((a, b) => b.startedAt - a.startedAt);
 }

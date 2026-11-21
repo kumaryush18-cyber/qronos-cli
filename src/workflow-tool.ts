@@ -16,7 +16,7 @@ import { BUILTIN_AGENTS } from "./agent-discovery";
 import type { AgentDefinition } from "./agent-discovery";
 import { defaultSubagentRunner, type SubagentRunner } from "./agent-tool";
 import { WorkflowRuntime } from "./workflow-runtime";
-import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, tick, tokenBar } from "./workflow-glyphs";
+import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, replayMark, tick, tokenBar } from "./workflow-glyphs";
 import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { sharedSlotPool } from "./workflow-slots";
@@ -52,6 +52,11 @@ const PARAMS = {
       type: "boolean",
       description:
         "Default true: the tool returns at once and the run continues while you talk (like Claude Code). Use false only when the caller needs the value in this turn.",
+    },
+    resumeFrom: {
+      type: "string",
+      description:
+        "Resume a saved run by its id (for example wf_qhj6qy01). The script is replayed and every finished agent that has not changed is answered from the journal instead of the model. `script` is then ignored.",
     },
   },
   required: ["script"],
@@ -136,7 +141,8 @@ function agentLines(result: WorkflowRunResult, maxTokens: number, limit: number)
   const shown = limit > 0 ? rows.slice(0, limit) : rows;
   const nameWidth = Math.min(46, Math.max(12, ...shown.map((agent) => agent.label.length)));
   return shown.map((agent) => {
-    const mark = agent.ok ? tick() : cross();
+    // `↺` marks an agent whose answer came from the journal, not a fresh call.
+    const mark = agent.replayed ? replayMark() : agent.ok ? tick() : cross();
     const depth = agent.depth > 1 ? "  ".repeat(agent.depth - 1) + "└ " : "";
     const label = agent.label.length > nameWidth ? `${agent.label.slice(0, nameWidth - 1)}…` : agent.label;
     const tokens = formatTokens(agent.usage?.total ?? 0).padStart(6);
@@ -151,11 +157,14 @@ function agentLines(result: WorkflowRunResult, maxTokens: number, limit: number)
 export function renderWorkflowReport(name: string, result: WorkflowRunResult): string {
   const failed = result.agents.filter((agent) => !agent.ok).length;
   const tokens = formatTokens(result.tokens.total);
+  const replayed = result.replayed ?? 0;
   const lines: string[] = [];
   lines.push(
     `${RUNNING} workflow ${name}: ${result.agents.length} agent${result.agents.length === 1 ? "" : "s"} in ${formatDuration(
       result.durationMs,
-    )} · ${tokens} tokens${failed > 0 ? ` · ${failed} failed` : ""}`,
+    )} · ${tokens} tokens${failed > 0 ? ` · ${failed} failed` : ""}${
+      replayed > 0 ? ` · ${replayMark()} ${replayed} replayed` : ""
+    }`,
   );
 
   const maxPhase = Math.max(0, ...result.phaseStats.map((stat) => stat.tokens));
@@ -244,14 +253,22 @@ export function renderJobList(active: WorkflowJob[], all: WorkflowJob[]): string
 /** One job, in detail: phases with tokens, then agents sorted by cost. */
 export function renderJobDetail(job: WorkflowJob): string {
   const result = job.result ?? resultFromJob(job);
-  const head = renderWorkflowDetail({ name: job.name, result, at: job.startedAt });
-  const state = job.state === "running" || job.state === "queued" ? `status: ${job.state} (${job.done} done, ${job.running} running)` : "";
+  const live = job.state === "running" || job.state === "queued" || job.state === "paused";
+  // A live job is not a finished job, and calling it "failed" would be a lie that
+  // makes people stop a healthy run.
+  const head = renderWorkflowDetail({ name: job.name, result, at: job.startedAt }, { live: live ? job.state : undefined });
+  const state = live ? `status: ${job.state} (${job.done} done, ${job.running} running)` : "";
+  const replay = job.resumedFrom
+    ? `resumed from ${job.resumedFrom}: ${job.replayed} agent${job.replayed === 1 ? "" : "s"} replayed, ${formatTokens(
+        job.replayedTokens.total,
+      )} tokens not spent again`
+    : "";
   const paths = job.journalPath ? [`journal: ${job.journalPath}`] : [];
-  return [head, state, ...paths].filter(Boolean).join("\n");
+  return [head, state, replay, ...paths].filter(Boolean).join("\n");
 }
 
 /** What `/workflows` prints: the last run, in detail. Pure, so it is testable. */
-export function renderWorkflowDetail(run: LastWorkflowRun | undefined): string {
+export function renderWorkflowDetail(run: LastWorkflowRun | undefined, options: { live?: string } = {}): string {
   if (!run) {
     return [
       "No workflow has run in this session.",
@@ -263,12 +280,19 @@ export function renderWorkflowDetail(run: LastWorkflowRun | undefined): string {
   const { result } = run;
   const failed = result.agents.filter((agent) => !agent.ok).length;
   const lines = [
-    `${RUNNING} ${run.name} — ${result.ok ? "finished" : "failed"}`,
+    `${RUNNING} ${run.name} — ${options.live ?? (result.ok ? "finished" : "failed")}`,
     `agents ${result.agents.length}${failed > 0 ? ` (${cross()} ${failed} failed)` : ""} · ${formatDuration(
       result.durationMs,
     )} · ${formatTokens(result.tokens.total)} tokens`,
     `in ${formatTokens(result.tokens.input)} / out ${formatTokens(result.tokens.output)}`,
   ];
+  if ((result.replayed ?? 0) > 0) {
+    lines.push(
+      `${replayMark()} ${result.replayed} replayed from the journal (${formatTokens(
+        result.replayedTokens?.total ?? 0,
+      )} tokens not spent again)`,
+    );
+  }
   if (result.error) lines.push(`error: ${result.error}`);
   if (result.truncated) lines.push("note: some output was dropped at the cap");
 
@@ -414,9 +438,10 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
         async execute(_toolCallId: string, params: any, _signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionToolContext): Promise<any> {
           const script = typeof params?.script === "string" ? params.script : "";
           const name = (typeof params?.name === "string" && params.name.trim() !== "" ? params.name : "workflow").slice(0, 60);
-          if (script.trim() === "") {
+          const resumeFrom = typeof params?.resumeFrom === "string" ? params.resumeFrom.trim() : "";
+          if (script.trim() === "" && resumeFrom === "") {
             return {
-              content: [{ type: "text" as const, text: "Error: the workflow needs a script." }],
+              content: [{ type: "text" as const, text: "Error: the workflow needs a script (or a resumeFrom id)." }],
               details: { ok: false, reason: "no-script" },
             };
           }
@@ -443,9 +468,10 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             const tokens = jobs.reduce((total, job) => total + job.tokens.total, 0);
             const headline = jobs.length === 1 ? jobs[0]!.name : `${jobs.length} workflows`;
             const phase = jobs.length === 1 ? jobs[0]!.phases.at(-1) : undefined;
-            const text = `${RUNNING} ${headline}${phase ? ` · ${phase}` : ""} · ${running} running · ${done} done · ${formatTokens(
-              tokens,
-            )} tokens`;
+            const paused = jobs.some((job) => job.state === "paused");
+            const text = `${paused ? "⏸" : RUNNING} ${headline}${phase ? ` · ${phase}` : ""}${
+              paused ? " · paused" : ""
+            } · ${running} running · ${done} done · ${formatTokens(tokens)} tokens`;
             try {
               ctx.ui?.setStatus?.("qronos-workflow", text);
             } catch {
@@ -495,13 +521,16 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           // Background: Claude Code's shape. The tool returns at once, the run
           // continues, and the report arrives as a message on the next turn.
           managerFor().prune();
-          const job = managerFor().launch({ script, name, args: params?.args });
+          const job = managerFor().launch({ script, name, args: params?.args, resumeFrom: resumeFrom || undefined });
           publishStatus(true);
           const queued = [
-            `${RUNNING} workflow ${job.name} launched as ${job.id}`,
+            `${RUNNING} workflow ${job.name} launched as ${job.id}${
+              job.resumedFrom ? ` (replaying ${job.resumedFrom})` : ""
+            }`,
             "It runs in the background; your next message arrives as usual.",
             `/workflows          watch it (agents, phases, tokens)`,
             `/workflows ${job.id}  one job in detail`,
+            `/workflows pause ${job.id}  /workflows resume ${job.id}`,
             `/workflows stop ${job.id}  stop it`,
           ].join("\n");
 
@@ -523,10 +552,73 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
       });
 
       qronos.registerCommand("workflows", {
-        description: "Watch workflow runs: phases, agents, tokens; stop one by id",
+        description: "Watch workflow runs: pause, resume, stop; see what is saved on disk",
         handler: async (args: string, ctx: ExtensionCommandContext) => {
           const words = (args ?? "").trim().split(/\s+/).filter(Boolean);
           const manager = state.manager;
+
+          // `/workflows pause <id>`: stop starting agents, keep what is running.
+          if (words[0] === "pause") {
+            const job = words[1] ? manager?.get(words[1]) : manager?.active().find((entry) => entry.state === "running");
+            if (!job) {
+              ctx.ui.notify(words[1] ? `No workflow with id ${words[1]}.` : "No workflow is running.", "info");
+              return;
+            }
+            if (!manager?.pause(job.id)) {
+              ctx.ui.notify(`${job.id} is ${job.state}, not running.`, "info");
+              return;
+            }
+            state.publisher?.(true);
+            ctx.ui.notify(`Paused ${job.id}. ${job.running} agent(s) in flight will finish. /workflows resume ${job.id} to carry on.`, "info");
+            return;
+          }
+
+          // `/workflows resume <id>`: carry on where a pause left off. If that run
+          // is not live any more, replay it from its journal instead.
+          if (words[0] === "resume") {
+            const target = words[1];
+            const job = target ? manager?.get(target) : manager?.active().find((entry) => entry.state === "paused");
+            if (job && manager?.resume(job.id)) {
+              state.publisher?.(true);
+              ctx.ui.notify(`Resumed ${job.id}. Nothing is replayed: it carries on from the pause.`, "info");
+              return;
+            }
+            const saveId = target ?? job?.id;
+            if (!saveId) {
+              ctx.ui.notify("No paused workflow is running. Name a saved run: /workflows saved lists them.", "info");
+              return;
+            }
+            try {
+              const replayed = managerFor().launch({ script: "", resumeFrom: saveId });
+              ctx.ui.notify(
+                [`Replaying ${replayed.resumedFrom} as ${replayed.id}.`, "Finished agents that did not change come from the journal, so they cost nothing again."].join("\n"),
+                "info",
+              );
+            } catch (error) {
+              ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
+            }
+            return;
+          }
+
+          // `/workflows saved`: runs on disk that can be resumed, even in a new session.
+          if (words[0] === "saved") {
+            const runs = managerFor().savedRuns();
+            if (runs.length === 0) {
+              ctx.ui.notify("No workflow run is saved on disk yet.", "info");
+              return;
+            }
+            const lines = runs.slice(0, 12).map((run) => {
+              const mark = run.finished ? (run.ok ? tick() : cross()) : RUNNING;
+              const state = run.finished ? (run.ok ? "finished" : "failed") : "interrupted";
+              return `  ${mark} ${pad(run.runId, 12)} ${pad(run.name.slice(0, 26), 27)} ${pad(
+                `${run.agents} agents`,
+                10,
+              )} ${state}${run.resumedFrom ? ` (from ${run.resumedFrom})` : ""}`;
+            });
+            lines.push("", `resume one with /workflows resume <id>`);
+            ctx.ui.notify(lines.join("\n"), "info");
+            return;
+          }
 
           // `/workflows stop` (all) or `/workflows stop <id>`.
           if (words[0] === "stop") {

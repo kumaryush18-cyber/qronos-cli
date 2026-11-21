@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.11",
+    highlights: [
+      "Workflows can be paused and resumed, the way Claude Code does it. /workflows pause stops new agents and lets the ones in flight finish; /workflows resume carries on from the pause and replays nothing. The wall clock pauses with the run, so a run paused overnight keeps its full ten minutes.",
+      "A run that is not live any more can be replayed from its journal: /workflows resume <id>, or resumeFrom on the tool. Finished agents whose prompt, agent type and model did not change are answered from the record and cost nothing again; the first changed or failed call, and everything after it, runs live. The report counts both: fresh tokens, and the tokens a replay did not spend again.",
+      "The script's own clock is now deterministic: Date.now() and new Date() are frozen at the run's start time and Math.random() is seeded, so a replayed script makes the same decisions. Explicit dates (new Date(0)) still work. Claude Code makes these throw; we keep them usable, which is strictly friendlier and just as exact.",
+      "/workflows saved lists the runs on disk, from this session or an earlier one, so a run lost to a closed terminal can be picked up tomorrow.",
+      "Visuals: a replayed agent shows a blue ↺ instead of a tick, and the status line shows a pause symbol while a run is paused. A live job is no longer labelled failed in its own detail view.",
+      "Proved on a real model (claude-haiku-5.5): pause mid-run then resume in 56s with 0 replayed, and stop-then-replay finishing 3 agents in 22s with 1 replayed where a fresh run took 59s.",
+    ],
+  },
+  {
     version: "1.0.10",
     highlights: [
       "Workflows now run in the background, like Claude Code: the tool returns a job id at once, the run continues while you talk, and the report arrives as a message on a later turn. Pass background: false only when the answer is needed in the same turn.",

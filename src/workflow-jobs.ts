@@ -11,7 +11,16 @@
 //   - the result is delivered once, by the caller, never twice.
 import { homedir } from "node:os";
 import { WorkflowRuntime } from "./workflow-runtime";
-import { WorkflowJournal, journalDir, journalPath, pruneJournals } from "./workflow-journal";
+import {
+  WorkflowJournal,
+  journalDir,
+  journalPath,
+  listSavedRuns,
+  pruneJournals,
+  type JournalEntry,
+  type SavedRun,
+} from "./workflow-journal";
+import { WorkflowReplay, replayRecordsFromJournal } from "./workflow-replay";
 import { sharedSlotPool } from "./workflow-slots";
 import {
   addUsage,
@@ -26,7 +35,7 @@ import {
   type WorkflowUsage,
 } from "./workflow-types";
 
-export type WorkflowJobState = "queued" | "running" | "done" | "failed" | "cancelled";
+export type WorkflowJobState = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
 
 export interface WorkflowJob {
   id: string;
@@ -49,6 +58,11 @@ export interface WorkflowJob {
   /** The last few events, for a panel that cannot keep its own history. */
   recent: WorkflowEvent[];
   journalPath?: string;
+  /** Set when this job replays the journal of an earlier run. */
+  resumedFrom?: string;
+  /** Agents answered from that journal, and the tokens they had already spent. */
+  replayed: number;
+  replayedTokens: WorkflowUsage;
   /** Resolves when the job settles. Handy in tests, and only there. */
   settled: Promise<WorkflowJob>;
   /** Internal: set once settled, so a job settles exactly once. */
@@ -60,6 +74,11 @@ export interface LaunchWorkflowInput {
   script: string;
   name?: string;
   args?: unknown;
+  /**
+   * Resume this saved run: its script is replayed and every finished agent that
+   * has not changed is answered from the journal instead of the model.
+   */
+  resumeFrom?: string;
 }
 
 export interface WorkflowJobManagerOptions {
@@ -75,6 +94,23 @@ export interface WorkflowJobManagerOptions {
 }
 
 const RECENT_LIMIT = 60;
+
+/**
+ * A JSON-safe copy of a value, or undefined.
+ *
+ * Written by hand because a journal line must never fail: a value with a circular
+ * reference, a function or a huge string simply does not get stored.
+ */
+export function safeJson(value: unknown, limit = 20_000): unknown {
+  if (value === undefined) return undefined;
+  try {
+    const text = JSON.stringify(value);
+    if (text === undefined || text.length > limit) return undefined;
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
 
 export class WorkflowJobManager {
   private readonly jobs = new Map<string, WorkflowJob>();
@@ -93,17 +129,28 @@ export class WorkflowJobManager {
   /** Create a job and start it. Returns before the first agent is spawned. */
   launch(input: LaunchWorkflowInput): WorkflowJob {
     const id = this.nextId();
-    const name = (input.name && input.name.trim() !== "" ? input.name : "workflow").slice(0, 60);
+    const resumeFrom = input.resumeFrom?.trim() || undefined;
+    // A resume needs the original script, its name and its args, and the journal
+    // it should read answers from. A missing run is a clear error, not a silence.
+    const saved = resumeFrom ? this.loadRun(resumeFrom) : undefined;
+    const script = saved?.script ?? input.script;
+    const name = (saved?.name ?? (input.name && input.name.trim() !== "" ? input.name : "workflow")).slice(0, 60);
+    const args = input.args ?? saved?.args;
+    const replay = saved ? new WorkflowReplay(replayRecordsFromJournal(saved.entries)) : undefined;
+
     const job: WorkflowJob = {
       id,
       name,
       state: "queued",
-      script: input.script,
+      script,
       startedAt: this.now(),
+      resumedFrom: resumeFrom,
       running: 0,
       done: 0,
       failed: 0,
       tokens: emptyUsage(),
+      replayed: 0,
+      replayedTokens: emptyUsage(),
       phases: [],
       phaseStats: [],
       agents: [],
@@ -122,17 +169,23 @@ export class WorkflowJobManager {
       at: job.startedAt,
       id,
       name,
-      script: input.script,
+      script,
       maxAgents: this.config.maxAgents,
       wallClockMs: this.config.wallClockMs,
+      args: safeJson(args),
+      resumedFrom: resumeFrom,
     });
 
     const runtime = new WorkflowRuntime({
       runAgent: this.options.runAgent,
       config: this.config,
       now: this.now,
-      args: input.args,
+      args,
       slots: sharedSlotPool(),
+      replay,
+      // The script sees the run's start time: on a resume that is the ORIGINAL
+      // start, so the script's own decisions and timestamps repeat exactly.
+      scriptNow: saved?.startedAt ?? job.startedAt,
       onEvent: (event) => {
         this.applyEvent(job, event, journal);
       },
@@ -142,7 +195,7 @@ export class WorkflowJobManager {
     const start = () => {
       job.state = "running";
       void runtime
-        .run(input.script)
+        .run(script)
         .then((result) => {
           if (job.state === "cancelled") return;
           job.result = result;
@@ -155,6 +208,7 @@ export class WorkflowJobManager {
             error: result.error,
             tokens: result.tokens,
             durationMs: result.durationMs,
+            replayed: result.replayed,
           });
         })
         .catch((error: unknown) => {
@@ -186,15 +240,15 @@ export class WorkflowJobManager {
     return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt);
   }
 
-  /** Running or queued jobs only. */
+  /** Running, queued or paused jobs. */
   active(): WorkflowJob[] {
-    return this.list().filter((job) => job.state === "queued" || job.state === "running");
+    return this.list().filter((job) => job.state !== "done" && job.state !== "failed" && job.state !== "cancelled");
   }
 
   cancel(id: string): boolean {
     const job = this.jobs.get(id);
     if (!job) return false;
-    if (job.state !== "running" && job.state !== "queued") return false;
+    if (job.state !== "running" && job.state !== "queued" && job.state !== "paused") return false;
     job.state = "cancelled";
     job.error = "cancelled by the user";
     this.runtimes.get(id)?.abort();
@@ -210,6 +264,56 @@ export class WorkflowJobManager {
     });
     this.settle(job);
     return true;
+  }
+
+  /**
+   * Pause a running job: no new agent starts, the ones in flight finish, and the
+   * wall clock stops. Nothing is lost and nothing is replayed on the way back.
+   */
+  pause(id: string): boolean {
+    const job = this.jobs.get(id);
+    if (!job || job.state !== "running") return false;
+    job.state = "paused";
+    this.runtimes.get(id)?.pause();
+    this.makeJournal(id)?.append({ kind: "log", at: this.now(), message: "paused by the user" });
+    return true;
+  }
+
+  /** Carry on from exactly where a pause left off. No replay, no repeat cost. */
+  resume(id: string): boolean {
+    const job = this.jobs.get(id);
+    if (!job || job.state !== "paused") return false;
+    job.state = "running";
+    this.runtimes.get(id)?.resumeLive();
+    this.makeJournal(id)?.append({ kind: "log", at: this.now(), message: "resumed by the user" });
+    return true;
+  }
+
+  /**
+   * Resume a run from its journal on disk: the script runs again from the top and
+   * every finished, unchanged agent is answered from the record instead of the
+   * model. This works after a pause, a cancel, a crash, or in a later session.
+   */
+  resumeFrom(runId: string): WorkflowJob {
+    return this.launch({ script: "", resumeFrom: runId });
+  }
+
+  /** Runs on disk, newest first: what `/workflows saved` shows. */
+  savedRuns(): SavedRun[] {
+    const dir = this.options.agentDir ?? this.ensureAgentDir();
+    if (!dir) return [];
+    return listSavedRuns(journalDir(dir));
+  }
+
+  /** Read a saved run, or explain why it cannot be resumed. */
+  private loadRun(runId: string): { script: string; name: string; args?: unknown; startedAt: number; entries: JournalEntry[] } {
+    const journal = this.makeJournal(runId);
+    const entries = journal?.read() ?? [];
+    const start = entries[0];
+    if (!start || start.kind !== "run_start") {
+      throw new Error(`no saved workflow run ${runId} (nothing to resume)`);
+    }
+    return { script: start.script, name: start.name, args: start.args, startedAt: start.at, entries };
   }
 
   /** Forget settled jobs beyond `keep`, so a long session cannot grow forever. */
@@ -271,7 +375,14 @@ export class WorkflowJobManager {
         job.running = Math.max(0, job.running - 1);
         job.done += 1;
         if (!event.ok) job.failed += 1;
-        job.tokens = addUsage(job.tokens, event.usage);
+        // A replayed answer costs nothing now. It is counted apart, so the token
+        // total always means "spent by this attempt".
+        if (event.replayed) {
+          job.replayed += 1;
+          job.replayedTokens = addUsage(job.replayedTokens, event.usage);
+        } else {
+          job.tokens = addUsage(job.tokens, event.usage);
+        }
         const record: WorkflowAgentRecord = {
           id: event.id,
           label: event.label,
@@ -281,8 +392,13 @@ export class WorkflowJobManager {
           durationMs: event.durationMs,
           usage: event.usage,
           depth: event.depth,
+          replayed: event.replayed,
         };
         job.agents.push(record);
+        const agentStats = job.phaseStats.find((stat) => stat.name === event.phase);
+        if (agentStats && event.replayed) {
+          agentStats.tokens = Math.max(0, agentStats.tokens - (event.usage?.total ?? 0));
+        }
         journal?.appendAgentEnd({
           kind: "agent_end",
           at: event.at,
@@ -292,9 +408,20 @@ export class WorkflowJobManager {
           usage: event.usage,
           durationMs: event.durationMs,
           text: (event as { text?: string }).text,
+          key: event.id,
+          scope: event.scope,
+          index: event.index,
+          fingerprint: event.fingerprint,
+          replayed: event.replayed,
         });
         break;
       }
+      case "paused":
+        journal?.append({ kind: "log", at: event.at, message: "paused" });
+        break;
+      case "resumed":
+        journal?.append({ kind: "log", at: event.at, message: "resumed" });
+        break;
       case "run_end":
         job.tokens = addUsage(job.tokens, undefined);
         break;

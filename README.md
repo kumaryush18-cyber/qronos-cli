@@ -86,7 +86,8 @@ Storing it inline is an explicit opt-in.
   sorted by cost, a bright green tick or a dark red cross, tokens per agent and per phase,
   and a live line while it runs.
   It runs in the background, writes a redacted journal of every agent, and delivers its
-  report on a later turn; `/workflows` lists what is running and can stop it.
+  report on a later turn; `/workflows` lists what is running, and a run can be paused,
+  resumed, stopped or replayed from its journal.
   See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
@@ -108,7 +109,7 @@ Storing it inline is an explicit opt-in.
 | `/status`, `/doctor` | session and environment diagnostics |
 | `/usage` | credits left today |
 | `/memory` | what this project has learned (`view`, `stats`, `sync`, `add`, `forget`, `clear`) |
-| `/workflows` | live workflows: phases, agents, tokens; `/workflows <id>` and `/workflows stop <id>` |
+| `/workflows` | live workflows: phases, agents, tokens; `<id>`, `pause`, `resume`, `stop`, `saved` |
 | `/bug` | report a problem |
 | `/update` | update the CLI |
 | `Esc` | interrupt the running turn (only that) |

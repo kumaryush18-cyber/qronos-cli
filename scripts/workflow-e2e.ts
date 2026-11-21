@@ -154,19 +154,23 @@ createWorkflowToolExtension({
 } as never);
 const workflowTool = tools[0]!;
 
-const commandNotices: string[] = [];
-async function stopJob(id: string): Promise<boolean> {
+const commandNotices: Array<{ text: string }> = [];
+
+async function sendCommand(args: string): Promise<string[]> {
   commandNotices.length = 0;
-  await commandHandler?.(`stop ${id}`, { ui: { notify: (text: string) => commandNotices.push(text) } });
-  return commandNotices.some((text) => text.includes("Stopped"));
+  await commandHandler?.(args, { ui: { notify: (text: string) => commandNotices.push({ text }) } });
+  return commandNotices.map((entry) => entry.text);
+}
+async function stopJob(id: string): Promise<boolean> {
+  const seen = await sendCommand(`stop ${id}`);
+  return seen.some((text) => text.includes("Stopped"));
 }
 
 async function jobState(id: string): Promise<string> {
-  commandNotices.length = 0;
-  await commandHandler?.(id, { ui: { notify: (text: string) => commandNotices.push(text) } });
-  const text = commandNotices.join(" ");
-  if (text.includes("cancelled")) return "cancelled";
+  const text = (await sendCommand(id)).join(" ");
+  if (text.includes("status: paused")) return "paused";
   if (text.includes("status: running")) return "running";
+  if (text.includes("cancelled")) return "cancelled";
   if (text.includes("failed")) return "failed";
   if (text.includes("finished")) return "done";
   return "unknown";
@@ -316,6 +320,81 @@ try {
   check("cancel reports success", stopped === true, String(stopped));
   const afterCancel = await jobState(cancelId);
   check("the cancelled job is not running", afterCancel === "cancelled" || afterCancel === "failed", String(afterCancel));
+
+  /* 7. pause and resume a live run: nothing is replayed -------------------------- */
+  deliveries.length = 0;
+  notices.length = 0;
+  const paused = await run({
+    name: "pause-me",
+    script: `
+      const out = []
+      for (const step of ["one", "two", "three", "four"]) {
+        phase("Step " + step)
+        const r = await agent("Say the single word " + step.toUpperCase(), { label: step })
+        out.push(r.text.slice(0, 40))
+      }
+      return out
+    `,
+  });
+  const pauseId = String(paused.details.job);
+  await new Promise((resolve) => setTimeout(resolve, 4_000));
+  const pausedOk = await sendCommand(`pause ${pauseId}`);
+  check("pause is accepted on a live run", pausedOk.some((text) => text.includes("Paused")), pausedOk[0] ?? "");
+  check("the paused job says so", (await jobState(pauseId)) === "paused", await jobState(pauseId));
+
+  const resumedLive = await sendCommand(`resume ${pauseId}`);
+  check("resume carries on without replaying", resumedLive.some((text) => text.includes("Nothing is replayed")), resumedLive[0] ?? "");
+
+  const pauseDeadline = Date.now() + 240_000;
+  while (deliveries.length === 0 && Date.now() < pauseDeadline) await new Promise((resolve) => setTimeout(resolve, 500));
+  check("the paused run finished after the resume", deliveries.length === 1, `${deliveries.length} deliveries`);
+  const pausedReport = String(deliveries[0]?.content ?? "");
+  check("a live resume replayed nothing", !pausedReport.includes("replayed"), pausedReport.split("\n")[0] ?? "");
+  check("the resumed run really produced its value", pausedReport.includes("four") || pausedReport.includes("FOUR"), pausedReport.slice(0, 200));
+
+  /* 8. stop a run, then restart it from its journal ------------------------------ */
+  deliveries.length = 0;
+  const toStop = await run({
+    name: "restart-me",
+    script: `
+      const a = await agent("Name one colour, one word.")
+      const b = await agent("Name one animal, one word.")
+      const c = await agent("Name one city, one word.")
+      return [a.text.trim(), b.text.trim(), c.text.trim()]
+    `,
+  });
+  const stopId = String(toStop.details.job);
+  // Stop only once an agent has really finished, so there is something to replay.
+  // The model decides that timing, not the test.
+  const doneDeadline = Date.now() + 240_000;
+  while (Date.now() < doneDeadline) {
+    const detail = (await sendCommand(stopId)).join(" ");
+    const finished = Number(/\((\d+) done/.exec(detail)?.[1] ?? "0");
+    if (finished >= 1) break;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  await sendCommand(`stop ${stopId}`);
+  const stoppedState = await jobState(stopId);
+  check("the run to restart really stopped", stoppedState === "cancelled" || stoppedState === "failed", stoppedState);
+
+  deliveries.length = 0;
+  const replayNotices = await sendCommand(`resume ${stopId}`);
+  check("resume on a dead run replays its journal", replayNotices.some((text) => text.includes("Replaying")), replayNotices[0] ?? "");
+
+  const replayDeadline = Date.now() + 240_000;
+  while (deliveries.length === 0 && Date.now() < replayDeadline) await new Promise((resolve) => setTimeout(resolve, 500));
+  check("the replayed run delivered a report", deliveries.length === 1, `${deliveries.length} deliveries`);
+  const replayReport = String(deliveries[0]?.content ?? "");
+  const replayedCount = Number(/(\d+) replayed/.exec(replayReport)?.[1] ?? "0");
+  check("at least one agent came from the journal", replayedCount >= 1, `${replayedCount} replayed`);
+  check("the replayed run reached a result", replayReport.includes("workflow restart-me"), replayReport.split("\n")[0] ?? "");
+
+  /* 9. what is on disk ---------------------------------------------------------- */
+  commandNotices.length = 0;
+  await commandHandler?.("saved", { ui: { notify: (text: string) => commandNotices.push({ text }) } });
+  const savedText = commandNotices.map((entry: { text: string }) => entry.text).join(" ");
+  check("/workflows saved lists the runs", savedText.includes(stopId), savedText.slice(0, 200));
+  check("/workflows saved says a run was replayed", savedText.includes("from " + stopId) || savedText.includes("interrupted"), savedText.slice(0, 200));
 
   console.log("\n--- the report the chat receives ---");
   console.log(fanoutReport);

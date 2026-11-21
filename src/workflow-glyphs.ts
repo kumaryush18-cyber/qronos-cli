@@ -15,6 +15,8 @@ export const CROSS = "✗";
 /** The same glyph Claude Code uses for a running agent. */
 export const RUNNING = "✻";
 export const PHASE_MARK = "▸";
+/** An answer that came back from the journal instead of a fresh model call. */
+export const REPLAY = "↺";
 
 /** Bright green tick, for a finished agent. */
 export function tick(): string {
@@ -29,6 +31,11 @@ export function cross(): string {
 /** A phase name, in a calm blue so it reads as structure, not status. */
 export function phaseMark(name: string): string {
   return paint(`${PHASE_MARK} ${name}`, PHASE_BLUE);
+}
+
+/** A replayed answer: the same calm blue, because it is not a failure either. */
+export function replayMark(): string {
+  return paint(REPLAY, PHASE_BLUE);
 }
 
 function paint(text: string, color: ReturnType<typeof rgbColor>): string {

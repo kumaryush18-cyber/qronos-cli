@@ -22,6 +22,16 @@ its report arrives as a message on a later turn. Tell the user the job id and
 that /workflows shows it. If they need the answer inside this same turn, pass
 \`background: false\` — that blocks until the workflow is done.
 
+A run can be paused and resumed, by the user or by you:
+- \`/workflows pause <id>\` stops new agents; the ones already running finish.
+- \`/workflows resume <id>\` carries on from the pause, with nothing replayed.
+- \`/workflows resume <id>\` on a run that is no longer live replays its journal:
+  every finished agent whose prompt and model did not change is answered from
+  the record, so it costs nothing again. The first changed or failed call, and
+  everything after it, runs live.
+- \`resumeFrom: "<id>"\` on the tool does the same from inside a turn.
+- \`/workflows saved\` lists the runs on disk, from this session or an earlier one.
+
 Inside the script you have exactly five helpers:
 
 - \`agent(prompt, { label?, schema?, model? })\` — one subagent. Resolves to
@@ -43,9 +53,12 @@ start instead of guessing.
 
 Rules of the runtime (do not fight them):
 - Real JavaScript. No imports, no require, no process, no filesystem, no network.
-- 10 minutes wall clock, 60 agents per run, 8 at a time. Name phases early, so
-  the report can say which stage spent the tokens. Split very large jobs
-  into several runs instead of one run over one thousand files.
+- 10 minutes wall clock, 60 agents per run, 8 at a time. The wall clock pauses
+  with the run, so waiting for a person costs no budget.
+- \`Date.now()\` is frozen at the run start and \`Math.random()\` is seeded, so a
+  resumed run makes the same decisions and its saved answers still fit.
+  Split very large jobs into several runs instead of one run over one thousand
+  files.
 - \`return\` one small value. Big results must be summarised in the script, not
   dumped; an oversized return is refused.
 

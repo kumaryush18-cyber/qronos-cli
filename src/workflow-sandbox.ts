@@ -17,6 +17,7 @@
 import { createContext, runInContext } from "node:vm";
 import type { WorkflowAgentResult } from "./workflow-types";
 import { WorkflowSyntaxError } from "./workflow-types";
+import { createFrozenClock } from "./workflow-clock";
 
 export interface AgentScriptOptions {
   label?: string;
@@ -119,7 +120,6 @@ export function extractScriptBody(script: string): string {
 const SAFE_GLOBALS = {
   Math,
   JSON,
-  Date,
   RegExp,
   Promise,
   Array,
@@ -151,6 +151,12 @@ const SAFE_GLOBALS = {
 export interface RunScriptOptions {
   /** Synchronous execution limit. Awaits are bounded by the runtime's wall clock. */
   syncTimeoutMs?: number;
+  /**
+   * The moment the script should believe it is, in ms. A resumed run passes the
+   * original run's start, so a script that stamps or branches on the time makes
+   * the same decisions the second time.
+   */
+  now?: number;
 }
 
 /**
@@ -182,6 +188,10 @@ export async function runWorkflowScript(
   const context = createContext(
     {
       ...SAFE_GLOBALS,
+      // A frozen clock: `Date.now()` and `new Date()` answer with one fixed
+      // moment, so a replay repeats the original decisions. Explicit arguments
+      // (`new Date(0)`) still work as usual.
+      Date: createFrozenClock(options.now ?? Date.now()).dateClass,
       Math: seededMath,
       console: { log: (message: unknown) => helpers.log(message) },
       agent: (prompt: unknown, opts?: AgentScriptOptions) => helpers.agent(prompt, opts),

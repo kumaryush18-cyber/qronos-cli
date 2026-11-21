@@ -34,6 +34,81 @@ what the tests and `scripts/workflow-e2e.ts` use.
 Background jobs and chat subagents draw from **one** slot pool, so a background
 workflow can never double the concurrency limit behind your back.
 
+## Pause and resume
+
+A run can be stopped halfway and finished later. There are two different things
+here, and Claude Code separates them too:
+
+### Pause a live run: nothing is replayed
+
+```
+/workflows pause wf_qhj6qy01     # no new agent starts; the ones in flight finish
+/workflows resume wf_qhj6qy01    # it carries on from exactly where it was
+```
+
+Pausing stops **starting** new agents. An agent already talking to the model is
+allowed to finish, because killing it would throw away tokens already paid for.
+The wall clock stops with the run, so a run paused overnight keeps its full ten
+minutes.
+
+The status line shows `⏸` while a run is paused.
+
+### Resume a run that is not live any more: replay
+
+If the process ended, the run was stopped with `/workflows stop`, or the machine
+crashed, the run is not in memory any more. It is on disk, though, and it can be
+replayed:
+
+```
+/workflows saved                 # runs on disk, oldest last
+/workflows resume wf_qhj6qy01    # replay it
+```
+
+A resume runs the **same script** again from the top. Every finished agent whose
+request has not changed is answered from the journal instead of the model, so it
+costs nothing again. The report says so: `· ↺ 3 replayed`.
+
+The exact rules, which are Claude Code's rules:
+
+1. A call is matched by **position**: its scope plus its number inside that scope.
+   Two runs of one script ask for the same positions in the same order.
+2. A saved answer is used only when the request is unchanged: same prompt, same
+   agent type, same model. Change any of them and that call runs live.
+3. The **first changed or failed call ends the saved region** for that scope.
+   Everything after it runs live, because a script that shifted one prompt has
+   shifted everything after it, and mixing two runs into one result would be a
+   lie in the shape of a report.
+4. A recorded **failure is not replayed**. Redoing a failed step is the point of
+   resuming.
+5. A call that never finished does not end the saved region. In a parallel
+   fan-out a later call can finish first, and its answer is still good.
+
+A resumed run gets a new job id and its own journal, which records
+`resumedFrom: <old id>`. The old journal is never rewritten.
+
+### Why the script must repeat itself
+
+Replay is only honest if the second run makes the same decisions as the first.
+So inside a workflow script:
+
+- `Date.now()` and `new Date()` are **frozen at the run's start time**.
+- `Math.random()` is a **seeded generator**, so it repeats.
+- `Object.keys` and friends keep their order, which JavaScript already promises.
+
+Claude Code goes one step further and makes `Date.now()` and `Math.random()`
+**throw**. We keep them working but frozen: a replay is still exact, and a script
+that stamps a report or shuffles a list keeps working. This is the one place
+where we deliberately differ, and it is in our favour.
+
+The script also still accepts explicit arguments, so `new Date(0)` and
+`new Date("2020-01-01")` format a known moment normally.
+
+### Cost
+
+A replayed agent spends no tokens. The report counts only what this attempt paid:
+`tokens` is fresh spend, `replayedTokens` is what the earlier attempt had already
+paid for. Both numbers are shown, so nobody has to guess.
+
 ## The journal
 
 Every run writes `~/.qronos/agent/workflow-runs/<job id>.jsonl` while it happens:
@@ -50,7 +125,10 @@ Reasons, in order of importance:
 
 A crash can only damage the last line, and the reader skips a line it cannot
 parse. Agent answers are **redacted before they are written**, because a journal
-outlives the session that made it. Answers are capped at 4 000 characters.
+outlives the session that made it. Answers are capped at 4 000 characters. Each
+`agent_end` line also carries the stable call key (`#3`, `w0/#1`), its scope and
+position, a hash of the request, and whether it was replayed — that is exactly
+what a later resume needs.
 
 Old journals are pruned: the newest 20 runs are always kept, anything older than
 7 days is removed, and the folder never grows past 200 files.
@@ -185,10 +263,14 @@ use it, so it can only be called when the model asks for it directly.
 | `src/workflow-jobs.ts` | Background jobs: launch at once, live counters, cancel. |
 | `src/workflow-journal.ts` | Append-only JSONL, redacted, pruned, readable after a crash. |
 | `src/workflow-slots.ts` | One slot pool for the whole process. |
+| `src/workflow-replay.ts` | Match a call by position, replay saved answers, respect the change boundary. |
+| `src/workflow-clock.ts` | The pausable wall clock, and the frozen clock the script sees. |
 
 Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
 `test/workflow-notice.test.ts`, `test/workflow-glyphs.test.ts`,
 `test/workflow-jobs.test.ts`, `test/workflow-journal.test.ts`,
-`test/workflow-background.test.ts`. Real-model E2E:
+`test/workflow-background.test.ts`, `test/workflow-replay.test.ts`,
+`test/workflow-clock.test.ts`, `test/workflow-pause.test.ts`,
+`test/workflow-resume.test.ts`. Real-model E2E:
 `scripts/workflow-e2e.ts` (`QRONOS_E2E_MODEL=claude-haiku-5.5`). They use a fake agent, so they spend no tokens
 and take no seconds.

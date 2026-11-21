@@ -169,6 +169,8 @@ describe("the job list", () => {
     done: 5,
     failed: 0,
     tokens: { input: 900, output: 100, total: 1_000 },
+    replayed: 0,
+    replayedTokens: { input: 0, output: 0, total: 0 },
     phases: ["Review"],
     phaseStats: [],
     agents: [],
@@ -246,8 +248,90 @@ describe("per-session isolation", () => {
     const launch = await first.tool.execute("1", { script: "await agent('a'); return 1;" }, undefined, undefined, first.ctx);
     const jobId = String(launch.details.job);
 
-    const seen: string[] = [];
-    await second.commands.workflows!(`stop ${jobId}`, { ui: { notify: (text: string) => seen.push(text) } });
-    expect(seen.join(" ")).toContain("No workflow with id");
+    const seen: Array<{ text: string }> = [];
+    await second.commands.workflows!(`stop ${jobId}`, { ui: { notify: (text: string) => seen.push({ text }) } });
+    expect(seen.map((entry) => entry.text).join(" ")).toContain("No workflow with id");
+  });
+});
+
+describe("pause, resume and resume-from-journal commands", () => {
+  /** A runner that only answers when the test says so. */
+  function gatedRunner() {
+    const gates: Array<() => void> = [];
+    const prompts: string[] = [];
+    const runner: SubagentRunner = async (params) => {
+      prompts.push(params.prompt);
+      await new Promise<void>((resolve) => gates.push(resolve));
+      return { output: `report for: ${params.prompt}`, turns: 1, toolsUsed: [] };
+    };
+    return {
+      prompts,
+      runner,
+      release(count = 1) {
+        for (let index = 0; index < count; index += 1) gates.shift()?.();
+      },
+    };
+  }
+
+  test("/workflows pause stops new agents and /workflows resume carries on", async () => {
+    const gated = gatedRunner();
+    const { tool, commands, ctx, notices } = harness({ runner: gated.runner, agentDir: tempDir() });
+    const launch = await tool.execute("1", { script: "await agent('a'); await agent('b'); return 1;" }, undefined, undefined, ctx);
+    const jobId = String(launch.details.job);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await commands.workflows!(`pause ${jobId}`, { ui: { notify: (text: string) => notices.push({ text }) } });
+    expect(notices.map((entry) => entry.text).join(" ")).toContain("Paused");
+    gated.release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gated.prompts).toHaveLength(1);
+
+    await commands.workflows!(`resume ${jobId}`, { ui: { notify: (text: string) => notices.push({ text }) } });
+    expect(notices.map((entry) => entry.text).join(" ")).toContain("Nothing is replayed");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    gated.release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gated.prompts).toEqual(["a", "b"]);
+  });
+
+  test("/workflows resume on a run that is no longer live replays its journal", async () => {
+    const dir = tempDir();
+    const first = fakeRunner();
+    const session = harness({ runner: first.runner, agentDir: dir });
+    const launch = await session.tool.execute("1", { script: "await agent('a'); return 1;" }, undefined, undefined, session.ctx);
+    const jobId = String(launch.details.job ?? "");
+    expect(jobId.startsWith("wf_")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    // A new session, with a runner that would be expensive: nothing may reach it.
+    const second = fakeRunner();
+    const later = harness({ runner: second.runner, agentDir: dir });
+    await later.commands.workflows!(`resume ${jobId}`, { ui: { notify: (text: string) => later.notices.push({ text }) } });
+    expect(later.notices.map((entry) => entry.text).join(" ")).toContain("Replaying");
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(second.prompts).toHaveLength(0);
+  });
+
+  test("/workflows resume with no argument and nothing saved explains itself", async () => {
+    const { commands, notices } = harness({ runner: fakeRunner().runner, agentDir: tempDir() });
+    await commands.workflows!("resume", { ui: { notify: (text: string) => notices.push({ text }) } });
+    expect(notices.map((entry) => entry.text).join(" ")).toContain("No paused workflow is running");
+  });
+
+  test("/workflows saved lists the runs on disk", async () => {
+    const dir = tempDir();
+    const session = harness({ runner: fakeRunner().runner, agentDir: dir });
+    await session.tool.execute("1", { script: "await agent('a'); return 1;" }, undefined, undefined, session.ctx);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    const later = harness({ runner: fakeRunner().runner, agentDir: dir });
+    await later.commands.workflows!("saved", { ui: { notify: (text: string) => later.notices.push({ text }) } });
+    expect(later.notices.map((entry) => entry.text).join(" ")).toContain("finished");
+  });
+
+  test("/workflows saved says so when there is nothing", async () => {
+    const { commands, notices } = harness({ runner: fakeRunner().runner, agentDir: tempDir() });
+    await commands.workflows!("saved", { ui: { notify: (text: string) => notices.push({ text }) } });
+    expect(notices.map((entry) => entry.text).join(" ")).toContain("No workflow run is saved");
   });
 });
