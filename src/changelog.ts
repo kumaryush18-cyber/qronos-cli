@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.7",
+    highlights: [
+      "Learned memory, on by default: every turn is journaled locally, a cheap sync folds what matters into a small document, and the next session gets it as hints. /memory shows, syncs or clears it, and the agent can save a fact with the learn tool.",
+      "Type ultrathink in the input box and the word turns orange with a light band flowing through it. It also asks for a careful plan before any edit, for that turn only.",
+      "Compaction now prunes the history first, records exact file paths, commands and errors with code instead of letting the model paraphrase them, redacts secrets, and refuses a bad summary so the built-in one runs.",
+      "First run as a public repository: CI and the npm publish workflow run on every push.",
+    ],
+  },
+  {
     version: "1.0.6",
     highlights: [
       "New working line: Claude Code style spinner with playful verbs, a new word every 6 seconds, live output tokens and \"Churned for 2m 30s\" when the answer arrives. It sits above the input box, with a light-orange glow every 3 seconds.",
