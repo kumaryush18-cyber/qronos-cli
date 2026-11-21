@@ -28,6 +28,7 @@ import {
 } from "./workflow-types";
 import { extractJson, validateJsonSchema } from "./agent-schema";
 import { parseWorkflowMeta, runWorkflowScript, type WorkflowMeta } from "./workflow-sandbox";
+import { createSlotPool, type SlotPool } from "./workflow-slots";
 
 export interface WorkflowRuntimeOptions {
   runAgent: WorkflowAgentRunner;
@@ -42,6 +43,11 @@ export interface WorkflowRuntimeOptions {
   depth?: number;
   /** Internal: shared across nested runs so the cap is one cap, not two. */
   shared?: SharedState;
+  /**
+   * A slot pool shared with the rest of the process, so a background workflow
+   * and a chat subagent cannot add up to twice the concurrency limit.
+   */
+  slots?: SlotPool;
 }
 
 /** State that must be shared by a run and its children, never copied. */
@@ -50,32 +56,8 @@ export interface SharedState {
   agents: WorkflowAgentRecord[];
   usage: WorkflowUsage;
   truncated: boolean;
-  semaphore: ReturnType<typeof createSemaphore>;
+  semaphore: SlotPool;
   controller: AbortController;
-}
-
-/** A simple counting semaphore: at most `limit` holders at a time. */
-function createSemaphore(limit: number) {
-  let active = 0;
-  const waiting: Array<() => void> = [];
-  return {
-    async acquire(): Promise<void> {
-      if (active < limit) {
-        active += 1;
-        return;
-      }
-      await new Promise<void>((resolve) => waiting.push(resolve));
-      active += 1;
-    },
-    release(): void {
-      active -= 1;
-      const next = waiting.shift();
-      if (next) next();
-    },
-    get active(): number {
-      return active;
-    },
-  };
 }
 
 /** Depth-limited JSON clone, so a script cannot hand back an object graph. */
@@ -114,6 +96,14 @@ export function cloneResult(value: unknown, maxChars: number): { ok: true; value
   }
 }
 
+/** How much of an agent's answer travels in an event (the journal caps further). */
+const EVENT_TEXT_LIMIT = 4000;
+
+function capEventText(text: unknown): string | undefined {
+  if (typeof text !== "string" || text === "") return undefined;
+  return text.length <= EVENT_TEXT_LIMIT ? text : text.slice(0, EVENT_TEXT_LIMIT);
+}
+
 export class WorkflowRuntime {
   readonly config: WorkflowConfig;
   private readonly runAgent: WorkflowAgentRunner;
@@ -144,7 +134,7 @@ export class WorkflowRuntime {
         agents: [],
         usage: emptyUsage(),
         truncated: false,
-        semaphore: createSemaphore(this.config.concurrency),
+        semaphore: options.slots ?? createSlotPool(this.config.concurrency),
         controller: new AbortController(),
       };
   }
@@ -260,6 +250,7 @@ export class WorkflowRuntime {
         durationMs,
         usage: checked.usage,
         depth: this.depth,
+        text: capEventText(checked.text),
       });
       return checked;
     } finally {

@@ -6,6 +6,7 @@ import {
   renderWorkflowDetail,
   renderWorkflowReport,
   resetLastWorkflowRun,
+  resetWorkflowJobs,
 } from "../src/workflow-tool";
 import { workflowConfigFromEnv, type WorkflowRunResult } from "../src/workflow-types";
 import type { SubagentRunner } from "../src/agent-tool";
@@ -30,6 +31,7 @@ function fakePi() {
       registerTool: (tool: Record<string, unknown>) => tools.push(tool),
       registerCommand: () => {},
       registerShortcut: () => {},
+      sendMessage: () => {},
       on: () => {},
     } as never,
   };
@@ -37,12 +39,15 @@ function fakePi() {
 
 const ctx = { cwd: "/repo" } as never;
 
-afterEach(() => resetLastWorkflowRun());
+afterEach(() => {
+  resetLastWorkflowRun();
+  resetWorkflowJobs();
+});
 
 describe("the tool", () => {
   test("registers a tool named workflow", () => {
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner: fakeRunner().runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner: fakeRunner().runner, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     expect(tools).toHaveLength(1);
     expect(tools[0]!.name).toBe(WORKFLOW_TOOL_NAME);
   });
@@ -50,9 +55,9 @@ describe("the tool", () => {
   test("runs a script and returns only the final value", async () => {
     const { prompts, runner } = fakeRunner();
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     const tool = tools[0] as { execute: Function };
-    const result = await tool.execute("1", { script: `const r = await agent("look at src/"); return r.text;` }, undefined, undefined, ctx);
+    const result = await tool.execute("1", { background: false, script: `const r = await agent("look at src/"); return r.text;` }, undefined, undefined, ctx);
     expect(result.details.ok).toBe(true);
     expect(result.content[0].text).toContain("report for: look at src/");
     expect(result.content[0].text).toContain("1 agent in");
@@ -62,9 +67,9 @@ describe("the tool", () => {
   test("an empty script is refused before any agent runs", async () => {
     const { prompts, runner } = fakeRunner();
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     const tool = tools[0] as { execute: Function };
-    const result = await tool.execute("1", { script: "   " }, undefined, undefined, ctx);
+    const result = await tool.execute("1", { background: false, script: "   " }, undefined, undefined, ctx);
     expect(result.details.ok).toBe(false);
     expect(prompts).toHaveLength(0);
   });
@@ -75,11 +80,12 @@ describe("the tool", () => {
       structured: { value: { files: ["a.ts"] }, firstTry: true },
     }));
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     const tool = tools[0] as { execute: Function };
     const result = await tool.execute(
       "1",
       {
+        background: false,
         script: `const r = await agent("list", { schema: { type: "object", properties: { files: { type: "array" } } } }); return r.data.files;`,
       },
       undefined,
@@ -96,9 +102,9 @@ describe("the tool", () => {
       schemaIssues: [{ path: "files", message: "is required" }],
     }));
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     const tool = tools[0] as { execute: Function };
-    const result = await tool.execute("1", { script: `await agent("list", { schema: { type: "object" } }); return 1;` }, undefined, undefined, ctx);
+    const result = await tool.execute("1", { background: false, script: `await agent("list", { schema: { type: "object" } }); return 1;` }, undefined, undefined, ctx);
     expect(result.details.ok).toBe(true);
     expect(result.content[0].text).toContain("1 failed");
   });
@@ -108,9 +114,9 @@ describe("the tool", () => {
       throw new Error("the model died");
     };
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     const tool = tools[0] as { execute: Function };
-    const result = await tool.execute("1", { script: `const r = await agent("x"); return r.error;` }, undefined, undefined, ctx);
+    const result = await tool.execute("1", { background: false, script: `const r = await agent("x"); return r.error;` }, undefined, undefined, ctx);
     expect(result.details.ok).toBe(true);
     expect(result.content[0].text).toContain("the model died");
   });
@@ -118,20 +124,20 @@ describe("the tool", () => {
   test("the name from the call wins, then the meta block", async () => {
     const { runner } = fakeRunner();
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     const tool = tools[0] as { execute: Function };
-    await tool.execute("1", { script: `return 1;`, name: "custom" }, undefined, undefined, ctx);
+    await tool.execute("1", { background: false, script: `return 1;`, name: "custom" }, undefined, undefined, ctx);
     expect(getLastWorkflowRun()?.name).toBe("custom");
-    await tool.execute("1", { script: `export const meta = { name: "from-meta" }\nreturn 1;` }, undefined, undefined, ctx);
+    await tool.execute("1", { background: false, script: `export const meta = { name: "from-meta" }\nreturn 1;` }, undefined, undefined, ctx);
     expect(getLastWorkflowRun()?.name).toBe("from-meta");
   });
 
   test("the last run is kept for /workflows", async () => {
     const { runner } = fakeRunner();
     const { tools, api } = fakePi();
-    (    createWorkflowToolExtension({ runner, now: () => 1234 }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    (    createWorkflowToolExtension({ runner, now: () => 1234, agentDir: "/tmp/qronos-wf-test" }) as unknown as { factory: (api: unknown) => void }).factory(api);
     const tool = tools[0] as { execute: Function };
-    await tool.execute("1", { script: `phase("Review"); await agent("x"); return "done";` }, undefined, undefined, ctx);
+    await tool.execute("1", { background: false, script: `phase("Review"); await agent("x"); return "done";` }, undefined, undefined, ctx);
     const last = getLastWorkflowRun();
     expect(last?.at).toBe(1234);
     expect(last?.result.agents).toHaveLength(1);

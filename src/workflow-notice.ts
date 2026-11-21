@@ -17,6 +17,11 @@ Use the \`workflow\` tool once, with a script. Do not try to do the fan-out by
 calling \`agent\` yourself in a loop: the script is what makes the results stay
 out of this conversation.
 
+The tool returns at once with a job id; the run continues in the background and
+its report arrives as a message on a later turn. Tell the user the job id and
+that /workflows shows it. If they need the answer inside this same turn, pass
+\`background: false\` — that blocks until the workflow is done.
+
 Inside the script you have exactly five helpers:
 
 - \`agent(prompt, { label?, schema?, model? })\` — one subagent. Resolves to

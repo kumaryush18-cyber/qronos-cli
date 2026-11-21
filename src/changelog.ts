@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.10",
+    highlights: [
+      "Workflows now run in the background, like Claude Code: the tool returns a job id at once, the run continues while you talk, and the report arrives as a message on a later turn. Pass background: false only when the answer is needed in the same turn.",
+      "/workflows is now live: state, running agents, done, tokens and time per job, /workflows <id> for detail, /workflows stop <id> to stop one. The list is per session, so two sessions never see or stop each other's work.",
+      "Every run writes a redacted journal to ~/.qronos/agent/workflow-runs/<id>.jsonl: the script, phases, each agent with tokens and time, and the result. A crash damages the last line only, and the record is what a future resume replays.",
+      "One slot pool for the whole process: a background workflow and a chat subagent share the same 8 slots, so nothing doubles the load.",
+      "A real end to end run (claude-haiku-5.5) proves the new path: launch returns in 2 ms, 4 agents, 8.6k tokens, the report delivered once, the journal on disk, and a cancel that really stops a run.",
+    ],
+  },
+  {
     version: "1.0.9",
     highlights: [
       "Workflows grew teeth: a per-agent model (cheap model for extraction, strong model for judgement), a nested workflow() one level deep that shares the same budget, and args / budget so a script can decide how much work to start.",

@@ -398,7 +398,10 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const ultrathinkExtension = createUltrathinkExtension();
   // The `workflow` tool: ultracode writes a script, the script fans out to
   // subagents, only the final value returns to the chat.
-  const workflowToolExtension: InlineExtension = createWorkflowToolExtension({ registry: agentRegistry });
+  const workflowToolExtension: InlineExtension = createWorkflowToolExtension({
+    registry: agentRegistry,
+    agentDir: opts.agentDir,
+  });
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
   // Hashline edits (ported from can1357/oh-my-pi): `apply_patch` edits by line

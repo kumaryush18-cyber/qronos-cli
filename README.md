@@ -85,6 +85,8 @@ Storing it inline is an explicit opt-in.
   run is capped at 10 minutes and 60 agents. `/workflows` shows the last run: every agent
   sorted by cost, a bright green tick or a dark red cross, tokens per agent and per phase,
   and a live line while it runs.
+  It runs in the background, writes a redacted journal of every agent, and delivers its
+  report on a later turn; `/workflows` lists what is running and can stop it.
   See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
@@ -106,7 +108,7 @@ Storing it inline is an explicit opt-in.
 | `/status`, `/doctor` | session and environment diagnostics |
 | `/usage` | credits left today |
 | `/memory` | what this project has learned (`view`, `stats`, `sync`, `add`, `forget`, `clear`) |
-| `/workflows` | the last workflow: phases, agents, and where it stopped |
+| `/workflows` | live workflows: phases, agents, tokens; `/workflows <id>` and `/workflows stop <id>` |
 | `/bug` | report a problem |
 | `/update` | update the CLI |
 | `Esc` | interrupt the running turn (only that) |

@@ -12,6 +12,49 @@ ultracode audit every route in src/routes for a missing auth check
 The word is painted orange in the input box while you type it, the same way
 `ultrathink` is.
 
+## It runs in the background
+
+Like Claude Code, the launch is **non-blocking**: the tool returns at once with a
+job id (`wf_qhj6qy01`), the workflow keeps running while you talk, and the report
+arrives as a message on a later turn.
+
+```
+ultracode audit every route in src/routes for a missing auth check
+→ ✻ workflow audit launched as wf_qhj6qy01
+```
+
+- `/workflows` — the live list: state, agents running, done, tokens, time.
+- `/workflows wf_qhj6qy01` — one job in detail, phase by phase.
+- `/workflows stop wf_qhj6qy01` — stops scheduling and aborts what is in flight.
+
+If the caller needs the value **inside the same turn**, it can pass
+`background: false`; the tool then waits and returns the report directly. That is
+what the tests and `scripts/workflow-e2e.ts` use.
+
+Background jobs and chat subagents draw from **one** slot pool, so a background
+workflow can never double the concurrency limit behind your back.
+
+## The journal
+
+Every run writes `~/.qronos/agent/workflow-runs/<job id>.jsonl` while it happens:
+the script, each phase, each agent start and end with its tokens and its time, and
+the final result. One line per event, append-only.
+
+Reasons, in order of importance:
+
+1. **Resume.** A JavaScript function cannot be frozen half way, so a resumed run
+   replays the script and gets the recorded answers back instead of calling the
+   model again.
+2. **Trust.** After a crash you can read what ran, in order, without guessing.
+3. **Bugs.** A report that looks wrong can be checked against the record.
+
+A crash can only damage the last line, and the reader skips a line it cannot
+parse. Agent answers are **redacted before they are written**, because a journal
+outlives the session that made it. Answers are capped at 4 000 characters.
+
+Old journals are pruned: the newest 20 runs are always kept, anything older than
+7 days is removed, and the folder never grows past 200 files.
+
 ## Why a script, and not just many `agent` calls
 
 A tool call returns its result into the conversation. Ten calls return ten
@@ -62,6 +105,7 @@ return found.filter((r) => r.ok).map((r) => r.text)
 | Agents at the same time | 8 | `QRONOS_WORKFLOW_CONCURRENCY` |
 | Log lines kept | 500 | `QRONOS_WORKFLOW_MAX_LOGS` |
 | Result size | 200 000 chars | `QRONOS_WORKFLOW_MAX_RESULT_CHARS` |
+| Journal keep | 7 days, newest 20 | `JOURNAL_KEEP_DAYS` / `JOURNAL_KEEP_RUNS` |
 
 Ten minutes is deliberate. A two-minute cap turns a real audit into a failed one.
 The agent cap is there because one workflow can spend a lot of tokens: 60 is
@@ -138,8 +182,13 @@ use it, so it can only be called when the model asks for it directly.
 | `src/workflow-tool.ts` | The `workflow` tool, the report, `/workflows`. |
 | `src/workflow-notice.ts` | The hidden instructions for `ultracode` / `orchestrate`. |
 | `src/workflow-glyphs.ts` | Ticks, crosses, bars, durations: the visuals, pure. |
+| `src/workflow-jobs.ts` | Background jobs: launch at once, live counters, cancel. |
+| `src/workflow-journal.ts` | Append-only JSONL, redacted, pruned, readable after a crash. |
+| `src/workflow-slots.ts` | One slot pool for the whole process. |
 
 Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
-`test/workflow-notice.test.ts`, `test/workflow-glyphs.test.ts`. Real-model E2E:
+`test/workflow-notice.test.ts`, `test/workflow-glyphs.test.ts`,
+`test/workflow-jobs.test.ts`, `test/workflow-journal.test.ts`,
+`test/workflow-background.test.ts`. Real-model E2E:
 `scripts/workflow-e2e.ts` (`QRONOS_E2E_MODEL=claude-haiku-5.5`). They use a fake agent, so they spend no tokens
 and take no seconds.

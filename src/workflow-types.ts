@@ -99,6 +99,8 @@ export type WorkflowEvent =
       durationMs: number;
       usage?: WorkflowUsage;
       depth: number;
+      /** The answer, capped. The journal stores it so a resumed run can replay. */
+      text?: string;
     }
   | {
       type: "run_end";

@@ -17,8 +17,13 @@ import type { AgentDefinition } from "./agent-discovery";
 import { defaultSubagentRunner, type SubagentRunner } from "./agent-tool";
 import { WorkflowRuntime } from "./workflow-runtime";
 import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, tick, tokenBar } from "./workflow-glyphs";
+import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
+import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
+import { sharedSlotPool } from "./workflow-slots";
 import {
   workflowConfigFromEnv,
+  type WorkflowAgentResult,
+  type WorkflowAgentRunner,
   type WorkflowConfig,
   type WorkflowEvent,
   type WorkflowRunResult,
@@ -43,6 +48,11 @@ const PARAMS = {
     },
     name: { type: "string", description: "Short name for this workflow, for /workflows." },
     args: { description: "Any JSON value; the script reads it as `args`." },
+    background: {
+      type: "boolean",
+      description:
+        "Default true: the tool returns at once and the run continues while you talk (like Claude Code). Use false only when the caller needs the value in this turn.",
+    },
   },
   required: ["script"],
 } as const;
@@ -55,6 +65,47 @@ export interface LastWorkflowRun {
 }
 
 let lastRun: LastWorkflowRun | undefined;
+/**
+ * Job state belongs to ONE extension instance, not to the module.
+ *
+ * A module-level manager looked convenient and was wrong: pi builds its
+ * extension list more than once, so a manager created by one instance was later
+ * asked to deliver a report through another instance's API object — which throws
+ * outside a live session. Per-instance state makes that impossible.
+ */
+interface WorkflowSessionState {
+  manager?: WorkflowJobManager;
+  toolCtx?: ExtensionToolContext;
+  publisher?: (force?: boolean) => void;
+  lastStatusAt: number;
+}
+
+/** Give a settled job's slots back. A cancelled job keeps none of them. */
+function reclaimSlots(job: WorkflowJob, state: WorkflowSessionState): void {
+  job.running = 0;
+  if (state.publisher) setTimeout(() => state.publisher?.(true), 0).unref?.();
+}
+
+/** A result-shaped view of a job that may still be running. */
+export function resultFromJob(job: WorkflowJob): WorkflowRunResult {
+  return {
+    ok: job.state === "done",
+    value: job.result?.value,
+    error: job.error,
+    agents: job.agents,
+    phases: job.phases,
+    phaseStats: job.phaseStats,
+    logs: job.recent.filter((event) => event.type === "log").map((event) => (event as { message: string }).message),
+    durationMs: (job.finishedAt ?? Date.now()) - job.startedAt,
+    truncated: false,
+    tokens: job.tokens,
+  };
+}
+
+/** Test hook: forget the shared last run. */
+export function resetWorkflowJobs(): void {
+  lastRun = undefined;
+}
 
 export function getLastWorkflowRun(): LastWorkflowRun | undefined {
   return lastRun;
@@ -140,6 +191,65 @@ function maxTokens(result: WorkflowRunResult): number {
   return Math.max(0, ...result.agents.map((agent) => agent.usage?.total ?? 0));
 }
 
+/** One line per job: state, name, agents, tokens, time. */
+export function jobLine(job: WorkflowJob): string {
+  const mark =
+    job.state === "done"
+      ? tick()
+      : job.state === "failed"
+        ? cross()
+        : job.state === "cancelled"
+          ? cross()
+          : RUNNING;
+  const elapsed = formatDuration((job.finishedAt ?? Date.now()) - job.startedAt);
+  const counts =
+    job.state === "running" || job.state === "queued"
+      ? `${job.running} running · ${job.done} done`
+      : `${job.done} agent${job.done === 1 ? "" : "s"}${job.failed > 0 ? ` · ${cross()} ${job.failed}` : ""}`;
+  const state = job.state === "failed" ? `  ${job.error ?? "failed"}` : "";
+  return `  ${mark} ${pad(job.id, 12)} ${pad(job.name.slice(0, 26), 27)} ${pad(counts, 20)} ${pad(
+    `${formatTokens(job.tokens.total)} tokens`,
+    12,
+  )} ${elapsed}${state}`;
+}
+
+/** `/workflows` with live or finished jobs. Pure, so it is testable. */
+export function renderJobList(active: WorkflowJob[], all: WorkflowJob[]): string {
+  const lines: string[] = [];
+  if (active.length > 0) {
+    const running = active.reduce((total, job) => total + job.running, 0);
+    const done = active.reduce((total, job) => total + job.done, 0);
+    const tokens = active.reduce((total, job) => total + job.tokens.total, 0);
+    lines.push(
+      `${RUNNING} ${active.length} workflow${active.length === 1 ? "" : "s"} running · ${running} agents · ${done} done · ${formatTokens(
+        tokens,
+      )} tokens`,
+    );
+    lines.push(...active.map(jobLine));
+    lines.push("", "/workflows <id> for detail · /workflows stop <id> to stop");
+    return lines.join("\n");
+  }
+  lines.push(`${RUNNING} no workflow is running`);
+  const recent = all.slice(0, 8);
+  if (recent.length > 0) {
+    lines.push("", "recent:");
+    lines.push(...recent.map(jobLine));
+    lines.push("", "/workflows <id> for detail");
+  } else {
+    lines.push("", "Start one by writing the word ultracode in a prompt.");
+  }
+  return lines.join("\n");
+}
+
+/** One job, in detail: phases with tokens, then agents sorted by cost. */
+export function renderJobDetail(job: WorkflowJob): string {
+  const result = job.result ?? resultFromJob(job);
+  const head = renderWorkflowDetail({ name: job.name, result, at: job.startedAt });
+  const state = job.state === "running" || job.state === "queued" ? `status: ${job.state} (${job.done} done, ${job.running} running)` : "";
+  const paths = job.journalPath ? [`journal: ${job.journalPath}`] : [];
+  return [head, state, ...paths].filter(Boolean).join("\n");
+}
+
 /** What `/workflows` prints: the last run, in detail. Pure, so it is testable. */
 export function renderWorkflowDetail(run: LastWorkflowRun | undefined): string {
   if (!run) {
@@ -179,6 +289,8 @@ export function renderWorkflowDetail(run: LastWorkflowRun | undefined): string {
 
 export interface CreateWorkflowToolOptions {
   runner?: SubagentRunner;
+  /** Where journals go. Defaults to the CLI's agent dir at call time. */
+  agentDir?: string;
   registry?: AgentRegistry;
   config?: WorkflowConfig;
   userHomeDir?: string;
@@ -197,6 +309,101 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
   return {
     name: "qronos-workflow",
     factory(qronos: ExtensionAPI) {
+      /** One subagent, mapped onto the workflow result shape. */
+      const runAgentOnce = async (
+        request: Parameters<WorkflowAgentRunner>[0],
+        signal: AbortSignal,
+        ctx: ExtensionToolContext,
+      ): Promise<WorkflowAgentResult> => {
+        if (signal.aborted) return { ok: false, text: "", error: "stopped" };
+        const base: AgentDefinition = { ...BUILTIN_AGENTS["general-purpose"]!, source: "builtin" };
+        const definition: AgentDefinition = request.agentType ? { ...base, name: request.agentType } : base;
+        try {
+          const outcome = await runner({
+            agentDef: definition,
+            prompt: request.prompt,
+            description: request.label ?? "workflow task",
+            cwd: ctx.cwd || process.cwd(),
+            ctx,
+            outputSchema: request.schema,
+            model: request.model,
+          });
+          // Tokens come from the subagent runner; without them the report could
+          // not say who did how much work.
+          const usage = outcome.usage
+            ? { input: outcome.usage.input, output: outcome.usage.output, total: outcome.usage.total }
+            : undefined;
+          if (outcome.structured) {
+            return { ok: true, text: outcome.output, data: outcome.structured.value, usage };
+          }
+          if (outcome.schemaIssues && outcome.schemaIssues.length > 0) {
+            return {
+              ok: false,
+              text: outcome.output,
+              usage,
+              error: `schema not satisfied: ${outcome.schemaIssues
+                .slice(0, 3)
+                .map((issue) => `${issue.path || "value"} ${issue.message}`)
+                .join("; ")}`,
+            };
+          }
+          return { ok: true, text: outcome.output, usage };
+        } catch (error) {
+          return { ok: false, text: "", error: error instanceof Error ? error.message : String(error) };
+        }
+      };
+
+      // The job manager is per extension instance, so the journals, the status
+      // line and the "one report per job" rule all belong to this session.
+      const state: WorkflowSessionState = { lastStatusAt: 0 };
+      const managerFor = (): WorkflowJobManager => {
+        if (state.manager) return state.manager;
+        state.manager = new WorkflowJobManager({
+          agentDir: options.agentDir,
+          config,
+          now,
+          runAgent: (request, signal) => {
+            const ctx = state.toolCtx;
+            if (!ctx) return Promise.resolve({ ok: false, text: "", error: "no session context" });
+            return runAgentOnce(request, signal, ctx);
+          },
+          onSettle: (job) => {
+            const result = job.result ?? resultFromJob(job);
+            lastRun = { name: job.name, result, at: now() };
+            reclaimSlots(job, state);
+            try {
+              state.toolCtx?.ui?.notify?.(
+                job.state === "done"
+                  ? `✻ workflow ${job.name} finished: ${job.agents.length} agents, ${formatTokens(job.tokens.total)} tokens`
+                  : `✗ workflow ${job.name} ${job.state}: ${job.error ?? "unknown error"}`,
+                job.state === "done" ? "info" : "warning",
+              );
+            } catch {
+              // A terminal without notifications is not an error.
+            }
+            // Claude Code delivers a task-notification into the chat. This is
+            // the same idea: a custom message, next turn, marked as data.
+            try {
+              qronos.sendMessage(
+                {
+                  customType: "qronos-workflow-report",
+                  content: renderWorkflowReport(job.name, result),
+                  display: true,
+                  details: { job: job.id, state: job.state },
+                },
+                { deliverAs: "nextTurn" },
+              );
+            } catch (error) {
+              // Older hosts have no sendMessage; /workflows still shows it.
+              if (process.env.QRONOS_DEBUG_WORKFLOW) {
+                console.error("[qronos-workflow] delivery failed:", (error as Error)?.message, (error as Error)?.stack);
+              }
+            }
+          },
+        });
+        return state.manager;
+      };
+
       qronos.registerTool({
         name: WORKFLOW_TOOL_NAME,
         label: "Workflow",
@@ -214,126 +421,157 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             };
           }
 
-          const projectRoot = ctx.cwd || process.cwd();
-          const agentDef: AgentDefinition = { ...BUILTIN_AGENTS["general-purpose"]!, source: "builtin" };
+          state.toolCtx = ctx;
 
-          // A live line while it runs: running agents, done agents, tokens so far.
+          // A live line while work is happening: running, done and tokens.
           // Throttled, because a tick per agent event would fight the renderer.
-          let running = 0;
-          let done = 0;
-          let tokensSoFar = 0;
-          let lastStatusAt = 0;
-          let phase = "";
-          const publish = (force = false) => {
+          const publishStatus = (force = false) => {
             const stamp = now();
-            if (!force && stamp - lastStatusAt < 250) return;
-            lastStatusAt = stamp;
-            const where = phase ? `${phase} · ` : "";
-            const text = `${RUNNING} ${where}${running} running · ${done} done · ${formatTokens(tokensSoFar)} tokens`;
+            if (!force && stamp - state.lastStatusAt < 250) return;
+            state.lastStatusAt = stamp;
+            const jobs = managerFor().active();
+            if (jobs.length === 0) {
+              try {
+                ctx.ui?.setStatus?.("qronos-workflow", undefined);
+              } catch {
+                // decoration only
+              }
+              return;
+            }
+            const running = jobs.reduce((total, job) => total + job.running, 0);
+            const done = jobs.reduce((total, job) => total + job.done, 0);
+            const tokens = jobs.reduce((total, job) => total + job.tokens.total, 0);
+            const headline = jobs.length === 1 ? jobs[0]!.name : `${jobs.length} workflows`;
+            const phase = jobs.length === 1 ? jobs[0]!.phases.at(-1) : undefined;
+            const text = `${RUNNING} ${headline}${phase ? ` · ${phase}` : ""} · ${running} running · ${done} done · ${formatTokens(
+              tokens,
+            )} tokens`;
             try {
               ctx.ui?.setStatus?.("qronos-workflow", text);
             } catch {
-              // A terminal without a status row must not break the run.
+              // decoration only
             }
           };
+          state.publisher = publishStatus;
 
-          const runtime = new WorkflowRuntime({
-            config,
-            now,
-            args: params?.args,
-            onEvent: (event) => {
-              options.onEvent?.(event);
-              if (event.type === "agent_start") {
-                running += 1;
-                publish();
-              } else if (event.type === "agent_end") {
-                running = Math.max(0, running - 1);
-                done += 1;
-                tokensSoFar += event.usage?.total ?? 0;
-                publish();
-              } else if (event.type === "phase") {
-                phase = event.name;
-                publish(true);
-              }
-            },
-            runAgent: async (request, signal) => {
-              if (signal.aborted) return { ok: false, text: "", error: "stopped" };
-              const definition: AgentDefinition = request.agentType
-                ? { ...agentDef, name: request.agentType }
-                : agentDef;
-              try {
-                const outcome = await runner({
-                  agentDef: definition,
-                  prompt: request.prompt,
-                  description: request.label ?? "workflow task",
-                  cwd: projectRoot,
-                  ctx,
-                  outputSchema: request.schema,
-                  model: request.model,
-                });
-                // Tokens are reported by the subagent runner; without them the
-                // panel could not say who did how much work.
-                const usage = outcome.usage
-                  ? {
-                      input: outcome.usage.input,
-                      output: outcome.usage.output,
-                      total: outcome.usage.total,
-                    }
-                  : undefined;
-                if (outcome.structured) {
-                  return { ok: true, text: outcome.output, data: outcome.structured.value, usage };
-                }
-                if (outcome.schemaIssues && outcome.schemaIssues.length > 0) {
-                  return {
-                    ok: false,
-                    text: outcome.output,
-                    usage,
-                    error: `schema not satisfied: ${outcome.schemaIssues
-                      .slice(0, 3)
-                      .map((issue) => `${issue.path || "value"} ${issue.message}`)
-                      .join("; ")}`,
-                  };
-                }
-                return { ok: true, text: outcome.output, usage };
-              } catch (error) {
-                return { ok: false, text: "", error: error instanceof Error ? error.message : String(error) };
-              }
-            },
-          });
-
-          // The Hub shows workflow agents too, so one roster stays true.
-          void registry;
-          void userHome;
-
-          const result = await runtime.run(script);
-          try {
-            ctx.ui?.setStatus?.("qronos-workflow", undefined);
-          } catch {
-            // ignore: the line is decoration
+          // Foreground: the caller wants the value inside this turn.
+          if (params?.background === false) {
+            const runtime = new WorkflowRuntime({
+              config,
+              now,
+              args: params?.args,
+              slots: sharedSlotPool(),
+              onEvent: (event) => {
+                options.onEvent?.(event);
+                if (event.type === "agent_end") publishStatus();
+              },
+              runAgent: (request, signal) => runAgentOnce(request, signal, ctx),
+            });
+            const result = await runtime.run(script);
+            try {
+              ctx.ui?.setStatus?.("qronos-workflow", undefined);
+            } catch {
+              // decoration only
+            }
+            const runName = name !== "workflow" ? name : (result.meta.name ?? name);
+            lastRun = { name: runName, result, at: now() };
+            return {
+              content: [{ type: "text" as const, text: renderWorkflowReport(runName, result) }],
+              details: {
+                ok: result.ok,
+                name: runName,
+                background: false,
+                agents: result.agents.length,
+                phases: result.phases,
+                durationMs: result.durationMs,
+                tokens: result.tokens,
+                phaseStats: result.phaseStats,
+                truncated: result.truncated,
+                error: result.error ?? null,
+              },
+            };
           }
-          const runName = name !== "workflow" ? name : (result.meta.name ?? name);
-          lastRun = { name: runName, result: { ...result }, at: now() };
+
+          // Background: Claude Code's shape. The tool returns at once, the run
+          // continues, and the report arrives as a message on the next turn.
+          managerFor().prune();
+          const job = managerFor().launch({ script, name, args: params?.args });
+          publishStatus(true);
+          const queued = [
+            `${RUNNING} workflow ${job.name} launched as ${job.id}`,
+            "It runs in the background; your next message arrives as usual.",
+            `/workflows          watch it (agents, phases, tokens)`,
+            `/workflows ${job.id}  one job in detail`,
+            `/workflows stop ${job.id}  stop it`,
+          ].join("\n");
 
           return {
-            content: [{ type: "text" as const, text: renderWorkflowReport(runName, result) }],
+            content: [{ type: "text" as const, text: queued }],
             details: {
-              ok: result.ok,
-              name: runName,
-              agents: result.agents.length,
-              phases: result.phases,
-              durationMs: result.durationMs,
-              tokens: result.tokens,
-              phaseStats: result.phaseStats,
-              truncated: result.truncated,
-              error: result.error ?? null,
+              ok: true,
+              background: true,
+              queued: true,
+              job: job.id,
+              name: job.name,
+              agents: 0,
+              phases: [],
+              tokens: { input: 0, output: 0, total: 0 },
+              error: null,
             },
           };
         },
       });
 
       qronos.registerCommand("workflows", {
-        description: "Show the last workflow: phases, agents and where it stopped",
-        handler: async (_args: string, ctx: ExtensionCommandContext) => {
+        description: "Watch workflow runs: phases, agents, tokens; stop one by id",
+        handler: async (args: string, ctx: ExtensionCommandContext) => {
+          const words = (args ?? "").trim().split(/\s+/).filter(Boolean);
+          const manager = state.manager;
+
+          // `/workflows stop` (all) or `/workflows stop <id>`.
+          if (words[0] === "stop") {
+            if (!manager) {
+              ctx.ui.notify(
+                words[1] ? `No workflow with id ${words[1]} in this session.` : "No workflow is running.",
+                "info",
+              );
+              return;
+            }
+            const target = words[1];
+            const jobs = target ? [manager.get(target)].filter((job): job is WorkflowJob => job !== undefined) : manager.active();
+            if (jobs.length === 0) {
+              ctx.ui.notify(target ? `No workflow with id ${target}.` : "No workflow is running.", "info");
+              return;
+            }
+            const stopped = jobs.filter((job) => manager.cancel(job.id)).map((job) => job.id);
+            ctx.ui.notify(`Stopped ${stopped.join(", ")}.`, "warning");
+            return;
+          }
+
+          // `/workflows <id>`: one job in detail.
+          if (words[0] && manager) {
+            const job = manager.get(words[0]!);
+            if (!job) {
+              ctx.ui.notify(`No workflow with id ${words[0]}. Try /workflows for the list.`, "warning");
+              return;
+            }
+            ctx.ui.notify(renderJobDetail(job), job.state === "failed" ? "warning" : "info");
+            return;
+          }
+
+          // `/workflows`: the live list, or the last run when nothing is live.
+          const active = manager?.active() ?? [];
+          if (active.length > 0) {
+            ctx.ui.notify(renderJobList(active, manager!.list()), "info");
+            return;
+          }
+          if (manager) {
+            const finished = manager.list();
+            if (finished.length > 0) {
+              ctx.ui.notify(renderJobList([], finished), finished[0]!.state === "failed" ? "warning" : "info");
+              return;
+            }
+          }
           const last = getLastWorkflowRun();
           ctx.ui.notify(renderWorkflowDetail(last), last?.result.ok === false ? "warning" : "info");
         },

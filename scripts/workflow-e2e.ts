@@ -7,7 +7,7 @@
 //   QRONOS_E2E_MODEL=claude-haiku-5.5 bun run scripts/workflow-e2e.ts
 //
 // Exit code is 0 only when every step passed.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { ModelRegistry, createAgentSessionServices } from "@earendil-works/pi-coding-agent";
@@ -16,6 +16,7 @@ import { loadJwt } from "../src/credentials";
 import { getCredentialsPath, getQronosAgentDir } from "../src/paths";
 import { PROVIDER_PRESETS } from "../src/provider";
 import { createWorkflowToolExtension, renderWorkflowReport, getLastWorkflowRun } from "../src/workflow-tool";
+import { journalDir } from "../src/workflow-journal";
 import { workflowConfigFromEnv } from "../src/workflow-types";
 
 const failures: string[] = [];
@@ -100,7 +101,7 @@ const ctx = {
   signal: new AbortController().signal,
   ui: {
     setStatus: (key: string, text?: string) => statuses.push({ key, text }),
-    notify: () => {},
+    notify: (text: string) => notices.push(text),
   },
   tools: [readTool, lsTool, grepTool] as never,
   async executeTool(name: string, args: any) {
@@ -133,15 +134,56 @@ const ctx = {
 /* --- capture the tool the extension registers --------------------------- */
 
 const tools: Array<Record<string, any>> = [];
+const deliveries: Array<{ content: string; customType: string }> = [];
+const notices: string[] = [];
+let commandHandler: ((args: string, ctx: unknown) => Promise<void>) | undefined;
 createWorkflowToolExtension({
   config: { ...workflowConfigFromEnv({}), wallClockMs: 600_000, concurrency: 4, maxAgents: 12 },
+  agentDir,
 }).factory({
   registerTool: (tool: Record<string, any>) => tools.push(tool),
-  registerCommand: () => {},
+  // The command lives in the SAME extension instance as the tool, exactly as in
+  // the real CLI: one instance, one job manager, so /workflows sees the jobs.
+  registerCommand: (name: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
+    if (name === "workflows") commandHandler = spec.handler;
+  },
   registerShortcut: () => {},
+  sendMessage: (message: Record<string, any>) =>
+    deliveries.push({ content: String(message.content), customType: String(message.customType) }),
   on: () => {},
 } as never);
 const workflowTool = tools[0]!;
+
+const commandNotices: string[] = [];
+async function stopJob(id: string): Promise<boolean> {
+  commandNotices.length = 0;
+  await commandHandler?.(`stop ${id}`, { ui: { notify: (text: string) => commandNotices.push(text) } });
+  return commandNotices.some((text) => text.includes("Stopped"));
+}
+
+async function jobState(id: string): Promise<string> {
+  commandNotices.length = 0;
+  await commandHandler?.(id, { ui: { notify: (text: string) => commandNotices.push(text) } });
+  const text = commandNotices.join(" ");
+  if (text.includes("cancelled")) return "cancelled";
+  if (text.includes("status: running")) return "running";
+  if (text.includes("failed")) return "failed";
+  if (text.includes("finished")) return "done";
+  return "unknown";
+}
+
+function lastJournalPath(): string | undefined {
+  // The job manager writes under <agentDir>/workflow-runs; the newest file is
+  // the run that just finished.
+  try {
+    const dir = journalDir(agentDir);
+    const names = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
+    if (names.length === 0) return undefined;
+    return join(dir, names.sort().at(-1)!);
+  } catch {
+    return undefined;
+  }
+}
 const run = (params: Record<string, unknown>) =>
   workflowTool.execute("e2e-1", params, new AbortController().signal, () => {}, ctx) as Promise<{
     content: Array<{ text: string }>;
@@ -152,8 +194,10 @@ try {
   console.log(`model: ${modelId}\nproject: ${project}\n`);
 
   /* 1. a real fan-out with a schema, three files ---------------------------------- */
+  let fanoutReport = "";
   const fanout = await run({
     name: "auth-audit",
+    background: false,
     script: `
       phase("Understand")
       const files = await agent(
@@ -184,11 +228,13 @@ try {
   check("phases carry token totals", phaseTokens.length >= 1, `${phaseTokens.length} phases with tokens`);
   check("the report shows a phase table", /▸\s/.test(fanout.content[0]!.text) || fanout.content[0]!.text.includes("Understand"));
   check("the live status line was published", statuses.some((entry) => entry.key === "qronos-workflow"));
+  fanoutReport = String(fanout.content[0]?.text ?? "");
   check("the status line is cleared at the end", statuses.at(-1)?.text === undefined);
 
   /* 2. a nested workflow, one child level ---------------------------------------- */
   const nested = await run({
     name: "nested",
+    background: false,
     script: `
       phase("Understand")
       const outer = await agent("Say the word OUTER and nothing else.", { label: "outer" })
@@ -208,6 +254,7 @@ try {
   /* 3. a per-agent model choice --------------------------------------------------- */
   const routed = await run({
     name: "routed",
+    background: false,
     script: `
       const a = await agent("Reply with the single word PINEAPPLE.", { label: "routed", model: "${modelId}" })
       return { ok: a.ok, head: a.text.slice(0, 60) }
@@ -218,6 +265,7 @@ try {
   /* 4. the caps are real ----------------------------------------------------------- */
   const capped = await run({
     name: "capped",
+    background: false,
     script: `
       for (let i = 0; i < 20; i += 1) { await agent("Say OK " + i) }
       return "finished"
@@ -226,8 +274,51 @@ try {
   check("the agent cap stops a runaway script", capped.details.ok === false, String(capped.details.error ?? "not stopped"));
   check("the cap message names the env var", String(capped.details.error ?? "").includes("QRONOS_WORKFLOW_MAX_AGENTS"));
 
+  /* 5. background: launch returns at once, the report arrives later --------------- */
+  const background = await run({
+    name: "bg-audit",
+    script: `
+      phase("Understand")
+      const files = await agent("List the .ts files inside src/ and answer as JSON.", {
+        schema: { type: "object", required: ["files"], properties: { files: { type: "array", items: { type: "string" } } } },
+      })
+      phase("Review")
+      const reports = await pipeline(files.data?.files ?? ["src/auth.ts"], (file) =>
+        agent("Read " + file + " and say in one short sentence what it does.", { label: String(file) }),
+      )
+      return reports.map((r) => r.text.slice(0, 120))
+    `,
+  });
+  const launchedAt = Date.now();
+  check("a background launch returns immediately", background.details.background === true, String(background.details.job));
+  check("the launch says where to watch it", background.content[0]!.text.includes("/workflows"));
+  check("the launch costs no time", Date.now() - launchedAt < 5_000, `${Date.now() - launchedAt}ms`);
+  check("nothing was delivered before it finished", deliveries.length === 0, `${deliveries.length} deliveries`);
+
+  // Wait for the report to arrive, the way a later turn would receive it.
+  const deadline = Date.now() + 240_000;
+  while (deliveries.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 500));
+  check("the report was delivered as a message", deliveries.length === 1, `${deliveries.length} deliveries`);
+  check("the delivery is marked as a workflow report", deliveries[0]?.customType === "qronos-workflow-report");
+  check("the delivery carries the report", String(deliveries[0]?.content ?? "").includes("bg-audit"));
+  check("a notification was shown", notices.length > 0, notices.at(-1) ?? "");
+  check("the journal was written to disk", Boolean(getLastWorkflowRun()) && existsSync(String(lastJournalPath() ?? "")), String(lastJournalPath() ?? "none"));
+
+  /* 6. cancel really stops a run ------------------------------------------------- */
+  const toCancel = await run({ name: "cancel-me", script: `
+    for (let i = 0; i < 6; i += 1) { await agent("Say the word SLOW " + i) }
+    return "finished"
+  `});
+  const cancelId = String(toCancel.details.job ?? "");
+  check("a second background job launched", cancelId.startsWith("wf_"), cancelId);
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  const stopped = await stopJob(cancelId);
+  check("cancel reports success", stopped === true, String(stopped));
+  const afterCancel = await jobState(cancelId);
+  check("the cancelled job is not running", afterCancel === "cancelled" || afterCancel === "failed", String(afterCancel));
+
   console.log("\n--- the report the chat receives ---");
-  console.log(renderWorkflowReport("auth-audit", getLastWorkflowRun()!.result));
+  console.log(fanoutReport);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
