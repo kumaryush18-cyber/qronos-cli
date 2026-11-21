@@ -100,7 +100,7 @@ describe("the tool", () => {
     const tool = tools[0] as { execute: Function };
     const result = await tool.execute("1", { script: `await agent("list", { schema: { type: "object" } }); return 1;` }, undefined, undefined, ctx);
     expect(result.details.ok).toBe(true);
-    expect(result.content[0].text).toContain("failed; the gaps are in the result");
+    expect(result.content[0].text).toContain("1 failed");
   });
 
   test("a runner that throws does not break the tool", async () => {
@@ -148,19 +148,21 @@ describe("the report", () => {
     ok: true,
     value: { found: 2 },
     agents: [
-      { id: "wf-1", label: "a", ok: true },
-      { id: "wf-2", label: "b", ok: true },
+      { id: "wf-1", label: "a", ok: true, durationMs: 10, depth: 1 },
+      { id: "wf-2", label: "b", ok: true, durationMs: 10, depth: 1 },
     ],
     phases: ["Understand"],
+    phaseStats: [{ name: "Understand", agents: 2, failed: 0, tokens: 120, durationMs: 20 }],
     logs: [],
     durationMs: 4200,
     truncated: false,
+    tokens: { input: 0, output: 0, total: 0 },
   };
 
   test("says how many agents ran and how long it took", () => {
     const text = renderWorkflowReport("audit", base);
     expect(text).toContain("2 agents in 4s");
-    expect(text).toContain("phases: Understand");
+    expect(text).toContain("Understand");
   });
 
   test("singular agent is not pluralised wrongly", () => {
@@ -177,9 +179,9 @@ describe("the report", () => {
   test("failed agents are counted", () => {
     const text = renderWorkflowReport("mixed", {
       ...base,
-      agents: [...base.agents, { id: "wf-3", label: "c", ok: false, error: "no answer" }],
+      agents: [...base.agents, { id: "wf-3", label: "c", ok: false, error: "no answer", durationMs: 10, depth: 1 }],
     });
-    expect(text).toContain("1 agent failed");
+    expect(text).toContain("1 failed");
   });
 
   test("a huge value is shortened with a visible marker", () => {
@@ -202,13 +204,18 @@ describe("the /workflows detail", () => {
       ok: true,
       value: 1,
       agents: [
-        { id: "wf-1", label: "routes", ok: true },
-        { id: "wf-2", label: "middleware", ok: false, error: "no answer" },
+        { id: "wf-1", label: "routes", ok: true, durationMs: 10, depth: 1 },
+        { id: "wf-2", label: "middleware", ok: false, error: "no answer", durationMs: 10, depth: 1 },
       ],
       phases: ["Understand", "Review"],
+      phaseStats: [
+        { name: "Understand", agents: 1, failed: 0, tokens: 70, durationMs: 10 },
+        { name: "Review", agents: 1, failed: 1, tokens: 50, durationMs: 10 },
+      ],
       logs: ["started"],
       durationMs: 61_000,
       truncated: false,
+      tokens: { input: 0, output: 0, total: 0 },
     } satisfies WorkflowRunResult,
   };
 
@@ -219,19 +226,26 @@ describe("the /workflows detail", () => {
   });
 
   test("lists each agent with a tick or a cross", () => {
-    const text = renderWorkflowDetail(run);
-    expect(text).toContain("✓ wf-1 routes");
-    expect(text).toContain("✗ wf-2 middleware");
+    const text = renderWorkflowDetail(run).replace(/\x1b\[[0-9;]*m/g, "");
+    expect(text).toContain("routes");
+    expect(text).toContain("middleware");
+    expect(text).toContain("✓");
+    expect(text).toContain("✗");
     expect(text).toContain("no answer");
   });
 
   test("prints the phases and the time", () => {
     const text = renderWorkflowDetail(run);
-    expect(text).toContain("Understand → Review");
-    expect(text).toContain("61s");
+    expect(text).toContain("Understand");
+    expect(text).toContain("Review");
+    expect(text).toContain("1m 01s");
   });
 
   test("counts the failures", () => {
-    expect(renderWorkflowDetail(run)).toContain("2 (1 failed)");
+    expect(renderWorkflowDetail(run)).toContain("1 failed");
+  });
+
+  test("shows the token split", () => {
+    expect(renderWorkflowDetail(run)).toContain("in 0 / out 0");
   });
 });

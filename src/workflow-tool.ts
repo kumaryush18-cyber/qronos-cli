@@ -16,6 +16,7 @@ import { BUILTIN_AGENTS } from "./agent-discovery";
 import type { AgentDefinition } from "./agent-discovery";
 import { defaultSubagentRunner, type SubagentRunner } from "./agent-tool";
 import { WorkflowRuntime } from "./workflow-runtime";
+import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, tick, tokenBar } from "./workflow-glyphs";
 import {
   workflowConfigFromEnv,
   type WorkflowConfig,
@@ -41,6 +42,7 @@ const PARAMS = {
         "JavaScript workflow body. Use `return` for the final value. Example: const files = await agent('list the .ts files under src/', { schema: { type: 'object', required: ['files'], properties: { files: { type: 'array', items: { type: 'string' } } } } }); return files.data.files;",
     },
     name: { type: "string", description: "Short name for this workflow, for /workflows." },
+    args: { description: "Any JSON value; the script reads it as `args`." },
   },
   required: ["script"],
 } as const;
@@ -62,18 +64,60 @@ export function resetLastWorkflowRun(): void {
   lastRun = undefined;
 }
 
+/** Total agents, tokens and failures for a phase table; shared by both views. */
+function phaseLines(result: WorkflowRunResult, maxBar: number): string[] {
+  if (result.phaseStats.length === 0) return [];
+  const lines: string[] = [];
+  const labelWidth = Math.max(...result.phaseStats.map((stat) => stat.name.length), 6);
+  for (const stat of result.phaseStats) {
+    const count = `${stat.agents} agent${stat.agents === 1 ? "" : "s"}`;
+    const failed = stat.failed > 0 ? ` ${cross()} ${stat.failed}` : "";
+    const tokens = formatTokens(stat.tokens).padStart(6);
+    const bar = tokenBar(stat.tokens, maxBar, 10);
+    lines.push(`  ${pad(phaseMark(stat.name), labelWidth + 4)} ${pad(count, 11)}${pad(failed, 6)} ${bar} ${tokens}`);
+  }
+  return lines;
+}
+
+/** Worker rows: who ran, how long, how much they burned. */
+function agentLines(result: WorkflowRunResult, maxTokens: number, limit: number): string[] {
+  const rows = [...result.agents].sort((a, b) => (b.usage?.total ?? 0) - (a.usage?.total ?? 0));
+  const shown = limit > 0 ? rows.slice(0, limit) : rows;
+  const nameWidth = Math.min(46, Math.max(12, ...shown.map((agent) => agent.label.length)));
+  return shown.map((agent) => {
+    const mark = agent.ok ? tick() : cross();
+    const depth = agent.depth > 1 ? "  ".repeat(agent.depth - 1) + "└ " : "";
+    const label = agent.label.length > nameWidth ? `${agent.label.slice(0, nameWidth - 1)}…` : agent.label;
+    const tokens = formatTokens(agent.usage?.total ?? 0).padStart(6);
+    const bar = tokenBar(agent.usage?.total ?? 0, maxTokens, 8);
+    const time = formatDuration(agent.durationMs).padStart(6);
+    const why = agent.error ? `  ${agent.error}` : "";
+    return `  ${mark} ${pad(depth + label, nameWidth + 4)} ${bar} ${tokens} ${time}${why}`;
+  });
+}
+
 /** How the whole run is written into the chat. One report, no agent transcripts. */
 export function renderWorkflowReport(name: string, result: WorkflowRunResult): string {
-  const seconds = Math.max(1, Math.round(result.durationMs / 1000));
-  const lines: string[] = [];
   const failed = result.agents.filter((agent) => !agent.ok).length;
-  lines.push(`⚙ workflow ${name}: ${result.agents.length} agent${result.agents.length === 1 ? "" : "s"} in ${seconds}s`);
-  if (result.phases.length > 0) lines.push(`phases: ${result.phases.join(" → ")}`);
-  if (failed > 0) lines.push(`${failed} agent${failed === 1 ? "" : "s"} failed; the gaps are in the result`);
+  const tokens = formatTokens(result.tokens.total);
+  const lines: string[] = [];
+  lines.push(
+    `${RUNNING} workflow ${name}: ${result.agents.length} agent${result.agents.length === 1 ? "" : "s"} in ${formatDuration(
+      result.durationMs,
+    )} · ${tokens} tokens${failed > 0 ? ` · ${failed} failed` : ""}`,
+  );
+
+  const maxPhase = Math.max(0, ...result.phaseStats.map((stat) => stat.tokens));
+  lines.push(...phaseLines(result, maxPhase));
+
   if (result.truncated) lines.push("some output was dropped at the cap");
 
   if (!result.ok) {
     lines.push("", `failed: ${result.error ?? "unknown error"}`);
+    if (result.agents.length > 0) {
+      lines.push("", "agents:");
+      lines.push(...agentLines(result, maxTokens(result), 20));
+    }
     return lines.join("\n");
   }
 
@@ -92,6 +136,10 @@ export function renderWorkflowReport(name: string, result: WorkflowRunResult): s
   return lines.join("\n");
 }
 
+function maxTokens(result: WorkflowRunResult): number {
+  return Math.max(0, ...result.agents.map((agent) => agent.usage?.total ?? 0));
+}
+
 /** What `/workflows` prints: the last run, in detail. Pure, so it is testable. */
 export function renderWorkflowDetail(run: LastWorkflowRun | undefined): string {
   if (!run) {
@@ -103,18 +151,24 @@ export function renderWorkflowDetail(run: LastWorkflowRun | undefined): string {
     ].join("\n");
   }
   const { result } = run;
-  const seconds = Math.max(1, Math.round(result.durationMs / 1000));
+  const failed = result.agents.filter((agent) => !agent.ok).length;
   const lines = [
-    `workflow: ${run.name}`,
-    `state:   ${result.ok ? "finished" : "failed"}`,
-    `agents:  ${result.agents.length} (${result.agents.filter((a) => !a.ok).length} failed)`,
-    `time:    ${seconds}s`,
+    `${RUNNING} ${run.name} — ${result.ok ? "finished" : "failed"}`,
+    `agents ${result.agents.length}${failed > 0 ? ` (${cross()} ${failed} failed)` : ""} · ${formatDuration(
+      result.durationMs,
+    )} · ${formatTokens(result.tokens.total)} tokens`,
+    `in ${formatTokens(result.tokens.input)} / out ${formatTokens(result.tokens.output)}`,
   ];
-  if (result.phases.length > 0) lines.push(`phases:  ${result.phases.join(" → ")}`);
-  if (result.error) lines.push(`error:   ${result.error}`);
-  if (result.truncated) lines.push("note:    some output was dropped at the cap");
-  for (const agent of result.agents) {
-    lines.push(`  ${agent.ok ? "✓" : "✗"} ${agent.id} ${agent.label}${agent.error ? ` — ${agent.error}` : ""}`);
+  if (result.error) lines.push(`error: ${result.error}`);
+  if (result.truncated) lines.push("note: some output was dropped at the cap");
+
+  if (result.phaseStats.length > 0) {
+    lines.push("", "phases:");
+    lines.push(...phaseLines(result, maxTokens(result)));
+  }
+  if (result.agents.length > 0) {
+    lines.push("", "agents (most expensive first):");
+    lines.push(...agentLines(result, maxTokens(result), 0));
   }
   if (result.logs.length > 0) {
     lines.push("", "log:");
@@ -163,10 +217,45 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           const projectRoot = ctx.cwd || process.cwd();
           const agentDef: AgentDefinition = { ...BUILTIN_AGENTS["general-purpose"]!, source: "builtin" };
 
+          // A live line while it runs: running agents, done agents, tokens so far.
+          // Throttled, because a tick per agent event would fight the renderer.
+          let running = 0;
+          let done = 0;
+          let tokensSoFar = 0;
+          let lastStatusAt = 0;
+          let phase = "";
+          const publish = (force = false) => {
+            const stamp = now();
+            if (!force && stamp - lastStatusAt < 250) return;
+            lastStatusAt = stamp;
+            const where = phase ? `${phase} · ` : "";
+            const text = `${RUNNING} ${where}${running} running · ${done} done · ${formatTokens(tokensSoFar)} tokens`;
+            try {
+              ctx.ui?.setStatus?.("qronos-workflow", text);
+            } catch {
+              // A terminal without a status row must not break the run.
+            }
+          };
+
           const runtime = new WorkflowRuntime({
             config,
             now,
-            onEvent: options.onEvent,
+            args: params?.args,
+            onEvent: (event) => {
+              options.onEvent?.(event);
+              if (event.type === "agent_start") {
+                running += 1;
+                publish();
+              } else if (event.type === "agent_end") {
+                running = Math.max(0, running - 1);
+                done += 1;
+                tokensSoFar += event.usage?.total ?? 0;
+                publish();
+              } else if (event.type === "phase") {
+                phase = event.name;
+                publish(true);
+              }
+            },
             runAgent: async (request, signal) => {
               if (signal.aborted) return { ok: false, text: "", error: "stopped" };
               const definition: AgentDefinition = request.agentType
@@ -180,21 +269,32 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
                   cwd: projectRoot,
                   ctx,
                   outputSchema: request.schema,
+                  model: request.model,
                 });
+                // Tokens are reported by the subagent runner; without them the
+                // panel could not say who did how much work.
+                const usage = outcome.usage
+                  ? {
+                      input: outcome.usage.input,
+                      output: outcome.usage.output,
+                      total: outcome.usage.total,
+                    }
+                  : undefined;
                 if (outcome.structured) {
-                  return { ok: true, text: outcome.output, data: outcome.structured.value };
+                  return { ok: true, text: outcome.output, data: outcome.structured.value, usage };
                 }
                 if (outcome.schemaIssues && outcome.schemaIssues.length > 0) {
                   return {
                     ok: false,
                     text: outcome.output,
+                    usage,
                     error: `schema not satisfied: ${outcome.schemaIssues
                       .slice(0, 3)
                       .map((issue) => `${issue.path || "value"} ${issue.message}`)
                       .join("; ")}`,
                   };
                 }
-                return { ok: true, text: outcome.output };
+                return { ok: true, text: outcome.output, usage };
               } catch (error) {
                 return { ok: false, text: "", error: error instanceof Error ? error.message : String(error) };
               }
@@ -206,6 +306,11 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           void userHome;
 
           const result = await runtime.run(script);
+          try {
+            ctx.ui?.setStatus?.("qronos-workflow", undefined);
+          } catch {
+            // ignore: the line is decoration
+          }
           const runName = name !== "workflow" ? name : (result.meta.name ?? name);
           lastRun = { name: runName, result: { ...result }, at: now() };
 
@@ -217,6 +322,8 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
               agents: result.agents.length,
               phases: result.phases,
               durationMs: result.durationMs,
+              tokens: result.tokens,
+              phaseStats: result.phaseStats,
               truncated: result.truncated,
               error: result.error ?? null,
             },

@@ -24,11 +24,15 @@ Exactly five helpers. Nothing else exists inside the sandbox.
 
 | Helper | What it does |
 |---|---|
-| `agent(prompt, { label?, schema? })` | Runs one subagent. Resolves to `{ ok, text, data, error }`. It never throws. |
+| `agent(prompt, { label?, schema?, model? })` | Runs one subagent. Resolves to `{ ok, text, data, error, usage }`. It never throws. |
 | `parallel([...])` | Runs promises or functions at once. Order is kept. |
 | `pipeline(list, item => ...)` | One task per item, limited to the allowed concurrency. |
-| `phase("Review")` | Names a step, shown in `/workflows`. |
+| `phase("Review")` | Names a step. Agents and tokens are counted per phase. |
 | `log("...")` | A note for the human. |
+| `workflow("...")` | A nested workflow. One child level, sharing this run's budget. |
+
+Two read-only values are also there: `args` (what the caller passed) and
+`budget` (`{ maxAgents, used(), remaining }`).
 
 Optional: `export const meta = { name, description }` at the top, and a
 `return` with the value you want back.
@@ -84,12 +88,26 @@ casual scripts, not a formal boundary against a determined attacker who writes
 deliberately malicious code. The script comes from your own model, in your own
 session, and it has no reason to attack you. That is the trade we chose.
 
+## Routing a stage to a cheaper model
+
+`agent(prompt, { model: "claude-haiku-5.5" })` runs that one agent on another
+model. Mechanical extraction on a fast model, the hard judgement on the strong
+one, is the pattern Claude Code recommends.
+
+## Tokens
+
+Every agent reports what it burned. The run adds them up, and `/workflows` shows
+the split (in / out) plus a bar per agent and per phase, so "who did how much
+work" is visible without reading numbers. This comes from the provider's own
+usage report; an agent that reports nothing counts as zero, never as NaN.
+
 ## Seeing what happened
 
-- Every run ends with a few lines in the chat: agent count, time, phases, the
-  value, and a short log tail.
-- `/workflows` shows the last run in detail: each agent with ✓ or ✗, its error,
-  and where it stopped.
+- A live line while it runs: `✻ Review · 3 running · 9 done · 42.1k tokens`.
+- Every run ends with a table in the chat: agents, time, tokens, one row per
+  phase with a bar, then the value and a short log tail.
+- `/workflows` shows the last run in detail: each agent sorted by cost, with a
+  bright green ✓ or a dark red ✗, its tokens, its time, and its error.
 - `phase(...)` names appear in both places, so the report reads like a plan.
 
 ## When a subagent fails
@@ -119,7 +137,9 @@ use it, so it can only be called when the model asks for it directly.
 | `src/workflow-runtime.ts` | Semaphore, caps, schema check, event log, `run()`. |
 | `src/workflow-tool.ts` | The `workflow` tool, the report, `/workflows`. |
 | `src/workflow-notice.ts` | The hidden instructions for `ultracode` / `orchestrate`. |
+| `src/workflow-glyphs.ts` | Ticks, crosses, bars, durations: the visuals, pure. |
 
 Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
-`test/workflow-notice.test.ts`. They use a fake agent, so they spend no tokens
+`test/workflow-notice.test.ts`, `test/workflow-glyphs.test.ts`. Real-model E2E:
+`scripts/workflow-e2e.ts` (`QRONOS_E2E_MODEL=claude-haiku-5.5`). They use a fake agent, so they spend no tokens
 and take no seconds.

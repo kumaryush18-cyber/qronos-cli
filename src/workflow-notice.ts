@@ -6,7 +6,7 @@
 import { ORCHESTRATE_SECTION, ORCHESTRATE_WORD, ULTRACODE_SECTION, ULTRACODE_WORD, type Keyword } from "./ultrathink";
 
 /** Helpers the sandbox really exposes. Tests compare the notice against this. */
-export const WORKFLOW_HELPERS = ["agent", "parallel", "pipeline", "phase", "log"] as const;
+export const WORKFLOW_HELPERS = ["agent", "parallel", "pipeline", "phase", "log", "workflow"] as const;
 
 export const ULTRACODE_NOTICE = `The user wrote the word "ultracode" in this prompt. They want this task done as a
 multi-agent workflow, the way Claude Code does it: you write a small script, the
@@ -19,18 +19,27 @@ out of this conversation.
 
 Inside the script you have exactly five helpers:
 
-- \`agent(prompt, { label?, schema? })\` — one subagent. Resolves to
-  \`{ ok, text, data, error }\`. It never throws: check \`ok\` and skip the gap.
-  Pass \`schema\` (JSON Schema) when you need data instead of prose; \`data\` is
-  then validated for you.
+- \`agent(prompt, { label?, schema?, model? })\` — one subagent. Resolves to
+  \`{ ok, text, data, error, usage }\`. It never throws: check \`ok\` and skip the
+  gap. Pass \`schema\` (JSON Schema) when you need data instead of prose; \`data\`
+  is then validated for you. Pass \`model\` to route one stage to a cheaper model
+  while the hard judgement stays on the strong one.
 - \`parallel([...])\` — promises or functions, all started at once, order kept.
 - \`pipeline(list, item => ...)\` — one task per item, concurrency-limited.
-- \`phase("Understand")\` — a named step, shown in /workflows.
+- \`phase("Understand")\` — a named step. Agents are counted and priced per
+  phase, so name the phases you care about.
 - \`log("...")\` — a note for the human.
+- \`workflow("...script...")\` — a nested workflow, one level deep. It shares
+  this run's agent budget, so nesting cannot double the cost.
+
+Two read-only values: \`args\` (whatever the caller passed) and \`budget\`
+(\`{ maxAgents, used(), remaining }\`). Use them to decide how much work to
+start instead of guessing.
 
 Rules of the runtime (do not fight them):
 - Real JavaScript. No imports, no require, no process, no filesystem, no network.
-- 10 minutes wall clock, 60 agents per run, 8 at a time. Split very large jobs
+- 10 minutes wall clock, 60 agents per run, 8 at a time. Name phases early, so
+  the report can say which stage spent the tokens. Split very large jobs
   into several runs instead of one run over one thousand files.
 - \`return\` one small value. Big results must be summarised in the script, not
   dumped; an oversized return is refused.

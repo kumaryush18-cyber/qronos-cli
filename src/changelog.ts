@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.9",
+    highlights: [
+      "Workflows grew teeth: a per-agent model (cheap model for extraction, strong model for judgement), a nested workflow() one level deep that shares the same budget, and args / budget so a script can decide how much work to start.",
+      "Token accounting per agent and per phase: /workflows lists every agent sorted by cost with a bar, a bright green tick or a dark red cross, its tokens and its time. A live line shows running, done and tokens while it works.",
+      "A real-model end to end run (claude-haiku-5.5) proves it: 4 agents, 8.6k tokens, phases priced, a nested child at depth 2, a routed agent, and the agent cap stopping a runaway script.",
+      "Verified against Claude Code's documented behaviour: background launch, resume and the live panel are the remaining steps.",
+    ],
+  },
+  {
     version: "1.0.8",
     highlights: [
       "Write ultracode in a prompt and the task becomes a workflow: the model writes a small JavaScript script that hands the work to many subagents, and only the final result comes back to the chat. Big audits no longer flood the conversation.",

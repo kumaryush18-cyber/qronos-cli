@@ -211,6 +211,15 @@ export interface SubagentProgressEvent {
   retryDone?: boolean;
 }
 
+/** Tokens a subagent burned, summed over its turns. */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
 export interface SubagentTurnResult {
   output: string;
   turns: number;
@@ -224,6 +233,8 @@ export interface SubagentTurnResult {
   structured?: StructuredResult;
   /** Present when a schema was required and the answer did not match. */
   schemaIssues?: SchemaIssue[];
+  /** What this subagent cost, when the provider reports it. */
+  usage?: TokenUsage;
 }
 
 export type SubagentRunner = (params: SubagentRunnerParams) => Promise<SubagentTurnResult>;
@@ -264,6 +275,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     }
   }
 
+  const usage: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
   const writable = allowedToolNames.has("write") || allowedToolNames.has("edit");
   const systemPrompt = [
     agentDef.systemPrompt,
@@ -427,6 +439,16 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     params.onEvent?.({ turns, retryDone: true });
     const response: any = attempt.value;
 
+    // Token accounting per turn: the Hub and /workflows show what each agent
+    // cost, so the user can see where the money went.
+    const reported = response?.usage;
+    if (reported) {
+      usage.input += Number(reported.input) || 0;
+      usage.output += Number(reported.output) || 0;
+      usage.cacheRead += Number(reported.cacheRead) || 0;
+      usage.cacheWrite += Number(reported.cacheWrite) || 0;
+    }
+
     messages.push(response);
 
     // Collect text from assistant response
@@ -583,6 +605,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     : "";
   unappliedModel = undefined;
 
+  usage.total = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
   return {
     output: wrapSubagentReport(agentDef.name, scanned.text + notice),
     turns,
@@ -592,6 +615,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
     matched: scanned.matched,
     structured,
     schemaIssues: schemaIssues.length > 0 ? schemaIssues : undefined,
+    usage: usage.total > 0 ? { ...usage } : undefined,
   };
 }
 

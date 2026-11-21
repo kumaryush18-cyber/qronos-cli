@@ -22,6 +22,8 @@ export interface AgentScriptOptions {
   label?: string;
   schema?: unknown;
   agent?: string;
+  /** Route this one agent to a different model. */
+  model?: string;
 }
 
 export interface WorkflowSandboxHelpers {
@@ -30,6 +32,12 @@ export interface WorkflowSandboxHelpers {
   pipeline(items: unknown, fn: unknown): Promise<unknown[]>;
   phase(name: unknown): void;
   log(message: unknown): void;
+  /** A nested workflow: one child level, as in Claude Code. */
+  workflow(script: unknown): Promise<unknown>;
+  /** Work passed in by the caller of the tool. */
+  args?: unknown;
+  /** Read-only view of the agent budget. */
+  budget?: { maxAgents: number; used: () => number };
 }
 
 export interface WorkflowMeta {
@@ -102,6 +110,9 @@ export function extractScriptBody(script: string): string {
   if (/\bprocess\b|\bBun\b|node:fs|node:child_process/.test(trimmed)) {
     throw new WorkflowSyntaxError("workflow scripts have no process, Bun or filesystem access");
   }
+  if (/\bsetInterval\b|\bsetImmediate\b/.test(trimmed)) {
+    throw new WorkflowSyntaxError("workflow scripts cannot use setInterval; await handles time");
+  }
   return trimmed.replace(/^\s*export\s+/gm, "");
 }
 
@@ -154,15 +165,41 @@ export async function runWorkflowScript(
   options: RunScriptOptions = {},
 ): Promise<unknown> {
   const body = extractScriptBody(script);
+  // `Math.random` is replaced by a seeded generator. Claude Code removes random
+  // entirely so a resumed run repeats itself; a seeded generator keeps scripts
+  // that use it working and still repeats itself, which is the property that
+  // matters when we add resume.
+  const seededMath = Object.create(Math) as Math;
+  let seed = 0x2f6e2b1;
+  seededMath.random = () => {
+    // xorshift32: tiny, deterministic, and good enough for shuffles.
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return ((seed >>> 0) % 1_000_000) / 1_000_000;
+  };
+
   const context = createContext(
     {
       ...SAFE_GLOBALS,
+      Math: seededMath,
       console: { log: (message: unknown) => helpers.log(message) },
       agent: (prompt: unknown, opts?: AgentScriptOptions) => helpers.agent(prompt, opts),
       parallel: (items: unknown) => helpers.parallel(items),
       pipeline: (items: unknown, fn: unknown) => helpers.pipeline(items, fn),
       phase: (name: unknown) => helpers.phase(name),
       log: (message: unknown) => helpers.log(message),
+      workflow: (child: unknown) => helpers.workflow(child),
+      args: helpers.args,
+      budget: helpers.budget
+        ? {
+            maxAgents: helpers.budget.maxAgents,
+            used: () => helpers.budget!.used(),
+            get remaining() {
+              return helpers.budget!.maxAgents - helpers.budget!.used();
+            },
+          }
+        : undefined,
     },
     { name: "qronos-workflow", codeGeneration: { strings: false, wasm: false } },
   );

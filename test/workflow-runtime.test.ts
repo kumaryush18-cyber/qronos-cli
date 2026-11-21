@@ -361,3 +361,154 @@ describe("limit error", () => {
     expect(new WorkflowLimitError("nope").name).toBe("WorkflowLimitError");
   });
 });
+
+describe("tokens", () => {
+  test("each agent's usage is summed into the run", async () => {
+    const runner: WorkflowAgentRunner = async () => ({ ok: true, text: "x", usage: { input: 100, output: 20, total: 120 } });
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`await agent("a"); await agent("b"); return 1;`);
+    expect(result.tokens.total).toBe(240);
+    expect(result.tokens.input).toBe(200);
+    expect(result.tokens.output).toBe(40);
+  });
+
+  test("a run with no usage reports zero, not NaN", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`await agent("a"); return 1;`);
+    expect(result.tokens.total).toBe(0);
+  });
+
+  test("usage is kept per agent", async () => {
+    const runner: WorkflowAgentRunner = async (request) => ({
+      ok: true,
+      text: "x",
+      usage: { input: request.prompt.length, output: 1, total: request.prompt.length + 1 },
+    });
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`await agent("aa"); await agent("bbbb"); return 1;`);
+    expect(result.agents[0]!.usage?.total).toBe(3);
+    expect(result.agents[1]!.usage?.total).toBe(5);
+  });
+});
+
+describe("phases carry work", () => {
+  test("agents are attributed to the phase they ran in", async () => {
+    const runner: WorkflowAgentRunner = async () => ({ ok: true, text: "x", usage: { input: 10, output: 5, total: 15 } });
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(
+      `phase("A"); await agent("1"); phase("B"); await agent("2"); await agent("3"); return 1;`,
+    );
+    const byName = Object.fromEntries(result.phaseStats.map((stat) => [stat.name, stat]));
+    expect(byName.A?.agents).toBe(1);
+    expect(byName.B?.agents).toBe(2);
+    expect(byName.A?.tokens).toBe(15);
+    expect(byName.B?.tokens).toBe(30);
+  });
+
+  test("a failed agent is counted per phase", async () => {
+    const runner: WorkflowAgentRunner = async () => ({ ok: false, text: "", error: "nope" });
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`phase("A"); await agent("1"); return 1;`);
+    expect(result.phaseStats[0]?.failed).toBe(1);
+  });
+
+  test("an agent outside any phase is not counted in a phase", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`await agent("1"); return 1;`);
+    expect(result.phaseStats).toEqual([]);
+    expect(result.agents).toHaveLength(1);
+  });
+
+  test("the same phase named twice stays one row", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`phase("A"); await agent("1"); phase("A"); await agent("2"); return 1;`);
+    expect(result.phases).toEqual(["A"]);
+    expect(result.phaseStats[0]?.agents).toBe(2);
+  });
+});
+
+describe("nested workflows", () => {
+  test("workflow() runs a child and returns its value", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`const value = await workflow("return 40 + 2;"); return value;`);
+    expect(result.value).toBe(42);
+  });
+
+  test("a child agent is recorded at depth 2", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`await workflow("await agent('inner'); return 1;"); return 1;`);
+    expect(result.agents.some((agent) => agent.depth === 2)).toBe(true);
+  });
+
+  test("nesting shares one agent budget", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config({ maxAgents: 2 }) });
+    const result = await runtime.run(`await agent("a"); await workflow("await agent('b'); await agent('c'); return 1;"); return 1;`);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("agent budget exhausted");
+  });
+
+  test("nesting deeper than the limit is refused with a clear message", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config({ maxDepth: 2 }) });
+    const result = await runtime.run(
+      `await workflow("await workflow('return 1;'); return 1;"); return 1;`,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("cannot nest deeper");
+  });
+
+  test("a child that fails makes the parent fail with its reason", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`await workflow("throw new Error('child broke');"); return 1;`);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("child broke");
+  });
+
+  test("a child's phases reach the parent report", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`await workflow("phase('Child'); await agent('x'); return 1;"); return 1;`);
+    expect(result.phases).toContain("Child");
+  });
+});
+
+describe("args and budget", () => {
+  test("the script sees args", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config(), args: { files: ["a.ts"] } });
+    const result = await runtime.run(`return args.files;`);
+    expect(result.value).toEqual(["a.ts"]);
+  });
+
+  test("args is undefined when not given", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const result = await runtime.run(`return typeof args;`);
+    expect(result.value).toBe("undefined");
+  });
+
+  test("the script can read the budget", async () => {
+    const { runner } = fakeAgent();
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config({ maxAgents: 5 }) });
+    const result = await runtime.run(`await agent("x"); return [budget.maxAgents, budget.used()];`);
+    expect(result.value).toEqual([5, 1]);
+  });
+
+  test("a per-agent model is passed through", async () => {
+    const seen: Array<string | undefined> = [];
+    const runner: WorkflowAgentRunner = async (request) => {
+      seen.push(request.model);
+      return { ok: true, text: "x" };
+    };
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    await runtime.run(`await agent("a"); await agent("b", { model: "claude-haiku-5.5" }); return 1;`);
+    expect(seen).toEqual([undefined, "claude-haiku-5.5"]);
+  });
+});

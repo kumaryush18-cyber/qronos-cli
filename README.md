@@ -82,7 +82,9 @@ Storing it inline is an explicit opt-in.
   script that fans work out to subagents; only the final value comes back to the chat, so
   a big audit does not flood the conversation. `agent`, `parallel`, `pipeline`, `phase` and
   `log` are the whole API; the script has no filesystem, no network and no `process`, and a
-  run is capped at 10 minutes and 60 agents. `/workflows` shows the last run.
+  run is capped at 10 minutes and 60 agents. `/workflows` shows the last run: every agent
+  sorted by cost, a bright green tick or a dark red cross, tokens per agent and per phase,
+  and a live line while it runs.
   See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
