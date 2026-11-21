@@ -184,7 +184,19 @@ describe("resumeFrom", () => {
     };
     const manager = new WorkflowJobManager({ runAgent: slow, config: config(), agentDir: dir });
     const job = manager.launch({ script: SCRIPT });
-    await new Promise((resolve) => setTimeout(resolve, 12));
+    // Stop only after an agent has really finished, so there is something to
+    // replay. The machine decides that timing, not the test.
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      let raw = "";
+      try {
+        raw = readFileSync(journalPath(dir, job.id), "utf8");
+      } catch {
+        raw = "";
+      }
+      if (raw.includes('"agent_end"')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     manager.cancel(job.id);
     await job.settled;
 
