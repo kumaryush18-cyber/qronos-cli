@@ -269,7 +269,9 @@ describe("runLspAction with a stub server", () => {
     const { client } = stub({ "textDocument/rename": null });
     const result = await runLspAction(
       { action: "rename", file: "a.ts", line: 1, column: 1, new_name: "y" },
-      { cwd: () => dir, getClient: async () => client, ...fakeServer },
+      // A stub never publishes diagnostics, so the project-load wait would be
+      // paid in full for nothing, and the test would sit at its time limit.
+      { cwd: () => dir, getClient: async () => client, ...fakeServer, projectLoadWaitMs: 0 },
     );
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("no edits");

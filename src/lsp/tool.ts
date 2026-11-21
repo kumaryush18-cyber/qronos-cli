@@ -64,6 +64,13 @@ export interface LspToolDeps {
   resolveServer?: (path: string) => { server?: ResolvedServer; reason?: string };
   /** How long to wait for compiler diagnostics (default DIAGNOSTICS_WAIT_MS). */
   diagnosticsWaitMs?: number;
+  /**
+   * How long to wait for the project to load before a rename (default
+   * PROJECT_LOAD_WAIT_MS). A real server needs those seconds; a stub that never
+   * publishes must not pay them, or the test sits at its time limit and fails on
+   * a busy machine.
+   */
+  projectLoadWaitMs?: number;
 }
 
 /** The slice of LspClient the tool uses, so tests do not need a process. */
@@ -306,7 +313,7 @@ export async function runLspAction(params: LspParams, deps: RunDeps) {
     // is loaded only sees the open file, so the importers of the symbol are
     // silently missed. Asking for diagnostics first makes the compiler load the
     // whole project, and then the rename covers it.
-    await waitForDiagnostics(client, uri, PROJECT_LOAD_WAIT_MS);
+    await waitForDiagnostics(client, uri, deps.projectLoadWaitMs ?? PROJECT_LOAD_WAIT_MS);
 
     const position = { line: params.line - 1, character: params.column - 1 };
     const requestRename = async () =>
