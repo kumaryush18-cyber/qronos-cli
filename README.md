@@ -78,6 +78,12 @@ Storing it inline is an explicit opt-in.
   first, exact file paths, commands and error lines are recorded by code instead of being
   paraphrased, secrets are redacted, and a bad summary is refused so the built-in one runs
   instead. A checkpoint costs no extra model call. See [docs/compaction.md](docs/compaction.md).
+- **Workflows (say `ultracode`)** — type the word and the model writes a small JavaScript
+  script that fans work out to subagents; only the final value comes back to the chat, so
+  a big audit does not flood the conversation. `agent`, `parallel`, `pipeline`, `phase` and
+  `log` are the whole API; the script has no filesystem, no network and no `process`, and a
+  run is capped at 10 minutes and 60 agents. `/workflows` shows the last run.
+  See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
 - **MCP** — connect Model Context Protocol servers for extra tools: `qronos mcp --help`.
@@ -98,6 +104,7 @@ Storing it inline is an explicit opt-in.
 | `/status`, `/doctor` | session and environment diagnostics |
 | `/usage` | credits left today |
 | `/memory` | what this project has learned (`view`, `stats`, `sync`, `add`, `forget`, `clear`) |
+| `/workflows` | the last workflow: phases, agents, and where it stopped |
 | `/bug` | report a problem |
 | `/update` | update the CLI |
 | `Esc` | interrupt the running turn (only that) |
@@ -126,6 +133,9 @@ Storing it inline is an explicit opt-in.
 | `QRONOS_MEMORY_BUDGET` | approximate tokens of memory injected per prompt | `1200` |
 | `QRONOS_COMPACT` | `0` uses the built-in compaction summary | on |
 | `QRONOS_COMPACT_MODEL` | cheaper model for the compaction checkpoint | session model |
+| `QRONOS_WORKFLOW_WALL_CLOCK_MS` | time limit for one workflow run | `600000` (10 min) |
+| `QRONOS_WORKFLOW_MAX_AGENTS` | agents a single workflow may start | `60` |
+| `QRONOS_WORKFLOW_CONCURRENCY` | workflow agents running at once | `8` |
 
 ---
 

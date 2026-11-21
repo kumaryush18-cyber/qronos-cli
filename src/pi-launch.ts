@@ -31,6 +31,7 @@ import { createAgentHubExtension } from "./agent-hub";
 import { createMemoryExtension } from "./memory-extension";
 import { createCompactExtension } from "./compact-extension";
 import { createUltrathinkExtension } from "./ultrathink-extension";
+import { createWorkflowToolExtension, WORKFLOW_TOOL_NAME } from "./workflow-tool";
 import { retryPolicyFromEnv } from "./retry";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
@@ -134,6 +135,8 @@ export const ALLOWED_TOOL_NAMES: readonly string[] = [
   ENTER_PLAN_TOOL_NAME,
   EXIT_PLAN_TOOL_NAME,
   AGENT_TOOL_NAME,
+  // The workflow runner the `ultracode` keyword points at.
+  WORKFLOW_TOOL_NAME,
   // Hashline edits and language-server actions. Both are registered by our own
   // extensions, so they need an explicit entry here as well as in defaultTools.
   PATCH_TOOL_NAME,
@@ -204,6 +207,7 @@ export function buildSettingsManager(opts: LaunchOptions, models: CatalogModel[]
         TODO_TOOL_NAME,
         EXIT_PLAN_TOOL_NAME,
         AGENT_TOOL_NAME,
+        WORKFLOW_TOOL_NAME,
         // Hashline edits and language-server actions (QRONOS_HASHLINE=0 removes the tool).
         PATCH_TOOL_NAME,
         LSP_TOOL_NAME,
@@ -392,6 +396,9 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   const memoryExtension = createMemoryExtension({ agentDir: opts.agentDir });
   const compactExtension = createCompactExtension();
   const ultrathinkExtension = createUltrathinkExtension();
+  // The `workflow` tool: ultracode writes a script, the script fans out to
+  // subagents, only the final value returns to the chat.
+  const workflowToolExtension: InlineExtension = createWorkflowToolExtension({ registry: agentRegistry });
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
   // Hashline edits (ported from can1357/oh-my-pi): `apply_patch` edits by line
@@ -476,6 +483,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     memoryExtension,
     compactExtension,
     ultrathinkExtension,
+    workflowToolExtension,
     fileCompletionExtension,
     hooksExtension,
     toolAliasesExtension,

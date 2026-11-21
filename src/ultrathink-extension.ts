@@ -8,7 +8,9 @@
 // Off switch: `QRONOS_ULTRATHINK=0`. Nothing else changes.
 import type { ExtensionAPI, ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { UltrathinkEditor, type UltrathinkEditorOptions } from "./ultrathink-editor";
-import { ULTRATHINK_SECTION, ULTRATHINK_STATUS, hasUltrathink, ultrathinkSection } from "./ultrathink";
+import type { Keyword } from "./ultrathink";
+import { ULTRATHINK_SECTION, ULTRATHINK_STATUS, hasKeyword, hasUltrathink, ultrathinkSection } from "./ultrathink";
+import { KEYWORD_SECTIONS } from "./workflow-notice";
 
 export interface UltrathinkConfig {
   enabled: boolean;
@@ -44,10 +46,23 @@ export function createUltrathinkExtension(options: UltrathinkExtensionOptions = 
     qronos.on("before_agent_start", async (event, ctx: ExtensionContext) => {
       if (!config.enabled) return;
       const prompt = (event as { prompt?: string }).prompt ?? "";
-      if (!hasUltrathink(prompt)) return;
       const fields = (event as { systemPromptOptions?: { sections?: Record<string, string> } }).systemPromptOptions;
-      if (fields?.sections) fields.sections[ULTRATHINK_SECTION] = ultrathinkSection();
-      ctx.ui.setStatus(ULTRATHINK_SECTION, ULTRATHINK_STATUS);
+
+      if (hasUltrathink(prompt)) {
+        if (fields?.sections) fields.sections[ULTRATHINK_SECTION] = ultrathinkSection();
+        ctx.ui.setStatus(ULTRATHINK_SECTION, ULTRATHINK_STATUS);
+      }
+
+      // ultracode / orchestrate: their notices name a tool that exists
+      // (`workflow` for ultracode, `agent` for orchestrate), so they are only
+      // added when the matching word is present. Each word is independent, so
+      // one early `return` above must not hide the others.
+      for (const word of Object.keys(KEYWORD_SECTIONS) as Keyword[]) {
+        const entry = KEYWORD_SECTIONS[word];
+        if (!entry || !hasKeyword(prompt, word)) continue;
+        if (fields?.sections) fields.sections[entry.section] = entry.build();
+        ctx.ui.setStatus(entry.section, `${word} on`);
+      }
     });
   };
   return { name: "qronos-ultrathink", factory: extension };

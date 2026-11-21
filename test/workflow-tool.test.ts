@@ -1,0 +1,237 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import {
+  WORKFLOW_TOOL_NAME,
+  createWorkflowToolExtension,
+  getLastWorkflowRun,
+  renderWorkflowDetail,
+  renderWorkflowReport,
+  resetLastWorkflowRun,
+} from "../src/workflow-tool";
+import { workflowConfigFromEnv, type WorkflowRunResult } from "../src/workflow-types";
+import type { SubagentRunner } from "../src/agent-tool";
+
+/** A fake subagent runner: no model, no wait, records every prompt. */
+function fakeRunner(answer?: (prompt: string) => Partial<Awaited<ReturnType<SubagentRunner>>>) {
+  const prompts: string[] = [];
+  const runner: SubagentRunner = async (params) => {
+    prompts.push(params.prompt);
+    const extra = answer?.(params.prompt) ?? {};
+    return { output: `report for: ${params.prompt}`, turns: 1, toolsUsed: [], ...extra };
+  };
+  return { prompts, runner };
+}
+
+/** Minimal fake pi API: captures the registered tool so tests can call it. */
+function fakePi() {
+  const tools: Array<Record<string, unknown>> = [];
+  return {
+    tools,
+    api: {
+      registerTool: (tool: Record<string, unknown>) => tools.push(tool),
+      registerCommand: () => {},
+      registerShortcut: () => {},
+      on: () => {},
+    } as never,
+  };
+}
+
+const ctx = { cwd: "/repo" } as never;
+
+afterEach(() => resetLastWorkflowRun());
+
+describe("the tool", () => {
+  test("registers a tool named workflow", () => {
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner: fakeRunner().runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.name).toBe(WORKFLOW_TOOL_NAME);
+  });
+
+  test("runs a script and returns only the final value", async () => {
+    const { prompts, runner } = fakeRunner();
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    const tool = tools[0] as { execute: Function };
+    const result = await tool.execute("1", { script: `const r = await agent("look at src/"); return r.text;` }, undefined, undefined, ctx);
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain("report for: look at src/");
+    expect(result.content[0].text).toContain("1 agent in");
+    expect(prompts).toEqual(["look at src/"]);
+  });
+
+  test("an empty script is refused before any agent runs", async () => {
+    const { prompts, runner } = fakeRunner();
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    const tool = tools[0] as { execute: Function };
+    const result = await tool.execute("1", { script: "   " }, undefined, undefined, ctx);
+    expect(result.details.ok).toBe(false);
+    expect(prompts).toHaveLength(0);
+  });
+
+  test("a schema answer becomes data", async () => {
+    const { runner } = fakeRunner(() => ({
+      output: '{"files":["a.ts"]}',
+      structured: { value: { files: ["a.ts"] }, firstTry: true },
+    }));
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    const tool = tools[0] as { execute: Function };
+    const result = await tool.execute(
+      "1",
+      {
+        script: `const r = await agent("list", { schema: { type: "object", properties: { files: { type: "array" } } } }); return r.data.files;`,
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain("a.ts");
+  });
+
+  test("a schema mismatch is a failed agent, not a crash", async () => {
+    const { runner } = fakeRunner(() => ({
+      output: "not json",
+      schemaIssues: [{ path: "files", message: "is required" }],
+    }));
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    const tool = tools[0] as { execute: Function };
+    const result = await tool.execute("1", { script: `await agent("list", { schema: { type: "object" } }); return 1;` }, undefined, undefined, ctx);
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain("failed; the gaps are in the result");
+  });
+
+  test("a runner that throws does not break the tool", async () => {
+    const runner: SubagentRunner = async () => {
+      throw new Error("the model died");
+    };
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    const tool = tools[0] as { execute: Function };
+    const result = await tool.execute("1", { script: `const r = await agent("x"); return r.error;` }, undefined, undefined, ctx);
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain("the model died");
+  });
+
+  test("the name from the call wins, then the meta block", async () => {
+    const { runner } = fakeRunner();
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    const tool = tools[0] as { execute: Function };
+    await tool.execute("1", { script: `return 1;`, name: "custom" }, undefined, undefined, ctx);
+    expect(getLastWorkflowRun()?.name).toBe("custom");
+    await tool.execute("1", { script: `export const meta = { name: "from-meta" }\nreturn 1;` }, undefined, undefined, ctx);
+    expect(getLastWorkflowRun()?.name).toBe("from-meta");
+  });
+
+  test("the last run is kept for /workflows", async () => {
+    const { runner } = fakeRunner();
+    const { tools, api } = fakePi();
+    (    createWorkflowToolExtension({ runner, now: () => 1234 }) as unknown as { factory: (api: unknown) => void }).factory(api);
+    const tool = tools[0] as { execute: Function };
+    await tool.execute("1", { script: `phase("Review"); await agent("x"); return "done";` }, undefined, undefined, ctx);
+    const last = getLastWorkflowRun();
+    expect(last?.at).toBe(1234);
+    expect(last?.result.agents).toHaveLength(1);
+    expect(last?.result.phases).toEqual(["Review"]);
+  });
+
+  test("the config comes from the workflow env vars, with a ten minute clock", () => {
+    expect(workflowConfigFromEnv({}).wallClockMs).toBe(600_000);
+  });
+});
+
+describe("the report", () => {
+  const base: WorkflowRunResult = {
+    ok: true,
+    value: { found: 2 },
+    agents: [
+      { id: "wf-1", label: "a", ok: true },
+      { id: "wf-2", label: "b", ok: true },
+    ],
+    phases: ["Understand"],
+    logs: [],
+    durationMs: 4200,
+    truncated: false,
+  };
+
+  test("says how many agents ran and how long it took", () => {
+    const text = renderWorkflowReport("audit", base);
+    expect(text).toContain("2 agents in 4s");
+    expect(text).toContain("phases: Understand");
+  });
+
+  test("singular agent is not pluralised wrongly", () => {
+    const text = renderWorkflowReport("one", { ...base, agents: [base.agents[0]!] });
+    expect(text).toContain("1 agent in");
+  });
+
+  test("a failed run prints the reason and no value", () => {
+    const text = renderWorkflowReport("bad", { ...base, ok: false, error: "boom", value: "ignored" });
+    expect(text).toContain("failed: boom");
+    expect(text).not.toContain("ignored");
+  });
+
+  test("failed agents are counted", () => {
+    const text = renderWorkflowReport("mixed", {
+      ...base,
+      agents: [...base.agents, { id: "wf-3", label: "c", ok: false, error: "no answer" }],
+    });
+    expect(text).toContain("1 agent failed");
+  });
+
+  test("a huge value is shortened with a visible marker", () => {
+    const text = renderWorkflowReport("big", { ...base, value: "y".repeat(9000) });
+    expect(text).toContain("more characters in the run details");
+  });
+
+  test("the log tail is shown", () => {
+    const text = renderWorkflowReport("logs", { ...base, logs: ["one", "two"] });
+    expect(text).toContain("--- log ---");
+    expect(text).toContain("two");
+  });
+});
+
+describe("the /workflows detail", () => {
+  const run = {
+    name: "audit",
+    at: 1,
+    result: {
+      ok: true,
+      value: 1,
+      agents: [
+        { id: "wf-1", label: "routes", ok: true },
+        { id: "wf-2", label: "middleware", ok: false, error: "no answer" },
+      ],
+      phases: ["Understand", "Review"],
+      logs: ["started"],
+      durationMs: 61_000,
+      truncated: false,
+    } satisfies WorkflowRunResult,
+  };
+
+  test("says how to start one when nothing has run", () => {
+    const text = renderWorkflowDetail(undefined);
+    expect(text).toContain("No workflow has run");
+    expect(text).toContain("ultracode");
+  });
+
+  test("lists each agent with a tick or a cross", () => {
+    const text = renderWorkflowDetail(run);
+    expect(text).toContain("✓ wf-1 routes");
+    expect(text).toContain("✗ wf-2 middleware");
+    expect(text).toContain("no answer");
+  });
+
+  test("prints the phases and the time", () => {
+    const text = renderWorkflowDetail(run);
+    expect(text).toContain("Understand → Review");
+    expect(text).toContain("61s");
+  });
+
+  test("counts the failures", () => {
+    expect(renderWorkflowDetail(run)).toContain("2 (1 failed)");
+  });
+});

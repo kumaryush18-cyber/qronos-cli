@@ -58,7 +58,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(opts.settingsManager.getThemeSetting()).toBe("qronos-claude");
   });
 
-  test("buildRuntimeOptions registers exactly the twenty-two known extensions — no more, no less", () => {
+  test("buildRuntimeOptions registers exactly the thirty-three known extensions — no more, no less", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-a");
     // the closed set deliberately grew to six with qronos-buy-tool;
     // 2026-09-01: to seven with qronos-error-notice (one readable line on a
@@ -109,6 +109,11 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // and adds one system-prompt section for a prompt that contains the word.
     // No tool, no model call, no extra completion; QRONOS_ULTRATHINK=0 makes it
     // a no-op and pi's normal editor stays in place.
+    // 2026-11-25: to thirty-three with qronos-workflow: the `workflow` tool that
+    // ultracode needs. It runs a model-written script in a vm context with no
+    // process, no fs and no network, and the subagents it spawns reuse the same
+    // runner as qronos-agent, so there is still no second model call in the
+    // main turn: the calls happen inside subagents, one at a time per slot.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "qronos-ads",
@@ -143,16 +148,17 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-tool-guard",
         "qronos-memory",
         "qronos-compact",
+        "qronos-workflow",
       ].sort(),
     );
   });
 
-  test("settings pin packages: [] and defaultTools to exactly SAFE_TOOLS plus todo, exit_plan_mode, and agent", () => {
+  test("settings pin packages: [] and defaultTools to exactly SAFE_TOOLS plus todo, exit_plan_mode, agent and workflow", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-b");
     const settings = opts.settingsManager.getGlobalSettings();
     expect(settings.packages).toEqual([]);
     expect([...(settings.defaultTools ?? [])].sort()).toEqual(
-      [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME, "apply_patch", "lsp"].sort(),
+      [...SAFE_TOOLS, TODO_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME, "workflow", "apply_patch", "lsp"].sort(),
     );
   });
 
@@ -167,7 +173,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(opts.settingsManager.getClearOnShrink()).toBe(true);
   });
 
-  test("the strict SDK tools allowlist is exactly SAFE_TOOLS plus the custom tools, todo, exit_plan_mode, agent, apply_patch, lsp, codemode and tool_search", () => {
+  test("the strict SDK tools allowlist is exactly SAFE_TOOLS plus the custom tools, todo, exit_plan_mode, agent, workflow, apply_patch, lsp, codemode and tool_search", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-c");
     expect([...opts.tools].sort()).toEqual(
       [
@@ -182,6 +188,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         ENTER_PLAN_TOOL_NAME,
         EXIT_PLAN_TOOL_NAME,
         AGENT_TOOL_NAME,
+        "workflow",
         "apply_patch",
         "lsp",
         "codemode",
@@ -236,17 +243,21 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(SUBAGENT_READ_ONLY_TOOLS.has("edit")).toBe(false);
   });
 
-  test("codemode, tool_search, apply_patch and lsp are the only new non-MCP names beyond the tools", () => {
+  test("codemode, tool_search, apply_patch, workflow and lsp are the only new non-MCP names beyond the tools", () => {
     const known = [...SAFE_TOOLS, USAGE_TOOL_NAME, BUY_TOOL_NAME, DOCS_TOOL_NAME, WEB_SEARCH_TOOL_NAME, DOCS_LOOKUP_TOOL_NAME, IMAGE_TOOL_NAME, TODO_TOOL_NAME, ENTER_PLAN_TOOL_NAME, EXIT_PLAN_TOOL_NAME, AGENT_TOOL_NAME];
     // 2026-11-21: apply_patch (hashline edits) and lsp (language server actions)
     // are our own tools, so they must be listed explicitly. Neither runs a model
     // request, and neither can spawn a background process: lsp starts one
     // long-lived language server for the session and kills it on shutdown.
+    // 2026-11-25: workflow joins them. It runs a model-written script in a vm
+    // with no process/fs/network, and its subagents use the same runner as
+    // qronos-agent, so it cannot open a second main-turn model request.
     expect(ALLOWED_TOOL_NAMES.filter((n) => !known.includes(n)).sort()).toEqual([
       "apply_patch",
       "codemode",
       "lsp",
       "tool_search",
+      "workflow",
     ]);
     expect(ALLOWED_TOOL_NAMES.some((n) => n.startsWith("mcp__"))).toBe(false);
   });

@@ -1,0 +1,196 @@
+// Where a model-written workflow script runs.
+//
+// The script is real JavaScript, because that is the point: `await agent(...)`
+// in a loop is how Claude Code's workflows look, and a declarative format would
+// lose the branching that makes them useful.
+//
+// What protects the machine:
+//   - a fresh vm context with no `process`, `require`, `fetch`, `Bun` or `fs`;
+//   - `codeGeneration.strings = false`, so `eval` and the `Function` constructor
+//     are refused *inside* the context (the classic `constructor.constructor`
+//     escape hit a wall here);
+//   - only the workflow helpers are handed in;
+//   - a synchronous timeout, plus a wall clock in the runtime for awaits.
+//
+// This is a strong guardrail against accidents, not a formal sandbox against a
+// determined attacker. The honest statement in docs/workflows.md says the same.
+import { createContext, runInContext } from "node:vm";
+import type { WorkflowAgentResult } from "./workflow-types";
+import { WorkflowSyntaxError } from "./workflow-types";
+
+export interface AgentScriptOptions {
+  label?: string;
+  schema?: unknown;
+  agent?: string;
+}
+
+export interface WorkflowSandboxHelpers {
+  agent(prompt: unknown, options?: AgentScriptOptions): Promise<WorkflowAgentResult>;
+  parallel(items: unknown): Promise<unknown[]>;
+  pipeline(items: unknown, fn: unknown): Promise<unknown[]>;
+  phase(name: unknown): void;
+  log(message: unknown): void;
+}
+
+export interface WorkflowMeta {
+  name?: string;
+  description?: string;
+}
+
+/** Read `export const meta = {...}` without executing anything. */
+export function parseWorkflowMeta(script: string): WorkflowMeta {
+  const anchor = /(?:export\s+)?const\s+meta\s*=\s*\{/.exec(script);
+  if (!anchor) return {};
+  const start = anchor.index + anchor[0].length - 1;
+  // Balance braces so a nested object or a `}` inside a string cannot end it early.
+  let depth = 0;
+  let end = -1;
+  let quote: string | undefined;
+  for (let index = start; index < script.length; index += 1) {
+    const ch = script[index]!;
+    if (quote) {
+      if (ch === "\\") index += 1;
+      else if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = index;
+        break;
+      }
+    }
+  }
+  if (end === -1) return {};
+  try {
+    const normalized = script
+      .slice(start, end + 1)
+      .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
+      .replace(/'/g, '"')
+      .replace(/,\s*}/g, "}");
+    const parsed = JSON.parse(normalized) as Record<string, unknown>;
+    return {
+      name: typeof parsed.name === "string" ? parsed.name.slice(0, 80) : undefined,
+      description: typeof parsed.description === "string" ? parsed.description.slice(0, 300) : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Turn an ESM-looking script into a body we can run.
+ *
+ * We accept `export const meta = ...` and top-level `return`, because that is
+ * what Claude Code's examples look like. We refuse imports: a workflow that
+ * needs a package would be a supply-chain hole wearing a hat.
+ */
+export function extractScriptBody(script: string): string {
+  const trimmed = script.replace(/\r\n/g, "\n").trim();
+  if (trimmed === "") throw new WorkflowSyntaxError("the workflow script is empty");
+  if (/^\s*import\s/m.test(trimmed)) {
+    throw new WorkflowSyntaxError("workflow scripts cannot import modules; use agent() for the work");
+  }
+  if (/\brequire\s*\(/.test(trimmed)) {
+    throw new WorkflowSyntaxError("workflow scripts cannot require() modules");
+  }
+  if (/\bprocess\b|\bBun\b|node:fs|node:child_process/.test(trimmed)) {
+    throw new WorkflowSyntaxError("workflow scripts have no process, Bun or filesystem access");
+  }
+  return trimmed.replace(/^\s*export\s+/gm, "");
+}
+
+const SAFE_GLOBALS = {
+  Math,
+  JSON,
+  Date,
+  RegExp,
+  Promise,
+  Array,
+  Object,
+  String,
+  Number,
+  Boolean,
+  Map,
+  Set,
+  WeakMap,
+  WeakSet,
+  Symbol,
+  Intl,
+  Error,
+  TypeError,
+  RangeError,
+  SyntaxError,
+  isNaN,
+  isFinite,
+  parseInt,
+  parseFloat,
+  encodeURIComponent,
+  decodeURIComponent,
+  structuredClone,
+  setTimeout,
+  clearTimeout,
+};
+
+export interface RunScriptOptions {
+  /** Synchronous execution limit. Awaits are bounded by the runtime's wall clock. */
+  syncTimeoutMs?: number;
+}
+
+/**
+ * Run the script and return its value.
+ *
+ * The helpers are the only way out of the context, so every side effect a
+ * script can have is one the runtime chose to allow.
+ */
+export async function runWorkflowScript(
+  script: string,
+  helpers: WorkflowSandboxHelpers,
+  options: RunScriptOptions = {},
+): Promise<unknown> {
+  const body = extractScriptBody(script);
+  const context = createContext(
+    {
+      ...SAFE_GLOBALS,
+      console: { log: (message: unknown) => helpers.log(message) },
+      agent: (prompt: unknown, opts?: AgentScriptOptions) => helpers.agent(prompt, opts),
+      parallel: (items: unknown) => helpers.parallel(items),
+      pipeline: (items: unknown, fn: unknown) => helpers.pipeline(items, fn),
+      phase: (name: unknown) => helpers.phase(name),
+      log: (message: unknown) => helpers.log(message),
+    },
+    { name: "qronos-workflow", codeGeneration: { strings: false, wasm: false } },
+  );
+
+  const wrapped = `(async () => {\n${body}\n})()`;
+  let pending: unknown;
+  try {
+    pending = runInContext(wrapped, context, {
+      filename: "workflow.js",
+      timeout: options.syncTimeoutMs ?? 10_000,
+      displayErrors: true,
+    });
+  } catch (error) {
+    throw asSyntaxError(error);
+  }
+  try {
+    return await pending;
+  } catch (error) {
+    throw asRunError(error);
+  }
+}
+
+function asSyntaxError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new WorkflowSyntaxError(message.slice(0, 500));
+}
+
+function asRunError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  return new Error(String(error).slice(0, 500));
+}

@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.8",
+    highlights: [
+      "Write ultracode in a prompt and the task becomes a workflow: the model writes a small JavaScript script that hands the work to many subagents, and only the final result comes back to the chat. Big audits no longer flood the conversation.",
+      "The script has five helpers (agent, parallel, pipeline, phase, log) and nothing else: no imports, no filesystem, no network, no process. A run is capped at 10 minutes, 60 agents and 8 at a time, and the cap is always reported.",
+      "orchestrate joins ultrathink and ultracode as a magic keyword: it splits a prompt into independent parts and runs them in parallel.",
+      "All three keywords glow orange as you type them, with the same flowing band. /workflows shows the last run, phase by phase, with a tick or a cross for every agent.",
+      "Windows is now green in CI: no more backslashes in rename warnings, and the tests no longer assume a POSIX shell.",
+    ],
+  },
+  {
     version: "1.0.7",
     highlights: [
       "Learned memory, on by default: every turn is journaled locally, a cheap sync folds what matters into a small document, and the next session gets it as hints. /memory shows, syncs or clears it, and the agent can save a fact with the learn tool.",
