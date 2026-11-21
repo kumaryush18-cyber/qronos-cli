@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join, resolve } from "node:path";
 import {
   MEMORY_DOC_FILE,
   MEMORY_JOURNAL_FILE,
@@ -13,10 +14,18 @@ import {
   slugify,
 } from "../src/memory-paths";
 
+/**
+ * Fake filesystem that is platform-agnostic.
+ *
+ * `findRepoRoot` calls `resolve()` and `join()`, so on Windows the paths it
+ * probes are `C:\\repo\\.git` rather than `/repo/.git`. The fake resolves the
+ * same way, so the expectations below can be written with `resolve()` too and
+ * mean the same thing on both systems.
+ */
 function fakeDeps(exists: string[]) {
-  const set = new Set(exists);
+  const set = new Set(exists.map((path) => resolve(path)));
   return {
-    exists: (path: string) => set.has(path.replace(/\/+$/, "")),
+    exists: (path: string) => set.has(resolve(path)),
     isDirectory: () => true,
   };
 }
@@ -61,17 +70,17 @@ describe("pathHash", () => {
 describe("findRepoRoot", () => {
   test("finds the folder that holds .git", () => {
     const deps = fakeDeps(["/repo/.git"]);
-    expect(findRepoRoot("/repo/src/deep/dir", deps)).toBe("/repo");
+    expect(findRepoRoot("/repo/src/deep/dir", deps)).toBe(resolve("/repo"));
   });
 
   test("returns cwd when there is no .git anywhere", () => {
     const deps = fakeDeps([]);
-    expect(findRepoRoot("/tmp/isolated", deps)).toBe("/tmp/isolated");
+    expect(findRepoRoot("/tmp/isolated", deps)).toBe(resolve("/tmp/isolated"));
   });
 
   test("stops at the nearest .git, not the outermost", () => {
     const deps = fakeDeps(["/outer/.git", "/outer/inner/.git"]);
-    expect(findRepoRoot("/outer/inner/src", deps)).toBe("/outer/inner");
+    expect(findRepoRoot("/outer/inner/src", deps)).toBe(resolve("/outer/inner"));
   });
 });
 
@@ -93,8 +102,8 @@ describe("memoryFiles", () => {
   });
 
   test("memory is stored in the agent dir, never inside the repo", () => {
-    expect(paths.root.startsWith("/agent/memories/")).toBe(true);
-    expect(paths.root.startsWith("/repo")).toBe(false);
+    expect(paths.root.startsWith(join(resolve("/agent"), "memories"))).toBe(true);
+    expect(paths.root.startsWith(resolve("/repo"))).toBe(false);
   });
 
   test("file names are the documented ones", () => {

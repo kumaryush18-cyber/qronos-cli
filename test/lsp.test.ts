@@ -34,6 +34,24 @@ import {
   wordAt,
 } from "../src/lsp/tool";
 
+/**
+ * A fake executable that PATH discovery can find on every platform.
+ *
+ * Windows does not run extension-less files, so the binary needs `.cmd` and a
+ * PATHEXT; without this the test passes on Linux and fails on Windows for a
+ * reason that has nothing to do with the code under test.
+ */
+function fakeBinary(dir: string, name: string): { bin: string; env: Record<string, string> } {
+  if (process.platform === "win32") {
+    const bin = join(dir, `${name}.cmd`);
+    writeFileSync(bin, "@echo off\r\n");
+    return { bin, env: { PATH: dir, PATHEXT: ".EXE;.CMD;.BAT" } };
+  }
+  const bin = join(dir, name);
+  writeFileSync(bin, "#!/bin/sh\n", { mode: 0o755 });
+  return { bin, env: { PATH: dir } };
+}
+
 describe("JSON-RPC framing", () => {
   test("encodes a length header and parses it back", () => {
     const encoded = encodeMessage({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
@@ -134,9 +152,9 @@ describe("server discovery", () => {
 
   test("finds a binary on PATH", () => {
     const dir = mkdtempSync(join(tmpdir(), "qronos-bin-"));
-    writeFileSync(join(dir, "typescript-language-server"), "#!/bin/sh\n", { mode: 0o755 });
-    expect(findOnPath("typescript-language-server", { PATH: dir })).toBe(join(dir, "typescript-language-server"));
-    expect(resolveServerForPath("a.ts", { PATH: dir }).server?.spec.name).toBe("typescript-language-server");
+    const { bin, env } = fakeBinary(dir, "typescript-language-server");
+    expect(findOnPath("typescript-language-server", env)).toBe(bin);
+    expect(resolveServerForPath("a.ts", env).server?.spec.name).toBe("typescript-language-server");
   });
 
   test("language ids are right for the common extensions", () => {
@@ -274,7 +292,7 @@ describe("runLspAction with a stub server", () => {
 
   test("diagnostics with nothing to report say so", async () => {
     const dir = workspace({ "a.ts": "const x = 1;\n" });
-    const { client } = stub({}, { [`file://${dir}/a.ts`]: [] });
+    const { client } = stub({}, { [pathToUri(join(dir, "a.ts"))]: [] });
     const result = await runLspAction(
       { action: "diagnostics", file: "a.ts" },
       { cwd: () => dir, getClient: async () => client, ...fakeServer },
@@ -295,7 +313,7 @@ describe("runLspAction with a stub server", () => {
 
   test("a stale publish is not reused for freshly opened content", async () => {
     const dir = workspace({ "a.ts": "const x: number = \"oops\";\n" });
-    const uri = `file://${dir}/a.ts`;
+    const uri = pathToUri(join(dir, "a.ts"));
     const state: { items: unknown[] | undefined } = { items: [] };
     const client = {
       async request() {
@@ -374,7 +392,7 @@ describe("tsserver discovery", () => {
 
   test("the bundled compiler is the last resort, never a crash", () => {
     const found = findTsserverPath("/nonexistent-project", { PATH: "" });
-    expect(found).toContain("typescript/lib/tsserver.js");
+    expect(found).toContain(join("typescript", "lib", "tsserver.js"));
   });
 
   test("initialize options carry the tsserver path for TypeScript only", () => {
@@ -423,10 +441,10 @@ describe("waitForDiagnostics", () => {
 describe("bundled server", () => {
   test("qronos-cli ships its own TypeScript server and compiler", () => {
     expect(bundledTypescriptServer()).toBeString();
-    expect(bundledTypescriptServer()!.endsWith("typescript-language-server/lib/cli.mjs")).toBe(true);
+    expect(bundledTypescriptServer()!.endsWith(join("typescript-language-server", "lib", "cli.mjs"))).toBe(true);
     // The bundled compiler is what initializeOptionsFor points at when the
     // project has no local TypeScript.
-    expect(findTsserverPath("/nonexistent-project", { PATH: "" })).toContain("typescript/lib/tsserver.js");
+    expect(findTsserverPath("/nonexistent-project", { PATH: "" })).toContain(join("typescript", "lib", "tsserver.js"));
   });
 
   test("with nothing on PATH the bundled entry is used via the node binary", () => {
@@ -437,9 +455,9 @@ describe("bundled server", () => {
 
   test("a PATH install still wins over the bundled copy", () => {
     const dir = mkdtempSync(join(tmpdir(), "qronos-bin2-"));
-    writeFileSync(join(dir, "typescript-language-server"), "#!/bin/sh\n", { mode: 0o755 });
-    const resolved = resolveServerForPath("a.ts", { PATH: dir });
-    expect(resolved.server?.command).toBe(join(dir, "typescript-language-server"));
+    const { bin, env } = fakeBinary(dir, "typescript-language-server");
+    const resolved = resolveServerForPath("a.ts", env);
+    expect(resolved.server?.command).toBe(bin);
     expect(resolved.server?.args).toBeUndefined();
   });
 });
@@ -561,7 +579,7 @@ describe("rename safety net", () => {
     const dir = mkdtempSync(join(tmpdir(), "qronos-left-"));
     writeFileSync(join(dir, "user.ts"), "export function loadUser() {}\n");
     writeFileSync(join(dir, "app.ts"), 'import { loadUser } from "./user";\n');
-    const uri = `file://${dir}/user.ts`;
+    const uri = pathToUri(join(dir, "user.ts"));
 
     // The server edits only the opened file — exactly the failure seen with a
     // real typescript-language-server that has not loaded the project yet.
@@ -615,7 +633,7 @@ describe("late answers", () => {
   test("an empty publish followed by a real error is reported as the error", async () => {
     const dir = mkdtempSync(join(tmpdir(), "qronos-late-"));
     writeFileSync(join(dir, "a.ts"), 'const n: number = "x";\n');
-    const uri = `file://${dir}/a.ts`;
+    const uri = pathToUri(join(dir, "a.ts"));
     let items: unknown[] = [];
     let version = 0;
 

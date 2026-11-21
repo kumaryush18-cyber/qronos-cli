@@ -60,8 +60,11 @@ describe("readText / writeAtomic", () => {
     expect(readText(`${paths.doc}.tmp`)).toBeUndefined();
   });
 
-  test("a write into a read-only parent returns false instead of throwing", () => {
-    expect(writeAtomic("/proc/qronos-cannot-write-here/x.txt", "x")).toBe(false);
+  test("a write into an impossible path returns false instead of throwing", () => {
+    // A NUL byte is rejected by every supported filesystem, so this is
+    // unwritable on Linux, macOS and Windows alike. `/proc` was the old probe
+    // and silently became writable on Windows.
+    expect(writeAtomic("bad\u0000path/x.txt", "x")).toBe(false);
   });
 });
 

@@ -436,7 +436,7 @@ export function findReferences(renamedFile: string, name: string, cwd: string, l
       if (!SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) continue;
       try {
         if (statSync(full).size > 1_000_000) continue;
-        if (pattern.test(readFileSync(full, "utf8"))) found.push(relative(cwd, full) || full);
+        if (pattern.test(readFileSync(full, "utf8"))) found.push(relative(cwd, full).replace(/\\/g, "/") || full);
       } catch {
         // A file we cannot read is not evidence either way.
       }
