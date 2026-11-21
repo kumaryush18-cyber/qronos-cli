@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
+  ORCHESTRATE_SECTION,
+  ULTRACODE_SECTION,
   ULTRATHINK_NOTICE,
   ULTRATHINK_SECTION,
+  findKeywords,
   findUltrathink,
+  hasKeyword,
   hasUltrathink,
   maskCode,
+  paintKeywordLine,
   paintUltrathinkLine,
   paintUltrathinkLines,
   ultrathinkSection,
@@ -147,5 +152,36 @@ describe("the notice", () => {
 
   test("the section key is namespaced", () => {
     expect(ULTRATHINK_SECTION).toBe("qronos-ultrathink");
+  });
+});
+
+describe("the other keywords", () => {
+  test("ultracode and orchestrate are painted too", () => {
+    expect(paintKeywordLine("ultracode audit it", 0)).toContain("\x1b[");
+    expect(paintKeywordLine("orchestrate this work", 0)).toContain("\x1b[");
+  });
+
+  test("they keep their visible width", () => {
+    for (const line of ["ultracode please", "orchestrate the review"]) {
+      expect(visibleWidth(paintKeywordLine(line, 0))).toBe(visibleWidth(line));
+    }
+  });
+
+  test("a longer word that merely starts with them does nothing", () => {
+    expect(findKeywords("ultracoded")).toEqual([]);
+    expect(findKeywords("orchestrated")).toEqual([]);
+  });
+
+  test("hasKeyword finds exactly the word asked for", () => {
+    expect(hasKeyword("ultracode it", "ultracode")).toBe(true);
+    expect(hasKeyword("ultracode it", "orchestrate")).toBe(false);
+  });
+
+  test("findKeywords reports each word with its name, left to right", () => {
+    expect(findKeywords("orchestrate then ultracode").map((match) => match.word)).toEqual(["orchestrate", "ultracode"]);
+  });
+
+  test("the notice sections are namespaced apart", () => {
+    expect(new Set([ULTRATHINK_SECTION, ULTRACODE_SECTION, ORCHESTRATE_SECTION]).size).toBe(3);
   });
 });

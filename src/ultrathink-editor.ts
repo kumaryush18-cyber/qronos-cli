@@ -9,7 +9,7 @@
 // would keep the terminal redrawing forever, which is a battery bug.
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
-import { hasUltrathink, paintUltrathinkLines } from "./ultrathink";
+import { findKeywords, paintKeywordLines } from "./ultrathink";
 
 /** One frame every 90 ms: smooth enough for a 4-character band, cheap to draw. */
 export const ULTRATHINK_FRAME_MS = 90;
@@ -49,8 +49,8 @@ export class UltrathinkEditor extends CustomEditor {
 
   render(width: number): string[] {
     const lines = super.render(width);
-    const painted = paintUltrathinkLines(lines, this.now());
-    this.syncTicker(hasUltrathink(this.getText()));
+    const painted = paintKeywordLines(lines, this.now());
+    this.syncTicker(findKeywords(this.getText()).length > 0);
     return painted;
   }
 
@@ -59,7 +59,7 @@ export class UltrathinkEditor extends CustomEditor {
     if (wanted && !this.animating) {
       this.animating = true;
       this.ticker = this.startTicker(() => {
-        if (!hasUltrathink(this.getText())) {
+        if (findKeywords(this.getText()).length === 0) {
           this.stop();
           return;
         }
