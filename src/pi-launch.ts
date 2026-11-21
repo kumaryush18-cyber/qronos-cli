@@ -29,6 +29,7 @@ import { createAgentToolExtension, AGENT_TOOL_NAME } from "./agent-tool";
 import { AgentRegistry } from "./agent-registry";
 import { createAgentHubExtension } from "./agent-hub";
 import { createMemoryExtension } from "./memory-extension";
+import { createCompactExtension } from "./compact-extension";
 import { retryPolicyFromEnv } from "./retry";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
@@ -388,6 +389,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // Memory is on by default (QRONOS_MEMORY=0 turns it off). Always registered so
   // the extension list is stable, and a no-op when disabled.
   const memoryExtension = createMemoryExtension({ agentDir: opts.agentDir });
+  const compactExtension = createCompactExtension();
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
   // Hashline edits (ported from can1357/oh-my-pi): `apply_patch` edits by line
@@ -470,6 +472,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     agentToolExtension,
     agentHubExtension,
     memoryExtension,
+    compactExtension,
     fileCompletionExtension,
     hooksExtension,
     toolAliasesExtension,

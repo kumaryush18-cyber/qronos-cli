@@ -23,6 +23,9 @@ import { Type } from "typebox";
 import { getQronosAgentDir } from "./paths";
 import { assistantText } from "./stream-rules-extension";
 import { memoryConfigFromEnv, type MemoryConfig } from "./memory-config";
+import { toolFileArgs } from "./tool-args";
+
+export { toolFileArgs };
 import { consolidate, shouldSync, type ExtractionModel } from "./memory-consolidate";
 import { buildJournalEntry } from "./memory-journal";
 import { MEMORY_SECTION, approxTokens, buildMemoryBlock, memoryStatusLabel } from "./memory-inject";
@@ -73,31 +76,6 @@ function loadLive(paths: MemoryPaths, cwd: string, root: string): LiveMemory {
 }
 
 /** File paths worth remembering from one tool call's arguments. */
-export function toolFileArgs(args: unknown): string[] {
-  if (!args || typeof args !== "object") return [];
-  const record = args as Record<string, unknown>;
-  const out: string[] = [];
-  for (const key of ["path", "file_path", "filePath", "filename", "file", "notebook_path", "target"]) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim() !== "") out.push(value);
-  }
-  for (const key of ["paths", "files"]) {
-    const value = record[key];
-    if (Array.isArray(value)) {
-      for (const item of value) if (typeof item === "string" && item.trim() !== "") out.push(item);
-    }
-  }
-  // hashline's apply_patch carries `[path#tag]` headers instead of a path arg.
-  const patch = record.patch ?? record.input;
-  if (typeof patch === "string") {
-    for (const match of patch.matchAll(/^\[([^\]\n#]+)#[0-9a-fA-F]+\]/gm)) {
-      const file = match[1]?.trim();
-      if (file) out.push(file);
-    }
-  }
-  return out;
-}
-
 /** Resolve the model used for extraction: explicit setting, else the session model. */
 function resolveMemoryModel(ctx: ExtensionContext, config: MemoryConfig): unknown {
   const sessionModel = (ctx as { model?: { provider?: string; id?: string } }).model;

@@ -74,6 +74,10 @@ Storing it inline is an explicit opt-in.
   call, and the next session gets it as capped hints with the source files. The model can
   also save a lesson with the `learn` tool. Everything is local, redacted for secrets, and
   never duplicated across projects. See [docs/memory.md](docs/memory.md).
+- **Compaction you can trust** — when a long session must be summarised, the input is pruned
+  first, exact file paths, commands and error lines are recorded by code instead of being
+  paraphrased, secrets are redacted, and a bad summary is refused so the built-in one runs
+  instead. A checkpoint costs no extra model call. See [docs/compaction.md](docs/compaction.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
 - **MCP** — connect Model Context Protocol servers for extra tools: `qronos mcp --help`.
@@ -88,7 +92,7 @@ Storing it inline is an explicit opt-in.
 | `/model` | switch the active model |
 | `/permissions` | change the permission mode |
 | `/context` | inspect what is filling the context window |
-| `/compact` | compress the conversation |
+| `/compact [focus]` | compress the conversation, optionally with a focus |
 | `/recall [n]` | bring back an earlier prompt |
 | `/review` | review the current diff |
 | `/status`, `/doctor` | session and environment diagnostics |
@@ -120,6 +124,8 @@ Storing it inline is an explicit opt-in.
 | `QRONOS_MEMORY` | `0` turns learned memory off | on |
 | `QRONOS_MEMORY_AUTO` | `0` keeps memory but never syncs in the background | on |
 | `QRONOS_MEMORY_BUDGET` | approximate tokens of memory injected per prompt | `1200` |
+| `QRONOS_COMPACT` | `0` uses the built-in compaction summary | on |
+| `QRONOS_COMPACT_MODEL` | cheaper model for the compaction checkpoint | session model |
 
 ---
 

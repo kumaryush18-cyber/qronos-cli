@@ -100,6 +100,11 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // than the advisor: at most one extraction per sync, never concurrent with
     // itself (a lock file), and it runs 2.5 s AFTER session start, never during
     // a turn. Memory being off (QRONOS_MEMORY=0) registers it as a no-op.
+    // 2026-11-24: to thirty-one with qronos-compact: our own checkpoint summary
+    // that REPLACES pi's single compaction call instead of adding one, so the
+    // "one completion at a time" rule still holds. It never runs during a turn
+    // (only when pi decides to compact), and a bad answer returns {} so pi's
+    // built-in summary takes over. QRONOS_COMPACT=0 makes it a no-op.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "qronos-ads",
@@ -132,6 +137,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-lsp",
         "qronos-tool-guard",
         "qronos-memory",
+        "qronos-compact",
       ].sort(),
     );
   });
