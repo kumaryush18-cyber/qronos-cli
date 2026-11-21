@@ -94,6 +94,12 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // 2026-11-22: to twenty-nine with qronos-agent-hub: the Agent Hub panel that
     // shows the subagent roster on Alt+A or /agents (part C). It reads the same
     // registry as qronos-agent, registers no tool and makes no model call.
+    // 2026-11-23: to thirty with qronos-memory: project memory (journal on
+    // turn_end, hints injected at session start, a `learn` tool and /memory).
+    // It is the second exception to "no second model call", and it is stricter
+    // than the advisor: at most one extraction per sync, never concurrent with
+    // itself (a lock file), and it runs 2.5 s AFTER session start, never during
+    // a turn. Memory being off (QRONOS_MEMORY=0) registers it as a no-op.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "qronos-ads",
@@ -125,6 +131,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-apply-patch",
         "qronos-lsp",
         "qronos-tool-guard",
+        "qronos-memory",
       ].sort(),
     );
   });

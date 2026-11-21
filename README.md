@@ -68,6 +68,12 @@ Storing it inline is an explicit opt-in.
 - **Layered memory** — `QRONOS.md` files are loaded from `~/.qronos`, the project root, and
   the current directory, so global preferences and per-repo rules both apply. `@import`
   pulls in more files; cycles are cut.
+- **Learned memory (on by default)** — Qronos remembers what it works out in a project.
+  Every turn is journaled locally, `/memory sync` folds the useful parts into a small
+  document (decisions, constraints, workflows, failures, preferences) with one cheap model
+  call, and the next session gets it as capped hints with the source files. The model can
+  also save a lesson with the `learn` tool. Everything is local, redacted for secrets, and
+  never duplicated across projects. See [docs/memory.md](docs/memory.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
 - **MCP** — connect Model Context Protocol servers for extra tools: `qronos mcp --help`.
@@ -87,6 +93,7 @@ Storing it inline is an explicit opt-in.
 | `/review` | review the current diff |
 | `/status`, `/doctor` | session and environment diagnostics |
 | `/usage` | credits left today |
+| `/memory` | what this project has learned (`view`, `stats`, `sync`, `add`, `forget`, `clear`) |
 | `/bug` | report a problem |
 | `/update` | update the CLI |
 | `Esc` | interrupt the running turn (only that) |
@@ -110,6 +117,9 @@ Storing it inline is an explicit opt-in.
 | `QRONOS_TITLE` | text for the terminal tab title; text only, no colour | `Qronos CLI` |
 | `QRONOS_MAX_SUBAGENT_DEPTH` | how deep subagents may nest | `3` |
 | `QRONOS_MAX_CONCURRENT_SUBAGENTS` | parallel subagents | `8` |
+| `QRONOS_MEMORY` | `0` turns learned memory off | on |
+| `QRONOS_MEMORY_AUTO` | `0` keeps memory but never syncs in the background | on |
+| `QRONOS_MEMORY_BUDGET` | approximate tokens of memory injected per prompt | `1200` |
 
 ---
 
