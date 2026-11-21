@@ -105,6 +105,10 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // "one completion at a time" rule still holds. It never runs during a turn
     // (only when pi decides to compact), and a bad answer returns {} so pi's
     // built-in summary takes over. QRONOS_COMPACT=0 makes it a no-op.
+    // 2026-11-24: to thirty-two with qronos-ultrathink: it repaints the editor
+    // and adds one system-prompt section for a prompt that contains the word.
+    // No tool, no model call, no extra completion; QRONOS_ULTRATHINK=0 makes it
+    // a no-op and pi's normal editor stays in place.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "qronos-ads",
@@ -134,6 +138,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-stream-rules",
         "qronos-notify",
         "qronos-apply-patch",
+        "qronos-ultrathink",
         "qronos-lsp",
         "qronos-tool-guard",
         "qronos-memory",

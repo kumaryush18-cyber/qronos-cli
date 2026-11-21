@@ -30,6 +30,7 @@ import { AgentRegistry } from "./agent-registry";
 import { createAgentHubExtension } from "./agent-hub";
 import { createMemoryExtension } from "./memory-extension";
 import { createCompactExtension } from "./compact-extension";
+import { createUltrathinkExtension } from "./ultrathink-extension";
 import { retryPolicyFromEnv } from "./retry";
 import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
@@ -390,6 +391,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // the extension list is stable, and a no-op when disabled.
   const memoryExtension = createMemoryExtension({ agentDir: opts.agentDir });
   const compactExtension = createCompactExtension();
+  const ultrathinkExtension = createUltrathinkExtension();
   // Tier 3 item 9: @file completion fallback for when fd is unavailable.
   const fileCompletionExtension: InlineExtension = createFileCompletionExtension();
   // Hashline edits (ported from can1357/oh-my-pi): `apply_patch` edits by line
@@ -473,6 +475,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     agentHubExtension,
     memoryExtension,
     compactExtension,
+    ultrathinkExtension,
     fileCompletionExtension,
     hooksExtension,
     toolAliasesExtension,
