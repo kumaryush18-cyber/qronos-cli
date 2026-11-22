@@ -91,6 +91,14 @@ export interface WorkflowAgentResult {
   /** True when this answer came from the journal instead of a model call. */
   replayed?: boolean;
   /**
+   * True when the user stopped this one agent.
+   *
+   * It is not a failure of the model and not a failure of the script: the answer
+   * is `{ ok: false, error: "stopped by you" }`, which is what a script can see,
+   * but the panel and the report say "stopped" and never "failed".
+   */
+  stopped?: boolean;
+  /**
    * The context window of the model this agent ran on.
    *
    * Carried with the answer because the panel reads a job later, when there is
@@ -209,6 +217,8 @@ export type WorkflowEvent =
       text?: string;
       /** True when this answer came from the journal instead of a model call. */
       replayed?: boolean;
+      /** True when the user stopped this one agent. */
+      stopped?: boolean;
       /** The call's scope and position, and a hash of the request it answered. */
       scope?: string;
       index?: number;
@@ -272,6 +282,8 @@ export interface WorkflowAgentRecord {
   depth: number;
   /** True when this agent's answer was replayed from the journal, not called. */
   replayed?: boolean;
+  /** True when the user stopped this agent while it was spending. */
+  stopped?: boolean;
   /** The model this agent asked, when it was routed to one. */
   model?: string;
   /** How much room that model had: 1 000 000 shows as `[1m]` beside the name. */

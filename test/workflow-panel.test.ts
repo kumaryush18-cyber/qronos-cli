@@ -424,3 +424,46 @@ describe("the workflow panel", () => {
     expect(PANEL_FRAME_MS).toBe(120);
   });
 });
+
+  test("k stops the agent you are looking at, and leaves the run alone", async () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({
+      script: "phase('work'); await agent('first one'); await agent('second one'); return 1;",
+    });
+    await until(() => gated.waiting > 0, "the first agent to start");
+    // Let the first agent finish and the second one start, so there is one finished
+    // agent and one live agent: only the live one can be stopped.
+    const asked: string[] = [];
+    gated.release(1);
+    await until(() => gated.waiting > 0 && job.live.size > 0, "the second agent to start");
+    const { panel } = panelFor(manager, {
+      stopAgent: (jobId: string, agentId: string) => {
+        asked.push(`${jobId} ${agentId}`);
+        return { ok: true };
+      },
+    });
+    panel.handleInput("\r");
+    expect(panel.mode).toBe("agent");
+    // The live agent sorts first, so the cursor is already on it.
+    panel.handleInput("k");
+    const live = [...job.live.keys()][0]!;
+    expect(asked).toEqual([`${job.id} ${live}`]);
+    expect(plain(panel.render(74).join("\n"))).toContain("the rest of the run keeps going");
+    panel.dispose();
+    manager.cancel(job.id);
+  });
+
+  test("k on an agent that is not running says why, instead of pretending", async () => {
+    const quick: WorkflowAgentRunner = async (request) => ({ ok: true, text: `answer: ${request.prompt}`, usage: { input: 1, output: 1, total: 2 } });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('only-one'); return 1;" });
+    await until(() => manager.get(job.id)?.done === 1, "the agent to finish");
+    const { panel } = panelFor(manager, {
+      stopAgent: () => ({ ok: false, error: "that agent is not running any more" }),
+    });
+    panel.handleInput("\r");
+    panel.handleInput("k");
+    expect(plain(panel.render(74).join("\n"))).toContain("that agent is not running any more");
+    panel.dispose();
+  });

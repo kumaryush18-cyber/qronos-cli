@@ -26,6 +26,7 @@ ultracode audit every route in src/routes for a missing auth check
 - `/workflows` — the live list: state, agents running, done, tokens, time.
 - `/workflows wf_qhj6qy01` — one job in detail, phase by phase.
 - `/workflows stop wf_qhj6qy01` — stops scheduling and aborts what is in flight.
+- `/workflows stop wf_qhj6qy01 alpha` — stops **one** agent; the run carries on.
 
 If the caller needs the value **inside the same turn**, it can pass
 `background: false`; the tool then waits and returns the report directly. That is
@@ -33,6 +34,35 @@ what the tests and `scripts/workflow-e2e.ts` use.
 
 Background jobs and chat subagents draw from **one** slot pool, so a background
 workflow can never double the concurrency limit behind your back.
+
+## Stopping one agent
+
+There are two sizes of stop, and they are not the same decision:
+
+```
+/workflows stop wf_qhj6qy01            # the whole run: nothing else starts
+/workflows stop wf_qhj6qy01 alpha      # one agent: the rest keeps going
+```
+
+In the panel, `x` stops the run and `k` stops the agent you are looking at. The
+word may be an id (`#3`, or just `3`) or part of the label (`alpha`). A word that
+names two agents is refused with the list, because stopping the wrong one spends
+money on the wrong work.
+
+What a stop costs, and what it does not:
+
+| | Tokens already spent | Tokens not spent |
+|---|---|---|
+| Stopped agent | **kept on the bill** | saved |
+| Rest of the run | unaffected | spends as usual |
+
+A stopped agent is **not a failure**. The script sees an ordinary answer —
+`{ ok: false, error: "stopped by you" }` — so it can decide what to do with it,
+and the panel, the report and the summary write `⊘ stopped by you` rather than a
+red cross. The failure count stays at zero, because nothing broke: you decided.
+
+A stop saves the **rest** of a call, never the call. That is why `x` and `k` are
+different keys: a run is one decision, one agent is a smaller one.
 
 ## Pause and resume
 
@@ -332,6 +362,7 @@ Keys:
 |---|---|
 | `p` | Pause a running run, or resume a paused one. Nothing is replayed by a live resume. `space` does the same. |
 | `x` | Stop the run. Agents in flight are cancelled. |
+| `k` | Inside one agent, stop **that** agent and leave the run alone. The tokens it already spent stay on the bill, and the row says `⊘ Stopped by you`, never `failed`. |
 | `s` | Save the script to `<project>/.qronos/workflows/<name>.js`, so a good run can be used again tomorrow. An existing file is never overwritten: the new one gets `-2`, `-3`. |
 | `enter` | Open one agent: its task, its tool calls and its outcome. Inside that screen, `enter` opens or closes the block under the cursor. |
 | `↑` `↓` | Move between phases; the right column follows. Inside one agent, move between the agents of its phase. |
@@ -342,7 +373,9 @@ Keys:
 
 Every key is also a command, because a floating panel must never be the only way
 to do something: `p` is `/workflows pause`, `x` is `/workflows stop`, `s` is
-`/workflows save`, and `r` is `/workflows resume` on a saved run. The scripts on
+`/workflows save`, and `r` is `/workflows resume` on a saved run. `k` is the one
+exception in the other direction: it is `/workflows stop <id> <agent>`, because a
+word in a command needs an id and the panel already knows which agent you mean. The scripts on
 disk have commands of their own: `/workflows scripts`, `run <name>` and
 `edit <name>`.
 

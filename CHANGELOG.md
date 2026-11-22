@@ -1,3 +1,27 @@
+## 1.0.23
+
+### Stop one agent, and only that one
+
+- `k` in the panel's agent view stops the agent you are looking at. `x` still stops
+  the whole run. Two keys because they are two decisions.
+- `/workflows stop <id> <agent>` does the same from the chat. An id (`#3`, or `3`)
+  or part of a label works; a word that names two agents is refused with the list.
+- A stopped agent is `{ ok: false, error: "stopped by you" }` for the script, and
+  `⊘ stopped by you` for the panel, the report and the summary. Never `failed`.
+- The tokens it had already spent stay on the bill: a stop saves the rest of a
+  call, never the call.
+
+### Fixed
+
+- The panel sorted the agent column one way and looked agents up another way, so
+  `r` and `k` could act on a different agent from the one under the cursor.
+
+### Proved on a real model
+
+`scripts/workflow-stop-e2e.ts` — 13 checks on `claude-haiku-5.5`: a slow agent is
+stopped from the panel while it is spending, the quick agent still finishes, the
+report says `⊘ … stopped by you`, and nothing is counted as failed.
+
 # Changelog
 
 All notable changes to `qronos-cli`. Format based on [Keep a Changelog](https://keepachangelog.com/).

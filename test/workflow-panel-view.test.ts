@@ -517,8 +517,12 @@ describe("the agent view", () => {
     const lines = shown();
     expect(lines).toContain("↑↓ agent");
     expect(lines).toContain("tab block");
-    expect(lines).toContain("enter expand");
+    expect(lines).toContain("↵ expand");
     expect(lines).toContain("r rerun");
+    // `k` stops one agent, `x` stops the run: two sizes of the same decision.
+    expect(lines).toContain("k stop one");
+    // The whole line must fit the default width: a hint that is cut off is a key
+    // nobody finds.
     expect(lines).toContain("esc back");
   });
 
@@ -585,5 +589,49 @@ describe("the panelJobView type stays honest", () => {
   test("the view has no methods and no job reference", () => {
     const built: PanelJobView = view();
     expect(Object.keys(built).every((key) => typeof (built as unknown as Record<string, unknown>)[key] !== "function")).toBe(true);
+  });
+});
+
+describe("an agent you stopped", () => {
+  const stoppedJob = () =>
+    job({
+      state: "done",
+      running: 0,
+      done: 1,
+      failed: 0,
+      agents: [
+        {
+          id: "#0",
+          label: "read-the-tests",
+          ok: false,
+          error: "stopped by you",
+          stopped: true,
+          durationMs: 2_000,
+          usage: { input: 900, output: 100, total: 1_000 },
+          depth: 1,
+          phase: "Analyze",
+          model: "claude-haiku-5.5",
+        },
+      ],
+      live: new Map(),
+    });
+
+  test("the row says stopped, and never failed", () => {
+    const shown = text(buildPanelLines(state({ job: toPanelJob(stoppedJob(), 70_000) })));
+    // The list row has room for the glyph, not for the sentence.
+    expect(shown).toContain("⊘ read-the-tests");
+    expect(shown).not.toContain("✗");
+  });
+
+  test("the detail view says stopped by you, not failed", () => {
+    const shown = text(buildPanelLines(state({ job: toPanelJob(stoppedJob(), 70_000), mode: "agent" })));
+    expect(shown).toContain("⊘ Stopped by you");
+    expect(shown).not.toContain("Failed");
+  });
+
+  test("a stopped agent is not counted as a failure in the summary", () => {
+    const built = toPanelJob(stoppedJob(), 70_000);
+    expect(built.failed).toBe(0);
+    expect(panelSummary(built)).not.toContain("failed");
   });
 });

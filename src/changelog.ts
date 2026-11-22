@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.23",
+    highlights: [
+      "One agent can be stopped without stopping the run. In the panel, k stops the agent you are looking at; the rest of the run keeps going and finishes. x still stops everything, because one run is one decision and one agent is a smaller one.",
+      "The command is /workflows stop <id> <agent>. The word may be an id (#3, or just 3) or part of the label, and a word that matches two agents is refused with the list: stopping the wrong agent spends money on the wrong work.",
+      "A stopped agent is never called failed. The script sees an ordinary answer — { ok: false, error: 'stopped by you' } — so it can carry on with a plan, and the panel, the report and the summary all write a hollow circle and the words stopped by you.",
+      "A stop saves the rest of a call, never the call: the tokens the agent had already spent stay on the bill, and the failure count stays at zero because nothing broke.",
+      "Fixed: the panel's cursor and the row it acted on disagreed. The column was drawn in one order and the keys used another, so r or k could hit a different agent from the one you were reading. One ordering now serves both.",
+    ],
+  },
+  {
     version: "1.0.22",
     highlights: [
       "A saved script can run again. /workflows scripts lists what is in .qronos/workflows, /workflows run <name> starts one, and /workflows edit <name> opens it in your editor. Saving without a way back is a drawer that only opens one way.",

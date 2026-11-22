@@ -17,6 +17,15 @@ export const RUNNING = "✻";
 export const PHASE_MARK = "▸";
 /** An answer that came back from the journal instead of a fresh model call. */
 export const REPLAY = "↺";
+/**
+ * An agent you stopped yourself.
+ *
+ * Not a cross: nothing went wrong. Not a tick either: the answer is missing. The
+ * empty circle says "this one ended early, and you know why", and the amber
+ * keeps it out of both the success and the failure colour.
+ */
+export const STOPPED = "⊘";
+export const AMBER = rgbColor(255, 205, 130);
 
 /** Bright green tick, for a finished agent. */
 export function tick(): string {
@@ -36,6 +45,11 @@ export function phaseMark(name: string): string {
 /** A replayed answer: the same calm blue, because it is not a failure either. */
 export function replayMark(): string {
   return paint(REPLAY, PHASE_BLUE);
+}
+
+/** An agent you stopped: amber, which is neither "done" nor "broke". */
+export function stoppedMark(): string {
+  return paint(STOPPED, AMBER);
 }
 
 function paint(text: string, color: ReturnType<typeof rgbColor>): string {

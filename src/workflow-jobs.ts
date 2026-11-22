@@ -21,6 +21,7 @@ import {
   type SavedRun,
 } from "./workflow-journal";
 import { WorkflowReplay, replayRecordsFromJournal } from "./workflow-replay";
+import { stopProblem, stopRefusal, type StopAgentOutcome } from "./workflow-agent-stop";
 import { parseWorkflowMeta } from "./workflow-sandbox";
 import { sharedSlotPool } from "./workflow-slots";
 import { restartAgent, restartRefusal, type RestartOutcome } from "./workflow-restart";
@@ -346,6 +347,26 @@ export class WorkflowJobManager {
     }
   }
 
+  /**
+   * Stop one agent of one run, and leave the rest of the run alone.
+   *
+   * Returns a reason instead of a bare `false`, because "nothing happened" is the
+   * one message a panel must never show without saying why. The agent's own
+   * record and event carry `stopped`, so nothing downstream has to guess.
+   */
+  stopAgent(jobId: string, agentId: string): StopAgentOutcome {
+    const job = this.jobs.get(jobId);
+    if (!job) return stopRefusal(`there is no workflow called ${jobId}`);
+    const live = job.live.has(agentId);
+    const problem = stopProblem({ state: job.state, live });
+    if (problem) return stopRefusal(problem);
+    const runtime = this.runtimes.get(jobId);
+    if (!runtime) return stopRefusal("that run is no longer live");
+    const stopped = runtime.stopAgent(agentId);
+    if (!stopped) return stopRefusal("that agent is not running any more");
+    return { ok: true, id: agentId };
+  }
+
   cancel(id: string): boolean {
     const job = this.jobs.get(id);
     if (!job) return false;
@@ -519,7 +540,9 @@ export class WorkflowJobManager {
         const live = job.live.get(event.id);
         job.live.delete(event.id);
         job.done += 1;
-        if (!event.ok) job.failed += 1;
+        // A stop is your decision, not the model's mistake: it is counted apart,
+        // so a report never says "2 failed" about agents you stopped yourself.
+        if (!event.ok && !event.stopped) job.failed += 1;
         // A replayed answer costs nothing now. It is counted apart, so the token
         // total always means "spent by this attempt".
         if (event.replayed) {
@@ -533,6 +556,9 @@ export class WorkflowJobManager {
           label: event.label,
           ok: event.ok,
           error: event.error,
+          // The event carries the stop, so a settled run can still say who ended
+          // the agent: a report must not turn your decision into a model failure.
+          stopped: event.stopped === true,
           phase: event.phase,
           durationMs: event.durationMs,
           usage: event.usage,

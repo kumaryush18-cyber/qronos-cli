@@ -16,7 +16,18 @@ import { BUILTIN_AGENTS } from "./agent-discovery";
 import type { AgentDefinition } from "./agent-discovery";
 import { defaultSubagentRunner, type SubagentRunner } from "./agent-tool";
 import { WorkflowRuntime } from "./workflow-runtime";
-import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, replayMark, tick, tokenBar } from "./workflow-glyphs";
+import {
+  RUNNING,
+  cross,
+  formatDuration,
+  formatTokens,
+  pad,
+  phaseMark,
+  replayMark,
+  stoppedMark,
+  tick,
+  tokenBar,
+} from "./workflow-glyphs";
 import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { openWorkflowPanel } from "./workflow-panel";
@@ -33,6 +44,7 @@ import { getExecutionMode, setExecutionMode } from "./execution-modes";
 import { setWaitingWorkflows } from "./workflow-waiting";
 import { appendWorkflowNote, registerWorkflowNoteRenderer } from "./workflow-note";
 import { approvalRequestFor, askWorkflowApproval } from "./workflow-approval";
+import { resolveStopTarget } from "./workflow-agent-stop";
 import { sharedSlotPool } from "./workflow-slots";
 import {
   workflowConfigFromEnv,
@@ -161,7 +173,15 @@ function agentLines(result: WorkflowRunResult, maxTokens: number, limit: number)
   const nameWidth = Math.min(46, Math.max(12, ...shown.map((agent) => agent.label.length)));
   return shown.map((agent) => {
     // `↺` marks an agent whose answer came from the journal, not a fresh call.
-    const mark = agent.replayed ? replayMark() : agent.ok ? tick() : cross();
+    // A stop is neither a tick nor a cross, so it gets its own glyph; a report
+    // that called it a failure would be telling you off for your own decision.
+    const mark = agent.stopped
+      ? stoppedMark()
+      : agent.replayed
+        ? replayMark()
+        : agent.ok
+          ? tick()
+          : cross();
     const depth = agent.depth > 1 ? "  ".repeat(agent.depth - 1) + "└ " : "";
     const label = agent.label.length > nameWidth ? `${agent.label.slice(0, nameWidth - 1)}…` : agent.label;
     const tokens = formatTokens(agent.usage?.total ?? 0).padStart(6);
@@ -261,7 +281,7 @@ export function renderJobList(active: WorkflowJob[], all: WorkflowJob[]): string
       )} tokens`,
     );
     lines.push(...active.map(jobLine));
-    lines.push("", "/workflows <id> for detail · /workflows stop <id> to stop");
+    lines.push("", "/workflows <id> for detail · /workflows stop <id> to stop · /workflows stop <id> <agent> for one");
     return lines.join("\n");
   }
   lines.push(`${RUNNING} no workflow is running`);
@@ -307,7 +327,7 @@ export function renderWorkflowDetail(run: LastWorkflowRun | undefined, options: 
     ].join("\n");
   }
   const { result } = run;
-  const failed = result.agents.filter((agent) => !agent.ok).length;
+  const failed = result.agents.filter((agent) => !agent.ok && !agent.stopped).length;
   const lines = [
     `${RUNNING} ${run.name} — ${options.live ?? (result.ok ? "finished" : "failed")}`,
     `agents ${result.agents.length}${failed > 0 ? ` (${cross()} ${failed} failed)` : ""} · ${formatDuration(
@@ -773,7 +793,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             `/workflows          watch it (agents, phases, tokens)`,
             `/workflows ${job.id}  one job in detail`,
             `/workflows pause ${job.id}  /workflows resume ${job.id}`,
-            `/workflows stop ${job.id}  stop it`,
+            `/workflows stop ${job.id}  stop it  ·  /workflows stop ${job.id} <agent>  stop one`,
           ].join("\n");
 
           return {
@@ -842,6 +862,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             const shown = await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never, {
               saveScript,
               restartAgent: restartOne,
+              stopAgent: (jobId: string, agentId: string) => managerFor().stopAgent(jobId, agentId),
             });
             // Only a panel that really opened can be dismissed. In a host with
             // no overlays there is nothing to close, so there is nothing to say.
@@ -1087,6 +1108,27 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
               ctx.ui.notify(target ? `No workflow with id ${target}.` : "No workflow is running.", "info");
               return;
             }
+            // A third word names one agent, not the whole run: `/workflows stop
+            // <id> alpha` saves the rest of the run. Without it, everything stops.
+            const agentWord = words[2];
+            if (agentWord) {
+              const target = resolveStopTarget(jobs[0]!.live.values(), agentWord);
+              if ("error" in target) {
+                ctx.ui.notify(target.error, "warning");
+                return;
+              }
+              const outcome = manager.stopAgent(jobs[0]!.id, target.id);
+              if (!outcome.ok) {
+                ctx.ui.notify(outcome.error ?? "that agent is not running any more", "warning");
+                return;
+              }
+              const [job] = jobs;
+              ctx.ui.notify(
+                `Stopped ${target.id} in ${job!.id}. The rest of the run keeps going, and the tokens that agent had already spent stay on the bill.`,
+                "warning",
+              );
+              return;
+            }
             const stopped = jobs.filter((job) => manager.cancel(job.id)).map((job) => job.id);
             ctx.ui.notify(`Stopped ${stopped.join(", ")}.`, "warning");
             return;
@@ -1129,6 +1171,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           handler: async (ctx: ExtensionCommandContext | any) => {
             const manager = managerFor();
             const shown = await openWorkflowPanel(ctx, manager, (ctx as { theme?: unknown }).theme as never, {
+              stopAgent: (jobId: string, agentId: string) => manager.stopAgent(jobId, agentId),
               saveScript: (jobId: string) => {
                 const job = manager.get(jobId);
                 if (!job) return undefined;

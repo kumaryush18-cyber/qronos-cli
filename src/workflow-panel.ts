@@ -18,6 +18,7 @@ import type { WorkflowJobManager } from "./workflow-jobs";
 import {
   buildPanelLines,
   DETAIL_BLOCKS,
+  agentsForPhase,
   moveIndex,
   toPanelJob,
   withAnswers,
@@ -28,7 +29,7 @@ import {
   type PanelMode,
 } from "./workflow-panel-view";
 import { formatTokens } from "./workflow-types";
-import { DARK_RED, PHASE_BLUE, RUNNING, BRIGHT_GREEN } from "./workflow-glyphs";
+import { AMBER, DARK_RED, PHASE_BLUE, RUNNING, BRIGHT_GREEN } from "./workflow-glyphs";
 import { bandMixAt, glowChar, shimmerPhase, BRAND_ORANGE, SHIMMER_BAND } from "./shimmer";
 import { foregroundAnsi, getTerminalColorMode, rgbColor } from "@earendil-works/pi-tui";
 
@@ -55,6 +56,13 @@ export interface WorkflowPanelOptions {
    * way, and a panel that dies on a refusal is worse than no key at all.
    */
   restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
+  /**
+   * Stop one agent, leaving the run alone.
+   *
+   * Optional for the same reason as the others: a panel opened by an old caller
+   * must keep working, and a key that does nothing is better than a crash.
+   */
+  stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
 }
 
 /** A job the panel can show: the newest running one, else the newest of all. */
@@ -76,6 +84,7 @@ export class WorkflowPanel {
   private readonly frameMs: number;
   private readonly saveScript?: (jobId: string) => string | undefined;
   private readonly restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
+  private readonly stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
   /** The last thing the panel said, shown in the footer. */
   private notice?: string;
 
@@ -104,6 +113,7 @@ export class WorkflowPanel {
     this.frameMs = options.frameMs ?? PANEL_FRAME_MS;
     this.saveScript = options.saveScript;
     this.restartAgent = options.restartAgent;
+    this.stopAgent = options.stopAgent;
     this.startTicker();
   }
 
@@ -200,6 +210,20 @@ export class WorkflowPanel {
         if (job && (job.state === "running" || job.state === "paused" || job.state === "queued")) {
           this.manager.cancel(job.id);
         }
+        this.requestRender();
+        return;
+      }
+      if (data === "k" || data === "K") {
+        // In the agent view `k` is about the agent you are looking at, not the
+        // run: `x` is still the whole run. Two sizes of the same decision, each
+        // on its own key, so neither can be pressed by accident for the other.
+        const chosen = agentsInPhase(job, this.selectedPhase)[this.selectedAgent];
+        if (!job || !chosen || !this.stopAgent) return;
+        const outcome = this.stopAgent(job.id, chosen.id);
+        this.notice = outcome.ok
+          ? `stopping ${chosen.label}: the rest of the run keeps going`
+          : (outcome.error ?? "nothing to stop");
+        this.startTicker();
         this.requestRender();
         return;
       }
@@ -411,6 +435,8 @@ export class WorkflowPanel {
         return ansi(BRIGHT_GREEN);
       case "agent-replay":
         return ansi(PHASE_BLUE);
+      case "agent-stopped":
+        return ansi(AMBER);
       case "detail":
         return paint("muted", text);
       case "hint":
@@ -457,6 +483,7 @@ export async function openWorkflowPanel(
     width?: number;
     saveScript?: (jobId: string) => string | undefined;
     restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
+    stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
   } = {},
 ): Promise<boolean> {
   const width = options.width ?? PANEL_WIDTH;
@@ -473,6 +500,7 @@ export async function openWorkflowPanel(
         width,
         saveScript: options.saveScript,
         restartAgent: options.restartAgent,
+        stopAgent: options.stopAgent,
       }),
     { overlay: true, overlayOptions: { anchor: "center", width, maxHeight: PANEL_HEIGHT } },
   );
@@ -493,6 +521,7 @@ export const PANEL_GLYPHS = {
 function agentsInPhase(job: PanelJobView | undefined, phaseIndex = 0): PanelAgentView[] {
   if (!job) return [];
   const phase = job.phases[Math.min(Math.max(0, phaseIndex), Math.max(0, job.phases.length - 1))];
-  if (!phase) return [];
-  return job.agents.filter((agent) => agent.phase === phase.name);
+  // The same ordering the column is drawn with, so the cursor points at the row
+  // you see. Building the list here instead would be a second, silent sort.
+  return agentsForPhase(job, phase?.name);
 }

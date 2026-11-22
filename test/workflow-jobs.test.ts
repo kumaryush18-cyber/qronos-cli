@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkflowJobManager } from "../src/workflow-jobs";
 import { journalDir } from "../src/workflow-journal";
+import { buildPanelLines, toPanelJob } from "../src/workflow-panel-view";
 import { resetSharedSlotPool } from "../src/workflow-slots";
 import { workflowConfigFromEnv, type WorkflowAgentRunner } from "../src/workflow-types";
 
@@ -279,5 +280,108 @@ describe("lists and pruning", () => {
     manager.cancel(job.id);
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(settled).toEqual([job.id]);
+  });
+});
+
+describe("stopping one agent from the manager", () => {
+  /** A runner that blocks until aborted, so a stop has something to stop. */
+  function blockingRunner() {
+    const started: string[] = [];
+    const runner: WorkflowAgentRunner = async (request, signal) => {
+      started.push(request.prompt);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 4_000);
+        signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      return { ok: false, text: "", error: "aborted", usage: { input: 7, output: 3, total: 10 } };
+    };
+    return { runner, started };
+  }
+
+  async function until(check: () => boolean, label: string, limit = 200): Promise<void> {
+    for (let index = 0; index < limit; index += 1) {
+      if (check()) return;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error(`timed out waiting for ${label}`);
+  }
+
+  test("a run that does not exist says which id it looked for", () => {
+    const manager = new WorkflowJobManager({ runAgent: blockingRunner().runner, config: config() });
+    expect(manager.stopAgent("wf_nope01", "#0")).toEqual({ ok: false, error: "there is no workflow called wf_nope01" });
+  });
+
+  test("a run that has finished says so", async () => {
+    const quick: WorkflowAgentRunner = async () => ({ ok: true, text: "done", usage: { input: 1, output: 1, total: 2 } });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config() });
+    const job = manager.launch({ script: "return await agent('one');" });
+    await job.settled;
+    expect(manager.stopAgent(job.id, "#0")).toEqual({ ok: false, error: "that run has finished" });
+  });
+
+  test("a live agent is stopped, and the run carries on", async () => {
+    const blocking = blockingRunner();
+    const manager = new WorkflowJobManager({ runAgent: blocking.runner, config: config() });
+    const job = manager.launch({ script: "phase('work'); return await agent('block now');" });
+    await until(() => job.live.size === 1, "the agent to start");
+    const id = [...job.live.keys()][0]!;
+    expect(manager.stopAgent(job.id, id)).toEqual({ ok: true, id });
+    await job.settled;
+    const agent = job.agents.find((entry) => entry.id === id);
+    expect(agent?.stopped).toBe(true);
+    expect(agent?.error).toBe("stopped by you");
+    // A stop is not a failure: the count stays at zero, and the spend is kept.
+    expect(job.failed).toBe(0);
+    expect(job.tokens.total).toBe(10);
+  });
+
+  test("the same agent cannot be stopped twice, and the second try says why", async () => {
+    const blocking = blockingRunner();
+    const manager = new WorkflowJobManager({ runAgent: blocking.runner, config: config() });
+    const job = manager.launch({ script: "phase('work'); return await agent('block now');" });
+    await until(() => job.live.size === 1, "the agent to start");
+    const id = [...job.live.keys()][0]!;
+    expect(manager.stopAgent(job.id, id).ok).toBe(true);
+    const second = manager.stopAgent(job.id, id);
+    expect(second.ok).toBe(false);
+    // Either "already stopping" or "not running any more": both are honest, and a
+    // bare `false` is the one answer that is not allowed.
+    expect(second.ok === false ? second.error : "").toMatch(/already stopping|not running/);
+    await job.settled;
+  });
+
+  test("the panel and the report call it stopped, never failed", async () => {
+    const blocking = blockingRunner();
+    const manager = new WorkflowJobManager({ runAgent: blocking.runner, config: config() });
+    const job = manager.launch({ script: "phase('work'); return await agent('block now');" });
+    await until(() => job.live.size === 1, "the agent to start");
+    manager.stopAgent(job.id, [...job.live.keys()][0]!);
+    await job.settled;
+    const view = toPanelJob(job, Date.now());
+    expect(view.failed).toBe(0);
+    expect(view.agents[0]?.stopped).toBe(true);
+    const lines = buildPanelLines({
+      jobs: [view],
+      job: view,
+      selectedPhase: 0,
+      selectedAgent: 0,
+      mode: "agent",
+      width: 74,
+      now: Date.now(),
+      height: 26,
+      selectedBlock: 0,
+      expanded: {},
+    })
+      .map((line) => line.text)
+      .join("\n");
+    expect(lines).toContain("Stopped by you");
+    expect(lines).not.toContain("Failed");
   });
 });

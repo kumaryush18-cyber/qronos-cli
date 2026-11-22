@@ -37,6 +37,7 @@ export type PanelLineStyle =
   | "agent-replay"
   | "agent-running"
   | "agent-queued"
+  | "agent-stopped"
   | "detail"
   | "hint"
   | "empty"
@@ -53,6 +54,8 @@ export interface PanelAgentView {
   label: string;
   ok: boolean;
   replayed: boolean;
+  /** True when the user stopped this agent while it was spending. */
+  stopped: boolean;
   tokens: number;
   durationMs: number;
   error?: string;
@@ -202,6 +205,7 @@ export function toPanelJob(job: WorkflowJob, now: number = Date.now()): PanelJob
     label: agent.label,
     ok: agent.ok,
     replayed: agent.replayed === true,
+    stopped: agent.stopped === true,
     tokens: (agent.usage as WorkflowUsage | undefined)?.total ?? 0,
     durationMs: agent.durationMs,
     error: agent.error,
@@ -233,6 +237,7 @@ export function toPanelJob(job: WorkflowJob, now: number = Date.now()): PanelJob
       label: entry.label,
       ok: false,
       replayed: false,
+      stopped: false,
       tokens: 0,
       // A real `agent_start` carries a real timestamp; clamp to a day, so a bad
       // clock cannot print a silly number.
@@ -268,6 +273,7 @@ export function toPanelJob(job: WorkflowJob, now: number = Date.now()): PanelJob
         label: "waiting",
         ok: false,
         replayed: false,
+        stopped: false,
         tokens: 0,
         durationMs: 0,
         phase: name,
@@ -448,11 +454,38 @@ function agentsIn(job: PanelJobView, phase: string): PanelAgentView[] {
   return sortForPanel(job.agents.filter((agent) => agent.phase === phase));
 }
 
+/**
+ * The agents of one phase, in the order the panel draws them.
+ *
+ * Exported because the panel's cursor is an index into this list. When the panel
+ * built its own unsorted list, the row under the cursor was not the row the keys
+ * acted on: `r` and `k` hit a different agent from the one you were looking at.
+ * One ordering, used by both, is the only way that cannot drift again.
+ */
+export function agentsForPhase(job: PanelJobView, phaseName: string | undefined): PanelAgentView[] {
+  if (!phaseName) return [];
+  return agentsIn(job, phaseName);
+}
+
 /** One agent cell for the right-hand column: label, model, tokens, time. */
 function rowAgent(agent: PanelAgentView | undefined, width: number): { text: string; style: PanelLineStyle } {
   if (!agent) return { text: "", style: "empty" };
-  const mark = agent.queued ? "↻" : agent.running ? "✻" : agent.replayed ? "↺" : agent.ok ? "✓" : "✗";
-  const tail = agent.queued ? "queued" : agent.replayed ? "replayed" : formatDuration(agent.durationMs);
+  const mark = agent.queued
+    ? "↻"
+    : agent.running
+      ? "✻"
+      : agent.stopped
+        ? "⊘"
+        : agent.replayed
+          ? "↺"
+          : agent.ok
+            ? "✓"
+            : "✗";
+  const tail = agent.queued
+    ? "queued"
+    : agent.replayed
+      ? "replayed"
+      : formatDuration(agent.durationMs);
   const model = shortModel(agent.model);
   // Queued rows have spent nothing yet, so a number there would be a lie. Running
   // rows show 0 tokens honestly: it says the call has started and nothing is billed.
@@ -470,11 +503,13 @@ function rowAgent(agent: PanelAgentView | undefined, width: number): { text: str
     ? "agent-queued"
     : agent.running
       ? "agent-running"
-      : agent.replayed
-        ? "agent-replay"
-        : agent.ok
-          ? "agent-ok"
-          : "agent-bad";
+      : agent.stopped
+        ? "agent-stopped"
+        : agent.replayed
+          ? "agent-replay"
+          : agent.ok
+            ? "agent-ok"
+            : "agent-bad";
   return { text: row(fit, tail, width), style };
 }
 
@@ -535,7 +570,7 @@ function agentLines(state: PanelState, job: PanelJobView, width: number): PanelL
 
   lines.push({ text: "", style: "empty" });
   lines.push({
-    text: truncate("↑↓ agent · tab block · enter expand · r rerun · p/x/s · esc back", width),
+    text: truncate("↑↓ agent · tab block · ↵ expand · r rerun · k stop one · esc back", width),
     style: "hint",
   });
   return lines;
@@ -545,6 +580,7 @@ function agentLines(state: PanelState, job: PanelJobView, width: number): PanelL
 function agentMark(agent: PanelAgentView): string {
   if (agent.queued) return "↻";
   if (agent.running) return "●";
+  if (agent.stopped) return "⊘";
   if (agent.replayed) return "↺";
   return agent.ok ? "✓" : "✗";
 }
@@ -555,6 +591,9 @@ function statusWord(agent: PanelAgentView): string {
   if (agent.queued) return `${dot} Queued`;
   if (agent.running) return `${dot} Running`;
   if (agent.replayed) return `${dot} Replayed`;
+  // A stop is your decision, not the model's mistake: the word says so, and the
+  // red cross is never used for it.
+  if (agent.stopped) return `${dot} Stopped by you`;
   // "Done · restarted" says two things at once: the answer is new, and it cost
   // tokens a second time. A plain Done would hide the second charge.
   if (agent.restarted) return agent.ok ? `${dot} Done · restarted` : `${dot} Failed · restarted`;

@@ -37,6 +37,7 @@ import { parseWorkflowMeta, runWorkflowScript, type WorkflowMeta } from "./workf
 import { createSlotPool, type SlotPool } from "./workflow-slots";
 import { createResumableWallClock } from "./workflow-clock";
 import { agentKey, fingerprintOf, type WorkflowReplay } from "./workflow-replay";
+import { STOPPED_BY_USER } from "./workflow-agent-stop";
 
 export interface WorkflowRuntimeOptions {
   runAgent: WorkflowAgentRunner;
@@ -96,6 +97,16 @@ export interface SharedState {
   paused: boolean;
   /** Calls waiting for a resume, woken together. */
   pauseWaiters: Array<() => void>;
+  /**
+   * The agents still talking to the model, by id, each with its own switch.
+   *
+   * One switch per agent is what makes "stop this one" possible. The run's own
+   * switch still exists and still stops everything: every agent switch is linked
+   * to it, so a stop-all cannot miss one.
+   */
+  agentControllers: Map<string, AbortController>;
+  /** Agents the user stopped, so the record can say why it ended. */
+  stoppedAgents: Set<string>;
   /**
    * What each agent is doing right now, by agent id.
    *
@@ -214,10 +225,14 @@ export class WorkflowRuntime {
         replayedUsage: emptyUsage(),
         paused: false,
         pauseWaiters: [],
+        agentControllers: new Map(),
+        stoppedAgents: new Set<string>(),
         activity: new Map(),
         grants: new Set<string>(),
         asked: 0,
       };
+    const signal = this.shared.controller.signal as AbortSignal & { setMaxListeners?: (count: number) => void };
+    if (typeof signal.setMaxListeners === "function") signal.setMaxListeners(0);
     this.wallClock = createResumableWallClock(this.config.wallClockMs, { now: () => this.now() });
   }
 
@@ -231,6 +246,22 @@ export class WorkflowRuntime {
     this.shared.paused = true;
     this.wallClock.pause();
     this.emit({ type: "paused", at: this.now(), depth: this.depth });
+  }
+
+  /**
+   * Stop one agent, and only that one.
+   *
+   * The tokens it has already spent are spent: this saves the rest of the call,
+   * not the call. Returns false when the agent is no longer running, so a panel
+   * key pressed twice says "not running" instead of pretending.
+   */
+  stopAgent(id: string): boolean {
+    const controller = this.shared.agentControllers.get(id);
+    if (!controller) return false;
+    if (controller.signal.aborted) return false;
+    this.shared.stoppedAgents.add(id);
+    controller.abort();
+    return true;
   }
 
   /** Resume a paused run. Nothing is replayed: it simply carries on. */
@@ -405,10 +436,21 @@ export class WorkflowRuntime {
 
     await this.shared.semaphore.acquire();
     const startedAt = this.now();
+    // One switch for this agent, linked to the run's own switch. The link is
+    // removed in the same block that removes the switch, so a long run cannot
+    // collect listeners.
+    const own = new AbortController();
+    const linkToRun = () => own.abort();
+    this.shared.controller.signal.addEventListener("abort", linkToRun, { once: true });
+    if (this.shared.controller.signal.aborted) own.abort();
+    this.shared.agentControllers.set(id, own);
+    // A stop that arrived between the start event and this switch still counts:
+    // a key pressed a microsecond too early must not be lost.
+    if (this.shared.stoppedAgents.has(id)) own.abort();
     try {
       let result: WorkflowAgentResult;
       try {
-        result = await this.runAgent(request, this.shared.controller.signal);
+        result = await this.runAgent(request, own.signal);
       } catch (error) {
         result = {
           ok: false,
@@ -416,7 +458,7 @@ export class WorkflowRuntime {
           error: error instanceof Error ? error.message : String(error),
         };
       }
-      const checked = this.checkSchema(result, options.schema);
+      const checked = this.stoppedIfAsked(this.checkSchema(result, options.schema), id);
       this.record({
         id,
         label,
@@ -431,8 +473,30 @@ export class WorkflowRuntime {
       });
       return checked;
     } finally {
+      // The link stays: an agent's own signal must still read aborted after the
+      // run was stopped, which is what a caller checking it later expects. The
+      // run controller raises its listener cap below, so a thousand agents cannot
+      // produce a listener warning.
+      this.shared.agentControllers.delete(id);
       this.shared.semaphore.release();
     }
+  }
+
+  /**
+   * An agent the user stopped reports `stopped`, and says so in its error.
+   *
+   * The script sees a normal `{ ok: false, error }` and carries on, because a
+   * stopped agent is one agent's answer, not the end of the run. Whatever the
+   * call had already cost is kept: `usage` is not thrown away.
+   */
+  private stoppedIfAsked(result: WorkflowAgentResult, id: string): WorkflowAgentResult {
+    if (!this.shared.stoppedAgents.has(id)) return result;
+    return {
+      ...result,
+      ok: false,
+      error: STOPPED_BY_USER,
+      stopped: true,
+    };
   }
 
   /** The prompt as the panel may keep it: redacted first, then cut. */
@@ -497,6 +561,7 @@ export class WorkflowRuntime {
       label,
       ok: checked.ok,
       error: checked.error,
+      stopped: checked.stopped === true,
       phase,
       durationMs,
       usage: checked.usage,
@@ -526,6 +591,7 @@ export class WorkflowRuntime {
       label,
       ok: checked.ok,
       error: checked.error,
+      stopped: checked.stopped === true,
       phase,
       durationMs,
       usage: checked.usage,
@@ -548,7 +614,7 @@ export class WorkflowRuntime {
     if (!record.phase) return;
     const entry = this.phaseTiming.get(record.phase) ?? { agents: 0, failed: 0, tokens: 0, durationMs: 0 };
     entry.agents += 1;
-    if (!record.ok) entry.failed += 1;
+    if (!record.ok && !record.stopped) entry.failed += 1;
     // A replayed agent spent nothing this time, so the phase totals still add up
     // to the run's token total. Its old cost is reported separately.
     entry.tokens += record.replayed ? 0 : record.usage?.total ?? 0;
