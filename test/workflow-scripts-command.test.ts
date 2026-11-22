@@ -214,3 +214,15 @@ describe("/workflows rerun", () => {
     expect(shown.length).toBeGreaterThan(0);
   });
 });
+
+describe("/workflows retry", () => {
+  test("no id asks for one", async () => {
+    const { send } = host([]);
+    expect(await send("retry")).toContain("Name a run");
+  });
+
+  test("an id that is not here says so", async () => {
+    const { send } = host([]);
+    expect(await send("retry wf_nope01")).toContain("No workflow with id wf_nope01");
+  });
+});

@@ -30,6 +30,7 @@ import {
 } from "./workflow-panel-view";
 import { formatTokens } from "./workflow-types";
 import { phaseRerunNotice, type PhaseRerunOutcome } from "./workflow-phase-rerun";
+import { retryFailedNotice, type RetryOutcome } from "./workflow-retry-failed";
 import { AMBER, DARK_RED, PHASE_BLUE, RUNNING, BRIGHT_GREEN } from "./workflow-glyphs";
 import { bandMixAt, glowChar, shimmerPhase, BRAND_ORANGE, SHIMMER_BAND } from "./shimmer";
 import { foregroundAnsi, getTerminalColorMode, rgbColor } from "@earendil-works/pi-tui";
@@ -71,6 +72,8 @@ export interface WorkflowPanelOptions {
    * the panel means one card for the key and the command, not two that drift.
    */
   rerunPhase?: (jobId: string, phase: string) => Promise<PhaseRerunOutcome>;
+  /** Run every failed agent again, after its own confirm card. */
+  retryFailed?: (jobId: string) => Promise<RetryOutcome>;
 }
 
 /** A job the panel can show: the newest running one, else the newest of all. */
@@ -94,6 +97,7 @@ export class WorkflowPanel {
   private readonly restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
   private readonly stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
   private readonly rerunPhase?: (jobId: string, phase: string) => Promise<PhaseRerunOutcome>;
+  private readonly retryFailed?: (jobId: string) => Promise<RetryOutcome>;
   /** The last thing the panel said, shown in the footer. */
   private notice?: string;
 
@@ -124,6 +128,7 @@ export class WorkflowPanel {
     this.restartAgent = options.restartAgent;
     this.stopAgent = options.stopAgent;
     this.rerunPhase = options.rerunPhase;
+    this.retryFailed = options.retryFailed;
     this.startTicker();
   }
 
@@ -225,6 +230,10 @@ export class WorkflowPanel {
       }
       if (data === "a" || data === "A") {
         void this.rerunSelectedPhase(job);
+        return;
+      }
+      if (data === "f" || data === "F") {
+        void this.retryFailedNow(job);
         return;
       }
 
@@ -330,10 +339,14 @@ export class WorkflowPanel {
       this.requestRender();
       return;
     }
-      if (data === "a" || data === "A") {
-        void this.rerunSelectedPhase(job);
-        return;
-      }
+    if (data === "a" || data === "A") {
+      void this.rerunSelectedPhase(job);
+      return;
+    }
+    if (data === "f" || data === "F") {
+      void this.retryFailedNow(job);
+      return;
+    }
 
     if (data === "s" || data === "S") {
       if (!job || !this.saveScript) return;
@@ -354,6 +367,26 @@ export class WorkflowPanel {
       }
       this.requestRender();
     }
+  }
+
+  /**
+   * Run every failed agent again.
+   *
+   * Run-wide, not phase-wide: a failure is a hole in the report, and the hole
+   * does not care which phase it is in. A live run is refused before any card.
+   */
+  private async retryFailedNow(job: PanelJobView | undefined): Promise<void> {
+    if (!job || !this.retryFailed) return;
+    if (job.state === "running" || job.state === "paused" || job.state === "queued") {
+      this.notice = "stop the run first: two agents must not spend at once";
+      this.requestRender();
+      return;
+    }
+    this.notice = "asking about the failed agents…";
+    this.requestRender();
+    const outcome = await this.retryFailed(job.id);
+    this.notice = retryFailedNotice(outcome);
+    this.requestRender();
   }
 
   /**
@@ -528,6 +561,7 @@ export async function openWorkflowPanel(
     restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
     stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
     rerunPhase?: (jobId: string, phase: string) => Promise<PhaseRerunOutcome>;
+    retryFailed?: (jobId: string) => Promise<RetryOutcome>;
   } = {},
 ): Promise<boolean> {
   const width = options.width ?? PANEL_WIDTH;
@@ -546,6 +580,7 @@ export async function openWorkflowPanel(
         restartAgent: options.restartAgent,
         stopAgent: options.stopAgent,
         rerunPhase: options.rerunPhase,
+        retryFailed: options.retryFailed,
       }),
     { overlay: true, overlayOptions: { anchor: "center", width, maxHeight: PANEL_HEIGHT } },
   );

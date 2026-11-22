@@ -385,3 +385,20 @@ describe("stopping one agent from the manager", () => {
     expect(lines).not.toContain("Failed");
   });
 });
+
+test("the settled record keeps the schema, so a retry is held to the same test", async () => {
+  // The runtime checks the schema, but a retry does not go through the runtime.
+  // If the schema did not reach the record, the second answer would be judged by
+  // nobody and every retry would look like a cure.
+  const schema = { type: "object", required: ["total"] };
+  const manager = new WorkflowJobManager({
+    runAgent: async () => ({ ok: true, text: "not json", usage: { input: 1, output: 1, total: 2 } }),
+    config: config(),
+    agentDir: tempDir(),
+  });
+  const job = manager.launch({ script: `phase("Look"); return await agent("say hi", { label: "a", schema: ${JSON.stringify(schema)} });` });
+  await job.settled;
+  const agent = manager.get(job.id)!.agents[0]!;
+  expect(agent.ok).toBe(false);
+  expect(agent.schema).toEqual(schema as never);
+});

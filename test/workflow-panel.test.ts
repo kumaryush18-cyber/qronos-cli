@@ -542,3 +542,53 @@ describe("the workflow panel", () => {
     expect(calls).toEqual(["phase Look"]);
     panel.dispose();
   });
+
+  test("f runs the failed agents again, after the tool has asked", async () => {
+    // One agent fails, two do not. `f` must pick the one that broke and nothing
+    // else: a retry that quietly reruns the good answers is a retry nobody wants.
+    let call = 0;
+    const runner: WorkflowAgentRunner = async (request) => {
+      call += 1;
+      if (request.prompt.includes("broken")) {
+        return { ok: false, text: "", error: "the provider said no", usage: { input: 5, output: 1, total: 6 } };
+      }
+      return { ok: true, text: "fine", usage: { input: 10, output: 5, total: 15 } };
+    };
+    const manager = new WorkflowJobManager({ runAgent: runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({
+      script: "phase('Look'); await agent('good one'); await agent('broken one'); return 1;",
+    });
+    await until(() => manager.get(job.id)?.done === 2, "both agents to finish");
+    const asked: string[] = [];
+    const { panel } = panelFor(manager, {
+      retryFailed: async (jobId: string) => {
+        asked.push(jobId);
+        return { ok: true, ran: 1, total: 1, skipped: [] };
+      },
+    });
+    panel.handleInput("f");
+    await until(() => plain(panel.render(74).join("\n")).includes("failed again"), "the notice to appear");
+    expect(asked).toEqual([job.id]);
+    expect(plain(panel.render(74).join("\n"))).toContain("ran 1 of 1 failed again");
+    expect(call).toBe(2);
+    panel.dispose();
+  });
+
+  test("f on a live run refuses before any card is asked for", async () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config() });
+    const job = manager.launch({ script: "phase('Look'); await agent('one'); return 1;" });
+    await until(() => gated.waiting > 0, "the agent to start");
+    let asked = 0;
+    const { panel } = panelFor(manager, {
+      retryFailed: async () => {
+        asked += 1;
+        return { ok: true, ran: 1, total: 1, skipped: [] };
+      },
+    });
+    panel.handleInput("f");
+    expect(asked).toBe(0);
+    expect(plain(panel.render(74).join("\n"))).toContain("stop the run first");
+    panel.dispose();
+    manager.cancel(job.id);
+  });

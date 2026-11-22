@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.25",
+    highlights: [
+      "Only the agents that failed run again. `f` in the panel, or /workflows retry <id>, picks the red crosses and leaves every good answer where it is — the cleanup you actually want after a run with two holes in it.",
+      "It asks first: how many failed, their names, and what they spent the first time. Cursor on No, no overlay means No, and no spends nothing.",
+      "A stopped agent is not a failed one. You stopped it on purpose, so `f` leaves it alone; and if the only unfinished agents are the ones you stopped, the answer says so instead of a flat nothing failed.",
+      "One at a time, new work not a replay: the tokens rise and the rows say they ran again. A retry that fails again does not stop the others, and the notice says how many ran and which one did not.",
+      "A real bug found by testing it: a restart, a phase rerun and a retry called the agent runner directly, so an agent that had failed its schema came back with a green tick on the second try and nobody had checked the words. The schema now travels with the record and is applied on every path.",
+      "Proved on claude-haiku-5.5: scripts/workflow-retry-e2e.ts, 13 checks. One agent was held to a schema no answer can satisfy and really failed at 2k tokens; the panel key and the command asked the same card; no spent nothing; yes ran that one agent only — 5.8k to 8.9k — and the good answers were untouched.",
+    ],
+  },
+  {
     version: "1.0.24",
     highlights: [
       "A whole phase can be run again. `a` in the panel, or /workflows rerun <id> <phase>, runs every agent of that phase one after another — the case where the code changed and every answer in a phase is out of date.",

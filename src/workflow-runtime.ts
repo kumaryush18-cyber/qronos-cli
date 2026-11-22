@@ -31,6 +31,7 @@ import {
   type WorkflowToolFacts,
   type WorkflowUsage,
 } from "./workflow-types";
+import { applySchema } from "./workflow-schema";
 import { extractJson, validateJsonSchema } from "./agent-schema";
 import { cleanText } from "./secret-redact";
 import { parseWorkflowMeta, runWorkflowScript, type WorkflowMeta } from "./workflow-sandbox";
@@ -411,6 +412,7 @@ export class WorkflowRuntime {
         model: request.model,
         prompt: this.promptFor(text),
         phase: request.phase,
+        schema: options.schema,
       });
       return replayed;
     }
@@ -470,6 +472,7 @@ export class WorkflowRuntime {
         model: request.model,
         prompt: this.promptFor(text),
         phase: request.phase,
+        schema: options.schema,
       });
       return checked;
     } finally {
@@ -553,8 +556,10 @@ export class WorkflowRuntime {
     prompt?: string;
     /** The phase as it was when this agent started, not as it is now. */
     phase?: string;
+    /** The schema the answer had to satisfy, kept so a retry is tested the same. */
+    schema?: WorkflowAgentRequest["schema"];
   }): void {
-    const { id, label, checked, durationMs, replayed, index, fingerprint, model, prompt, phase } = entry;
+    const { id, label, checked, durationMs, replayed, index, fingerprint, model, prompt, phase, schema } = entry;
     const live = this.shared.activity.get(id);
     const record: WorkflowAgentRecord = {
       id,
@@ -569,6 +574,7 @@ export class WorkflowRuntime {
       replayed,
       model,
       prompt,
+      schema,
       contextWindow: checked.contextWindow,
       activity: live && live.rows.length > 0 ? live.rows.slice() : undefined,
       toolCalls: live && live.calls > 0 ? live.calls : undefined,
@@ -605,6 +611,7 @@ export class WorkflowRuntime {
       activity: record.activity,
       toolCalls: record.toolCalls,
       model,
+      schema: record.schema,
       contextWindow: checked.contextWindow,
       data: checked.data,
     });
@@ -646,16 +653,7 @@ export class WorkflowRuntime {
 
   /** Validate the schema here, so a script cannot receive unchecked data. */
   private checkSchema(result: WorkflowAgentResult, schema: unknown): WorkflowAgentResult {
-    if (schema === undefined || schema === null) return result;
-    if (!result.ok) return result;
-    const data = result.data ?? extractJson(result.text).value;
-    const verdict = validateJsonSchema(data, schema);
-    if (verdict.ok) return { ...result, data };
-    const detail = verdict.issues
-      .slice(0, 3)
-      .map((issue) => `${issue.path || "value"} ${issue.message}`)
-      .join("; ");
-    return { ok: false, text: result.text, data, error: `schema not satisfied: ${detail}` };
+    return applySchema(result, schema);
   }
 
   /** Run a list of promises or thunks with the shared concurrency limit. */

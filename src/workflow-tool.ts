@@ -35,6 +35,15 @@ import { saveWorkflowScript } from "./workflow-save";
 import { listSavedScripts, readSavedScript, resolveSavedScript, savedScriptLine, scriptDirFor, scriptProblem, shortPath } from "./workflow-library";
 import { askConfirm } from "./workflow-confirm";
 import {
+  failedAgents,
+  retryFailed,
+  retryFailedLines,
+  retryFailedNotice,
+  retryFailedTitle,
+  retryRefusal,
+  type RetryOutcome,
+} from "./workflow-retry-failed";
+import {
   agentsOfPhase,
   phaseRerunLines,
   phaseRerunNotice,
@@ -853,6 +862,24 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             return outcome.ok ? { ok: true, edited: answer.prompt !== undefined } : { ok: false, error: outcome.error };
           };
 
+          // The failed ones, one at a time, behind one card. Same three rules as the
+          // phase rerun; the only difference is which agents are chosen.
+          const retryFailedOne = async (jobId: string): Promise<RetryOutcome> => {
+            if (!manager) return { ok: false, error: "no workflow manager yet" };
+            const job = manager.get(jobId);
+            const problem = retryRefusal(job);
+            if (problem || !job) return { ok: false, error: problem ?? "no such run" };
+            const agents = failedAgents(job);
+            const yes = await askConfirm(ctx as never, {
+              title: retryFailedTitle(job),
+              lines: retryFailedLines(job),
+              yes: `Yes, run ${agents.length === 1 ? "it" : "them"} again`,
+              no: "No, leave them",
+            });
+            if (!yes) return { ok: false, error: "not run again: you said no" };
+            return retryFailed(job, (agentId) => manager.restartAgent(jobId, agentId));
+          };
+
           // A whole phase, one agent at a time, behind one card. The card comes
           // first because this spends money once per agent, and the number of
           // agents is the number a person needs before saying yes.
@@ -891,6 +918,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
               saveScript,
               restartAgent: restartOne,
               rerunPhase: rerunPhaseOne,
+              retryFailed: retryFailedOne,
               stopAgent: (jobId: string, agentId: string) => managerFor().stopAgent(jobId, agentId),
             });
             // Only a panel that really opened can be dismissed. In a host with
@@ -1119,6 +1147,23 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             });
             lines.push("", `resume one with /workflows resume <id>`);
             ctx.ui.notify(lines.join("\n"), "info");
+            return;
+          }
+
+          // `/workflows retry <id>`: run the failed agents again, and only those.
+          if (words[0] === "retry") {
+            const job = words[1] ? manager?.get(words[1]) : undefined;
+            if (!manager || !job) {
+              ctx.ui.notify(
+                words[1]
+                  ? `No workflow with id ${words[1]}. Try /workflows for the list.`
+                  : "Name a run: /workflows retry <id>",
+                "warning",
+              );
+              return;
+            }
+            const outcome = await retryFailedOne(job.id);
+            ctx.ui.notify(retryFailedNotice(outcome), outcome.ok ? "info" : "warning");
             return;
           }
 

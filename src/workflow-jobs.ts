@@ -568,6 +568,9 @@ export class WorkflowJobManager {
           activity: event.activity ?? live?.activity,
           toolCalls: event.toolCalls ?? live?.toolCalls,
           model: event.model ?? live?.model,
+          // The schema comes with the event, so a retry after the run has settled
+          // can hold the new answer to the same test as the old one.
+          schema: event.schema,
           // The size is known when the agent ends, not when it starts, so the
           // record carries it and a live row keeps the plain name.
           contextWindow: event.contextWindow,

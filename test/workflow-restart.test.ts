@@ -41,6 +41,13 @@ describe("the request a restart makes", () => {
     expect(request.phase).toBe("Analyze");
   });
 
+  test("the schema travels with the request, so the test is the same", () => {
+    // Without this a retry of an agent that failed its schema would come back with
+    // a tick nobody earned.
+    const schema = { type: "object", required: ["total"] };
+    expect(restartRequest(record({ schema })).schema).toEqual(schema as never);
+  });
+
   test("a lost prompt says so instead of inventing one", () => {
     const request = restartRequest(record({ prompt: undefined }));
     expect(request.prompt).toContain("was not kept");
@@ -116,6 +123,39 @@ describe("running one agent again", () => {
     expect(outcome.ok).toBe(true);
     expect(target.agents[0]!.ok).toBe(false);
     expect(target.agents[0]!.error).toBe("model died");
+  });
+
+  test("an answer that still misses the schema is still a failure", async () => {
+    // The check happens here, not only in the runtime: a restart calls the runner
+    // directly, so the runner's `ok` is not the last word.
+    const schema = { type: "object", required: ["total"], properties: { total: { type: "number" } } };
+    const outcome = await restartAgent({
+      job: job({ agents: [record({ ok: false, error: "schema not satisfied", schema })] }),
+      agentId: "#0",
+      runAgent: async () => ({ ok: true, text: "hi", usage: { input: 1, output: 1, total: 2 } }),
+      now: () => 1_000,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.agent.ok).toBe(false);
+      expect(outcome.agent.error).toStartWith("schema not satisfied:");
+    }
+  });
+
+  test("an answer that now matches the schema passes", async () => {
+    const schema = { type: "object", required: ["total"], properties: { total: { type: "number" } } };
+    const outcome = await restartAgent({
+      job: job({ agents: [record({ ok: false, error: "schema not satisfied", schema })] }),
+      agentId: "#0",
+      runAgent: async () => ({ ok: true, text: '{"total": 4}', usage: { input: 1, output: 1, total: 2 } }),
+      now: () => 1_000,
+    });
+    if (outcome.ok) {
+      expect(outcome.agent.ok).toBe(true);
+      expect(outcome.agent.data).toEqual({ total: 4 });
+    } else {
+      throw new Error(outcome.error);
+    }
   });
 
   test("a live run is refused before any model call", async () => {

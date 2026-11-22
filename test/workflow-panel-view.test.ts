@@ -274,6 +274,8 @@ describe("the two columns", () => {
     expect(lines).toContain("s save");
     // `a` reruns a whole phase, which is the key that saves the most hand work.
     expect(lines).toContain("a rerun");
+    // `f` runs the failed agents again, the one key for a report with holes.
+    expect(lines).toContain("f failed");
     expect(lines).toContain("enter view");
     expect(lines).toContain("esc close");
   });

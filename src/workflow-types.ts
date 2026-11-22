@@ -227,6 +227,14 @@ export type WorkflowEvent =
       prompt?: string;
       /** The model this agent asked, and how much room it had. */
       model?: string;
+      /**
+       * The schema the answer had to satisfy.
+       *
+       * Kept on the event so the settled record has it too: a retry must be held
+       * to the same test, or an agent that failed on a schema would come back with
+       * a tick nobody earned.
+       */
+      schema?: unknown;
       contextWindow?: number;
       activity?: WorkflowAgentActivity[];
       toolCalls?: number;
@@ -286,6 +294,14 @@ export interface WorkflowAgentRecord {
   stopped?: boolean;
   /** The model this agent asked, when it was routed to one. */
   model?: string;
+  /**
+   * The schema its answer had to satisfy, when one was given.
+   *
+   * Kept with the record because a retry must be held to the same test: an agent
+   * that failed *because the answer did not match* would otherwise "succeed" on
+   * the second try with unchecked text, which is a tick nobody earned.
+   */
+  schema?: unknown;
   /** How much room that model had: 1 000 000 shows as `[1m]` beside the name. */
   contextWindow?: number;
   /**

@@ -1,3 +1,19 @@
+## 1.0.25 — run the failed agents again
+
+- **`f` retries only what broke.** In the panel `f`, in the chat `/workflows retry <id>`.
+  The red crosses run again; the good answers are left alone.
+- **It asks first.** The card names the count, the agents, and their old cost. Cursor
+  on No, and saying no spends nothing.
+- **A stopped agent is not a failed one.** A stop is your decision, so it is not
+  restarted — and the notice says so rather than a flat "nothing failed".
+- **One at a time**, new work not a replay: the tokens rise, the rows say they ran again.
+- **Bug fixed:** a restart, a phase rerun and a retry called the agent runner directly
+  and never applied the agent's schema, so an agent that failed on a schema came back
+  with a tick nobody earned. `src/workflow-schema.ts` is now the one place a schema is
+  applied, and the schema travels with the record.
+- Proved with real tokens on `claude-haiku-5.5` (`scripts/workflow-retry-e2e.ts`,
+  13 checks).
+
 ## 1.0.24
 
 ### Run a whole phase again

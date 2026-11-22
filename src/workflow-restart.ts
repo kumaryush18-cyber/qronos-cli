@@ -18,6 +18,7 @@ import type {
   WorkflowAgentRunner,
 } from "./workflow-types";
 import { addUsage } from "./workflow-types";
+import { applySchema } from "./workflow-schema";
 import type { WorkflowJob } from "./workflow-jobs";
 import type { WorkflowJournal } from "./workflow-journal";
 
@@ -53,6 +54,9 @@ export function restartRequest(record: WorkflowAgentRecord, prompt?: string): Wo
     label: record.label,
     model: record.model,
     phase: record.phase,
+    // The same test as the first time. An edited task is still expected to answer
+    // the question it was given a schema for.
+    schema: record.schema as WorkflowAgentRequest["schema"],
   };
 }
 
@@ -94,7 +98,12 @@ export async function restartAgent(input: {
   const edited = typeof input.prompt === "string" && input.prompt.trim() !== "" ? input.prompt.trim() : undefined;
 
   const startedAt = now();
-  const result: WorkflowAgentResult = await runAgent(request, input.signal ?? new AbortController().signal);
+  // The same test as the first time. Without this a restart of an agent that
+  // failed its schema would "succeed" with unchecked words.
+  const result: WorkflowAgentResult = applySchema(
+    await runAgent(request, input.signal ?? new AbortController().signal),
+    request.schema,
+  );
   const durationMs = Math.max(0, now() - startedAt);
 
   // The history is written before the record changes, so it always holds what was

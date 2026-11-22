@@ -28,6 +28,7 @@ ultracode audit every route in src/routes for a missing auth check
 - `/workflows stop wf_qhj6qy01` — stops scheduling and aborts what is in flight.
 - `/workflows stop wf_qhj6qy01 alpha` — stops **one** agent; the run carries on.
 - `/workflows rerun wf_qhj6qy01 Look` — runs **every** agent of that phase again.
+- `/workflows retry wf_qhj6qy01` — runs the **failed** agents again, and only those.
 
 If the caller needs the value **inside the same turn**, it can pass
 `background: false`; the tool then waits and returns the report directly. That is
@@ -35,6 +36,34 @@ what the tests and `scripts/workflow-e2e.ts` use.
 
 Background jobs and chat subagents draw from **one** slot pool, so a background
 workflow can never double the concurrency limit behind your back.
+
+## Retrying what failed
+
+After a big run there are usually two or three red crosses and a dozen good
+answers. Rerunning everything pays twice for work that is already right;
+rerunning nothing leaves holes in the report.
+
+```
+/workflows retry wf_qhj6qy01           # every failed agent, one at a time
+```
+
+In the panel, `f` does the same.
+
+The rules are the phase rerun's, at the size of "only what broke":
+
+1. **It asks first.** The card says how many failed, their names, and what they
+   spent the first time. Cursor on No, no overlay means No, and no spends nothing.
+2. **New work, not a replay.** The tokens rise and the rows say they ran again.
+3. **One at a time**, so the bill stays readable.
+
+And one rule of its own: **a stopped agent is not a failed one.** You stopped it on
+purpose, so `f` leaves it alone. If the only agents that did not finish are the
+ones you stopped, the answer is not "nothing failed" — it says that they were
+stopped by you.
+
+A retry that fails again is not a reason to stop: the record keeps its new
+attempt, the report shows the work that was really done, and the notice says how
+many ran and which one did not.
 
 ## Running a phase again
 
@@ -397,6 +426,7 @@ Keys:
 | `←` `→` | Move between the agents of the phase. |
 | `tab` | Move to the next run, when there is more than one. Inside one agent, move the cursor between Prompt, Activity and Outcome. |
 | `a` | Run **every** agent of the phase under the cursor again, one at a time. The card comes first, because this spends money once per agent. |
+| `f` | Run every **failed** agent again, and only those. A stopped agent is not a failed one, so it is left alone. |
 | `r` | Replay a finished run from its journal, without leaving the panel. |
 | `esc` | Back out of an agent, or close the panel. |
 
