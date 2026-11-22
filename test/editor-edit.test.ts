@@ -27,37 +27,41 @@ afterEach(() => {
   else process.env.EDITOR = saved.EDITOR;
 });
 
+// The fake editors are shell scripts, and Windows has no /bin/sh: the two tests
+// that need no shell still run there, so the helper is still covered.
+const posix = process.platform === "win32" ? test.skip : test;
+
 describe("editing a piece of text in the user's editor", () => {
   test("with no editor set, the text is left alone", () => {
     expect(editTextInEditor("hello")).toBeUndefined();
   });
 
-  test("what the editor writes is what comes back", () => {
+  posix("what the editor writes is what comes back", () => {
     process.env.EDITOR = fakeEditor('printf "new words\\n" > "$1"');
     expect(editTextInEditor("old words")).toBe("new words\n");
   });
 
-  test("an editor that fails leaves the text alone", () => {
+  posix("an editor that fails leaves the text alone", () => {
     process.env.EDITOR = fakeEditor('echo "no" >&2; exit 1');
     expect(editTextInEditor("keep me")).toBeUndefined();
   });
 
-  test("a file that was not changed is not a change", () => {
+  posix("a file that was not changed is not a change", () => {
     process.env.EDITOR = fakeEditor('true "$1"');
     expect(editTextInEditor("same words")).toBeUndefined();
   });
 
-  test("trailing whitespace alone is not a change", () => {
+  posix("trailing whitespace alone is not a change", () => {
     process.env.EDITOR = fakeEditor('printf "same words\\n\\n" > "$1"');
     expect(editTextInEditor("same words")).toBeUndefined();
   });
 
-  test("the file name is a hint the editor can use", () => {
+  posix("the file name is a hint the editor can use", () => {
     process.env.EDITOR = fakeEditor('basename "$1" > "$1"');
     expect(editTextInEditor("x", { fileName: "task.txt" })).toBe("task.txt\n");
   });
 
-  test("VISUAL wins over EDITOR, the way the shell does it", () => {
+  posix("VISUAL wins over EDITOR, the way the shell does it", () => {
     process.env.EDITOR = fakeEditor('printf "from editor\\n" > "$1"');
     process.env.VISUAL = fakeEditor('printf "from visual\\n" > "$1"');
     expect(editTextInEditor("x")).toBe("from visual\n");
@@ -68,10 +72,20 @@ describe("editing a piece of text in the user's editor", () => {
     expect(editTextInEditor("x")).toBeUndefined();
   });
 
-  test("an editor with arguments is split, not shelled", () => {
+  posix("an editor with arguments is split, not shelled", () => {
     // The flag arrives before the file, the way a real editor expects it.
     const script = fakeEditor('test "$1" = "--wait" || exit 1; shift; printf "arg\\n" > "$1"');
     process.env.EDITOR = `${script} --wait`;
     expect(editTextInEditor("x")).toBe("arg\n");
+  });
+});
+
+describe("an editor path with spaces", () => {
+  // No shell needed: the program is `/bin/echo`, so this runs everywhere the
+  // shell-based tests run, and the rule it pins is the same one.
+  posix("a full path that exists is one program, not a command line", () => {
+    process.env.EDITOR = "/bin/echo";
+    // echo changes nothing, so the answer is "not changed" rather than a crash.
+    expect(editTextInEditor("x")).toBeUndefined();
   });
 });

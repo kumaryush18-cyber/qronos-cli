@@ -3,7 +3,7 @@
 // `ctrl+g` on a card means "$EDITOR": the user's own program, run once, with a
 // path we created. No shell string ever comes from the model, and the temp file
 // is removed whatever happens.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -26,7 +26,9 @@ export function editTextInEditor(text: string, options: EditTextOptions = {}): s
     dir = mkdtempSync(join(tmpdir(), "qronos-edit-"));
     const file = join(dir, options.fileName ?? "text.txt");
     writeFileSync(file, text, "utf8");
-    const parts = editor.split(/\s+/).filter(Boolean);
+    // A path with spaces is one program, not a program and two arguments: on
+    // Windows that is the normal case, not an oddity.
+    const parts = existsSync(editor) ? [editor] : editor.split(/\s+/).filter(Boolean);
     const result = spawnSync(parts[0]!, [...parts.slice(1), file], { stdio: "inherit" });
     if (result.error || result.status !== 0) return undefined;
     const updated = readFileSync(file, "utf8");
