@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   MAX_SCRIPTS,
   listSavedScripts,
@@ -18,7 +18,8 @@ function fakeDir(files: Record<string, { size?: number; at?: number }>) {
     exists: () => true,
     readdir: () => Object.keys(files),
     stat: (path: string) => {
-      const name = path.split("/").at(-1)!;
+      // `basename`, not a split on "/": Windows uses the other slash.
+      const name = basename(path);
       const file = files[name];
       if (!file) throw new Error("no such file");
       return { size: file.size ?? 10, mtimeMs: file.at ?? 0 };

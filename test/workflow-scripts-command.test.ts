@@ -133,6 +133,10 @@ describe("/workflows run", () => {
   });
 });
 
+// The fake editors below are shell scripts, and Windows has no /bin/sh. The two
+// tests that need no editor still run there, so the command is still covered.
+const posix = process.platform === "win32" ? test.skip : test;
+
 describe("/workflows edit", () => {
   const saved = { VISUAL: process.env.VISUAL, EDITOR: process.env.EDITOR };
 
@@ -163,18 +167,20 @@ describe("/workflows edit", () => {
     expect(cards.length).toBe(0);
   });
 
-  test("an edited file is only written when the card is answered yes", async () => {
-    process.env.EDITOR = fakeEditor('printf "// changed\\n%s" "$(cat \\"$1\\")" > "$1"');
+  posix("an edited file is only written when the card is answered yes", async () => {
+    // One plain append: no quoting to get wrong on a different shell.
+    process.env.EDITOR = fakeEditor('printf "// changed\\n" >> "$1"');
     const { send, cards } = host([["y"]]);
     const shown = await send("edit review");
     expect(cards[0]).toContain("Save the change?");
     expect(cards[0]).toContain(".qronos/workflows/review.js");
     expect(shown).toContain("Saved");
-    expect(readFileSync(join(project, ".qronos", "workflows", "review.js"), "utf8")).toStartWith("// changed");
+    expect(readFileSync(join(project, ".qronos", "workflows", "review.js"), "utf8")).toContain("// changed");
   });
 
-  test("a no leaves the file exactly as it was", async () => {
-    process.env.EDITOR = fakeEditor('printf "// changed\\n%s" "$(cat \\"$1\\")" > "$1"');
+  posix("a no leaves the file exactly as it was", async () => {
+    // One plain append: no quoting to get wrong on a different shell.
+    process.env.EDITOR = fakeEditor('printf "// changed\\n" >> "$1"');
     const { send } = host([["\u001b"]]);
     const shown = await send("edit review");
     expect(shown).toContain("Not saved");
