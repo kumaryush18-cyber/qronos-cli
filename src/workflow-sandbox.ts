@@ -25,6 +25,11 @@ export interface AgentScriptOptions {
   agent?: string;
   /** Route this one agent to a different model. */
   model?: string;
+  /**
+   * The phase this agent belongs to. Needed when agents are started in a map:
+   * `phase()` names everything after it, a map needs a name per item.
+   */
+  phase?: string;
 }
 
 export interface WorkflowSandboxHelpers {

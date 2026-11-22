@@ -333,6 +333,28 @@ return r.text;`,
   const record = getLastWorkflowRun()?.result.agents.at(-1);
   check("the agent's task text is kept", (record?.prompt ?? "").includes("src/sum.ts"), (record?.prompt ?? "").slice(0, 60));
   check("the agent's tool calls are counted", (record?.toolCalls ?? 0) >= 1, `${record?.toolCalls ?? 0} calls`);
+  /* --- a phase named per agent, which is what a map needs (pic 16) -------- */
+  deliveries.length = 0;
+  const phaseRun = await run({
+    name: "phase-demo",
+    background: false,
+    script: `const areas = ["one", "two"];
+const out = await parallel(areas.map((a) => agent("Answer with the word " + a, { label: a, phase: "Areas" })));
+return out.map((r) => r.text).join(" | ");`,
+  });
+  check("a map with a per-agent phase finished", phaseRun.details.ok === true, String(phaseRun.details.error ?? ""));
+  check(
+    "the named phase is the run's phase",
+    JSON.stringify(phaseRun.details.phases) === JSON.stringify(["Areas"]),
+    JSON.stringify(phaseRun.details.phases),
+  );
+  const phased = getLastWorkflowRun()?.result.agents ?? [];
+  check(
+    "both agents sit in that phase",
+    phased.length === 2 && phased.every((agent) => agent.phase === "Areas"),
+    phased.map((agent) => agent.phase ?? "none").join(","),
+  );
+
   check(
     "the kept activity names the tool",
     (record?.activity ?? []).some((row) => row.tool === "read" || row.tool === "ls"),

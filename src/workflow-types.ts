@@ -25,6 +25,15 @@ export interface WorkflowAgentRequest {
    */
   model?: string;
   /**
+   * The phase this agent belongs to.
+   *
+   * `phase("Analyze")` sets the phase for everything after it, which is right
+   * for a straight script. A `parallel` map needs a name per agent instead, so
+   * that one call can put five agents in the same column. Blank means "the
+   * current phase", so a script never has to repeat itself.
+   */
+  phase?: string;
+  /**
    * Called once for every tool the agent finishes, so the panel can show
    * "6 tool calls · last 3: Bash, read, grep" while the agent is still working.
    *

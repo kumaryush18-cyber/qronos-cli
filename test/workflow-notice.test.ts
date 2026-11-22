@@ -105,3 +105,27 @@ describe("the extension wiring", () => {
     expect(sections[ULTRACODE_SECTION]).toBeUndefined();
   });
 });
+
+describe("the script example in the notice", () => {
+  test("shows the fan-out shape from the screenshots", () => {
+    // The model copies what it is shown. This is the shape Claude Code's own
+    // workflow used: an array of areas, one phase, one parallel map.
+    expect(ULTRACODE_NOTICE).toContain("const AREAS = [");
+    expect(ULTRACODE_NOTICE).toContain("AREAS.map((a) => agent(a.prompt");
+    expect(ULTRACODE_NOTICE).toContain('phase: "Analyze"');
+  });
+
+  test("says phase() goes once before a group, not inside the loop", () => {
+    expect(ULTRACODE_NOTICE).toContain("Call it once before a group of");
+  });
+
+  test("says a failed agent is an object, never null", () => {
+    expect(ULTRACODE_NOTICE).toContain("{ ok: false, error }");
+    expect(ULTRACODE_NOTICE).toContain("check `r.ok`");
+  });
+
+  test("documents the per-agent phase option", () => {
+    expect(ULTRACODE_NOTICE).toContain("phase?");
+    expect(ULTRACODE_NOTICE).toContain("Pass `phase` to name");
+  });
+});

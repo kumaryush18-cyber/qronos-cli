@@ -327,10 +327,10 @@ Exactly five helpers. Nothing else exists inside the sandbox.
 
 | Helper | What it does |
 |---|---|
-| `agent(prompt, { label?, schema?, model? })` | Runs one subagent. Resolves to `{ ok, text, data, error, usage }`. It never throws. |
+| `agent(prompt, { label?, schema?, model?, phase? })` | Runs one subagent. Resolves to `{ ok, text, data, error, usage }`. It never throws and never returns null: a failed agent is `{ ok: false, error }`, so check `r.ok`. |
 | `parallel([...])` | Runs promises or functions at once. Order is kept. |
 | `pipeline(list, item => ...)` | One task per item, limited to the allowed concurrency. |
-| `phase("Review")` | Names a step. Agents and tokens are counted per phase. |
+| `phase("Review")` | Names a step. Agents and tokens are counted per phase. Call it once before a group of agents. |
 | `log("...")` | A note for the human. |
 | `workflow("...")` | A nested workflow. One child level, sharing this run's budget. |
 
@@ -355,6 +355,34 @@ const found = await pipeline(list.data.files, (file) =>
 
 return found.filter((r) => r.ok).map((r) => r.text)
 ```
+
+### Naming a phase per agent
+
+`phase("Review")` names everything that comes after it, which is right for a
+straight script. A `parallel` map has no "after it", so an agent can name its
+own phase:
+
+```js
+const AREAS = [
+  { key: "routes", prompt: `Area: HTTP routes - src/routes. Group by purpose.` },
+  { key: "db", prompt: `Area: database - src/db. Group by purpose.` },
+]
+phase("Analyze")
+const out = await parallel(
+  AREAS.map((a) => agent(a.prompt, { label: a.key, phase: "Analyze" })),
+)
+return { areas: out.filter((r) => r.ok), failed: AREAS.filter((_, i) => !out[i].ok).map((a) => a.key) }
+```
+
+Three rules that go with it:
+
+- **`phase()` goes once, before the group.** Inside the map it would make one
+  phase per agent, and the panel would show ten columns of one row.
+- **A blank `phase` means "the current phase".** A script never has to repeat
+  itself, and `phase: ""` is not a phase called nothing.
+- **A slow agent keeps the phase it started in.** The name is resolved when the
+  agent starts, so a script that moves on while agents are still running cannot
+  file a row under the wrong column.
 
 ## The limits, and why they are there
 

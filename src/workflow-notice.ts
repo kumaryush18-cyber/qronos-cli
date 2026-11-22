@@ -46,15 +46,19 @@ question off with \`QRONOS_WORKFLOW_APPROVE=0\`.
 
 Inside the script you have exactly five helpers:
 
-- \`agent(prompt, { label?, schema?, model? })\` — one subagent. Resolves to
-  \`{ ok, text, data, error, usage }\`. It never throws: check \`ok\` and skip the
-  gap. Pass \`schema\` (JSON Schema) when you need data instead of prose; \`data\`
-  is then validated for you. Pass \`model\` to route one stage to a cheaper model
-  while the hard judgement stays on the strong one.
+- \`agent(prompt, { label?, schema?, model?, phase? })\` — one subagent. Resolves
+  to \`{ ok, text, data, error, usage }\`. It never throws and never returns null:
+  a failed agent is \`{ ok: false, error }\`, so check \`r.ok\` rather than
+  \`if (r)\`. Pass \`schema\` (JSON Schema) when you need data instead of prose;
+  \`data\` is then validated for you. Pass \`model\` to route one stage to a cheaper
+  model while the hard judgement stays on the strong one. Pass \`phase\` to name
+  the agent's phase when you start agents in a map.
 - \`parallel([...])\` — promises or functions, all started at once, order kept.
 - \`pipeline(list, item => ...)\` — one task per item, concurrency-limited.
 - \`phase("Understand")\` — a named step. Agents are counted and priced per
-  phase, so name the phases you care about.
+  phase, so name the phases you care about. Call it once before a group of
+  agents; calling it inside the loop would make one phase per agent and fill the
+  panel with one-agent columns.
 - \`log("...")\` — a note for the human.
 - \`workflow("...script...")\` — a nested workflow, one level deep. It shares
   this run's agent budget, so nesting cannot double the cost.
@@ -77,6 +81,26 @@ Rules of the runtime (do not fight them):
 Phases worth naming: Understand, Review, Migrate, Research, Design. Use
 \`parallel\` when items are independent; use a plain \`for\` loop with \`await\` when
 each step needs the previous answer.
+
+The shape that works for a fan-out over areas of a codebase:
+
+    const AREAS = [
+      { key: "routes", prompt: \`Area: HTTP routes - src/routes.
+    Read each file, group by PURPOSE, say which ones look dead.\` },
+      { key: "db", prompt: \`Area: database - src/db.
+    Read the schema, group by PURPOSE, name the tables nothing uses.\` },
+    ];
+    phase("Analyze");
+    const out = await parallel(
+      AREAS.map((a) => agent(a.prompt, { label: a.key, phase: "Analyze", schema: REPORT })),
+    );
+    return {
+      areas: out.filter((r) => r.ok),
+      failed: AREAS.filter((_, i) => !out[i].ok).map((a) => a.key),
+    };
+
+Long prompts are fine and expected: say what folder to read, what to group by,
+and what to report. Keep the answer small.
 
 Report back in 3-6 lines: what ran, how many agents, what was found, and what
 you did not cover. The point of the workflow is a small answer over large work.`;

@@ -235,6 +235,25 @@ export class WorkflowRuntime {
     }
   }
 
+  /**
+   * The phase one agent belongs to.
+   *
+   * Resolved once, when the agent starts. Reading `currentPhase` again at the
+   * end would file a slow agent under whatever phase the script moved on to,
+   * so a script that switches phases while agents run would put rows in the
+   * wrong column of the panel.
+   */
+  private resolveAgentPhase(requested: unknown): string | undefined {
+    if (typeof requested !== "string") return this.currentPhase;
+    const name = requested.trim().slice(0, 120);
+    if (name === "") return this.currentPhase;
+    // A phase named only by an agent still exists: the report lists it, and the
+    // panel draws its column. No event is sent, because nothing about the
+    // script changed; the agent's own start event carries the name.
+    if (!this.phases.includes(name)) this.phases.push(name);
+    return name;
+  }
+
   phase(name: unknown): void {
     const label = typeof name === "string" ? name.trim().slice(0, 120) : String(name).slice(0, 120);
     if (label === "") return;
@@ -272,7 +291,7 @@ export class WorkflowRuntime {
 
   async agent(
     prompt: unknown,
-    options: { label?: string; schema?: unknown; agent?: string; model?: string } = {},
+    options: { label?: string; schema?: unknown; agent?: string; model?: string; phase?: string } = {},
   ): Promise<WorkflowAgentResult> {
     const text = typeof prompt === "string" ? prompt : String(prompt);
     if (text.trim() === "") return { ok: false, text: "", error: "empty prompt" };
@@ -289,6 +308,7 @@ export class WorkflowRuntime {
       schema: options.schema,
       agentType: options.agent,
       model: typeof options.model === "string" && options.model.trim() !== "" ? options.model.trim() : undefined,
+      phase: this.resolveAgentPhase(options.phase),
       // Every tool the runner finishes lands here: the count keeps rising, only
       // the kept rows are capped, so the panel can honestly say "3 of 41".
       onActivity: ({ tool, turns }) => this.noteActivity(id, tool, turns),
@@ -309,7 +329,7 @@ export class WorkflowRuntime {
         at: this.now(),
         id,
         label,
-        phase: this.currentPhase,
+        phase: request.phase,
         depth: this.depth,
         model: request.model,
         prompt: this.promptFor(text),
@@ -324,6 +344,7 @@ export class WorkflowRuntime {
         replayed: true,
         model: request.model,
         prompt: this.promptFor(text),
+        phase: request.phase,
       });
       return replayed;
     }
@@ -341,7 +362,7 @@ export class WorkflowRuntime {
       at: this.now(),
       id,
       label,
-      phase: this.currentPhase,
+      phase: request.phase,
       depth: this.depth,
       model: request.model,
       prompt: this.promptFor(text),
@@ -371,6 +392,7 @@ export class WorkflowRuntime {
         replayed: false,
         model: request.model,
         prompt: this.promptFor(text),
+        phase: request.phase,
       });
       return checked;
     } finally {
@@ -421,15 +443,17 @@ export class WorkflowRuntime {
     model?: string;
     /** The task text, already redacted and capped. */
     prompt?: string;
+    /** The phase as it was when this agent started, not as it is now. */
+    phase?: string;
   }): void {
-    const { id, label, checked, durationMs, replayed, index, fingerprint, model, prompt } = entry;
+    const { id, label, checked, durationMs, replayed, index, fingerprint, model, prompt, phase } = entry;
     const live = this.shared.activity.get(id);
     const record: WorkflowAgentRecord = {
       id,
       label,
       ok: checked.ok,
       error: checked.error,
-      phase: this.currentPhase,
+      phase,
       durationMs,
       usage: checked.usage,
       depth: this.depth,
@@ -454,7 +478,7 @@ export class WorkflowRuntime {
       label,
       ok: checked.ok,
       error: checked.error,
-      phase: this.currentPhase,
+      phase,
       durationMs,
       usage: checked.usage,
       depth: this.depth,

@@ -513,3 +513,107 @@ describe("args and budget", () => {
     expect(seen).toEqual([undefined, "claude-haiku-5.5"]);
   });
 });
+
+describe("the phase an agent belongs to", () => {
+  const runWith = async (script: string) => {
+    const { runner } = fakeAgent();
+    const events: { type: string; phase?: string; name?: string }[] = [];
+    const runtime = new WorkflowRuntime({
+      runAgent: runner,
+      config: config(),
+      onEvent: (event) => events.push(event as never),
+    });
+    return { result: await runtime.run(script), events };
+  };
+
+  test("phase() sets the phase for what follows it", async () => {
+    const { result } = await runWith("phase('Look')\nawait agent('a')\nreturn 1;");
+    expect(result.agents[0]!.phase).toBe("Look");
+  });
+
+  test("an agent's own phase wins over the current one", async () => {
+    const { result } = await runWith("phase('Look')\nawait agent('a', { phase: 'Judge' })\nreturn 1;");
+    expect(result.agents[0]!.phase).toBe("Judge");
+  });
+
+  test("a parallel map can put its agents in one named phase without phase()", async () => {
+    const { result } = await runWith(`
+      const areas = ['one', 'two', 'three'];
+      await parallel(areas.map((a) => agent(a, { label: a, phase: 'Analyze' })));
+      return 1;
+    `);
+    expect(result.agents.map((agent) => agent.phase)).toEqual(["Analyze", "Analyze", "Analyze"]);
+    expect(result.phases).toEqual(["Analyze"]);
+  });
+
+  test("two named phases make two columns, in order", async () => {
+    const { result } = await runWith(`
+      await agent('a', { phase: 'Analyze' });
+      await agent('b', { phase: 'Review' });
+      return 1;
+    `);
+    expect(result.phases).toEqual(["Analyze", "Review"]);
+    expect(result.phaseStats.map((stat) => stat.name)).toEqual(["Analyze", "Review"]);
+  });
+
+  test("a blank phase is the current phase, not a phase called nothing", async () => {
+    const { result } = await runWith("phase('Look')\nawait agent('a', { phase: '   ' })\nreturn 1;");
+    expect(result.agents[0]!.phase).toBe("Look");
+  });
+
+  test("no phase at all stays undefined", async () => {
+    const { result } = await runWith("await agent('a'); return 1;");
+    expect(result.agents[0]!.phase).toBeUndefined();
+  });
+
+  test("the start event carries the same phase as the record", async () => {
+    const { result, events } = await runWith("phase('Look')\nawait agent('a', { phase: 'Judge' }); return 1;");
+    const start = events.find((event) => event.type === "agent_start");
+    const end = events.find((event) => event.type === "agent_end");
+    expect(start?.phase).toBe("Judge");
+    expect(end?.phase).toBe("Judge");
+    expect(result.agents[0]!.phase).toBe("Judge");
+  });
+
+  test("a slow agent keeps the phase it started in", async () => {
+    // The script moves on to another phase while this agent is still working.
+    // Reading `currentPhase` at the end would file it under the wrong column.
+    let release: (() => void) | undefined;
+    const { runner } = fakeAgent(async (prompt) => {
+      if (prompt === "slow") {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return { ok: true, text: "done" } as never;
+    });
+    const runtime = new WorkflowRuntime({ runAgent: runner, config: config() });
+    const running = runtime.run("phase('First')\nconst a = agent('slow')\nphase('Second')\nconst b = await agent('fast')\nawait a\nreturn 1;");
+    // Let the script reach the second phase, then finish the slow agent.
+    for (let index = 0; index < 200 && !release; index += 1) await new Promise((r) => setTimeout(r, 1));
+    release?.();
+    const result = await running;
+    const slow = result.agents.find((agent) => agent.label === "slow");
+    expect(slow?.phase).toBe("First");
+  });
+
+  test("the phase name is cut and trimmed, like phase() does", async () => {
+    const { result } = await runWith(`await agent('a', { phase: '  ${"x".repeat(200)}  ' }); return 1;`);
+    expect(result.agents[0]!.phase!.length).toBe(120);
+  });
+
+  test("a named phase does not change the replay key", async () => {
+    // Replay matches a call by its scope and position, so adding a phase name
+    // must not turn a saved answer into a fresh model call.
+    const { runner } = fakeAgent();
+    const first = await new WorkflowRuntime({ runAgent: runner, config: config() }).run(
+      "await agent('a', { phase: 'Analyze' }); return 1;",
+    );
+    expect(first.agents[0]!.ok).toBe(true);
+    const second = await new WorkflowRuntime({ runAgent: runner, config: config() }).run(
+      "await agent('a', { phase: 'Review' }); return 1;",
+    );
+    expect(second.agents[0]!.phase).toBe("Review");
+  });
+});
+

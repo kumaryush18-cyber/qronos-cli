@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.16",
+    highlights: [
+      "A script can now name the phase of one agent: agent(prompt, { label, phase: 'Analyze', schema }). phase() still names everything after it, which is right for a straight script; a parallel map needs a name per item, and this is it.",
+      "The phase is resolved when the agent starts, not when it ends. Before this, an agent that was still working while the script moved on to the next phase was filed under the new one, so the panel could show a row in the wrong column.",
+      "A phase named only by an agent still exists: the report lists it and the panel draws its column. A blank or whitespace name means the current phase, never a phase called nothing.",
+      "The script notice now shows the shape a real fan-out uses: an array of areas, phase() once before the group, then parallel(AREAS.map((a) => agent(a.prompt, { label: a.key, phase }))). It also says plainly that a failed agent is { ok: false } and never null, so check r.ok.",
+      "Proved on claude-haiku-5.5 with a real two-agent map: both agents landed in the named phase and the run listed it (38 checks).",
+    ],
+  },
+  {
     version: "1.0.15",
     highlights: [
       "Groundwork for a real agent detail view: a workflow now remembers the task each agent was given and every tool call it made, so the panel can say 6 tool calls · last 3: Bash, read, grep while the agent is still working.",
