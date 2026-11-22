@@ -24,6 +24,14 @@ export interface WorkflowAgentRequest {
    * (mechanical extraction) while the hard judgement stays on the strong one.
    */
   model?: string;
+  /**
+   * Called once for every tool the agent finishes, so the panel can show
+   * "6 tool calls · last 3: Bash, read, grep" while the agent is still working.
+   *
+   * Optional, because a fake runner in a test has no tools. It must never throw
+   * into the agent: a display hook cannot be allowed to break a run.
+   */
+  onActivity?: (activity: { tool: string; turns: number }) => void;
 }
 
 /** What one `agent()` call gives back. It never throws: a script keeps going. */
@@ -67,6 +75,20 @@ export const DEFAULT_MAX_LOG_LINES = 500;
 export const DEFAULT_MAX_RESULT_CHARS = 200_000;
 /** One nested level, as in Claude Code: a child workflow, never a grandchild. */
 export const DEFAULT_MAX_DEPTH = 2;
+/**
+ * Tool calls kept per agent, for the panel's Activity block.
+ *
+ * Eight is what a person reads. The count of calls keeps rising past it; only
+ * the rows are dropped, so "last 3 of 41 tool calls" is still true.
+ */
+export const MAX_ACTIVITY_ROWS = 8;
+/**
+ * How much of an agent's prompt is kept.
+ *
+ * The panel shows the first lines and says how many there are, so a long prompt
+ * is not lost: it is cut at a size that a thousand agents can hold in memory.
+ */
+export const AGENT_PROMPT_LIMIT = 1_200;
 
 export function workflowConfigFromEnv(env: NodeJS.ProcessEnv = process.env): WorkflowConfig {
   const int = (name: string, fallback: number, min: number, max: number) => {
@@ -89,7 +111,33 @@ export type WorkflowEvent =
   | { type: "run_start"; at: number; scriptChars: number; depth: number }
   | { type: "phase"; at: number; name: string; depth: number }
   | { type: "log"; at: number; message: string; depth: number }
-  | { type: "agent_start"; at: number; id: string; label: string; phase?: string; depth: number; model?: string }
+  | {
+      type: "agent_start";
+      at: number;
+      id: string;
+      label: string;
+      phase?: string;
+      depth: number;
+      model?: string;
+      /** The task text, so a live agent's detail view has something to show. */
+      prompt?: string;
+    }
+  | {
+      type: "agent_activity";
+      at: number;
+      id: string;
+      /** Tool that just finished. */
+      tool: string;
+      turns: number;
+      /**
+       * Every tool call this agent has made so far.
+       *
+       * It is carried, not counted by the listener: events stop at forty, and a
+       * listener that adds one per event would say "40 of 200" forever.
+       */
+      count: number;
+      depth: number;
+    }
   | { type: "paused"; at: number; depth: number }
   | { type: "resumed"; at: number; depth: number }
   | {
@@ -111,6 +159,12 @@ export type WorkflowEvent =
       scope?: string;
       index?: number;
       fingerprint?: string;
+      /** The task, the last few tool calls, and how many there were. */
+      prompt?: string;
+      /** The model this agent asked. */
+      model?: string;
+      activity?: WorkflowAgentActivity[];
+      toolCalls?: number;
     }
   | {
       type: "run_end";
@@ -122,6 +176,16 @@ export type WorkflowEvent =
       error?: string;
       depth: number;
     };
+
+/** One tool call an agent made, kept only to show what it is doing. */
+export interface WorkflowAgentActivity {
+  /** Tool name as the runner reports it: `Bash`, `read`, `grep`. */
+  tool: string;
+  /** Which model turn the call belonged to. */
+  turns: number;
+  /** When the run's clock said it finished. */
+  at: number;
+}
 
 /** One finished agent, kept for the report and `/workflows`. */
 export interface WorkflowAgentRecord {
@@ -139,6 +203,12 @@ export interface WorkflowAgentRecord {
   replayed?: boolean;
   /** The model this agent asked, when it was routed to one. */
   model?: string;
+  /** The task it was given, redacted and capped. Never the whole world. */
+  prompt?: string;
+  /** The last few tool calls, newest last. */
+  activity?: WorkflowAgentActivity[];
+  /** Every tool call it made, including the ones past the kept rows. */
+  toolCalls?: number;
 }
 
 /** Per-phase totals, so the panel can say who did how much. */

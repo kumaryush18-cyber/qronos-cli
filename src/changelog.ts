@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.15",
+    highlights: [
+      "Groundwork for a real agent detail view: a workflow now remembers the task each agent was given and every tool call it made, so the panel can say 6 tool calls · last 3: Bash, read, grep while the agent is still working.",
+      "The count of tool calls always rises; only the kept rows stop at eight. The last tool calls are the ones a person reads, and the number still says 3 of 41 honestly.",
+      "The task text is redacted and capped at 1 200 characters before it is kept, so a prompt that carried a key cannot be shown back later.",
+      "Agents that are still working now live in a map of their own instead of being guessed from the last sixty events. Sixteen agents making forty tool calls each used to push every start out of that window, and the panel went blank while the run was busiest.",
+      "Activity is display-only, so it is not written to the journal: a journal that grows with every tool call is slow to read and expensive to keep. A resumed run still shows the task, and the tool count arrives with the agent's record.",
+      "Proved on claude-haiku-5.5 with a real agent and real tools: the task was kept, one tool call was counted, and the kept activity named the tool that ran (35 checks).",
+    ],
+  },
+  {
     version: "1.0.14",
     highlights: [
       "The workflow panel is now two columns, like Claude Code's: the phases on the left, the agents of the phase you are pointing at on the right. One long mixed list made you scroll to connect a phase with its work; a column each puts the connection on the same line.",

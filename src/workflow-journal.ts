@@ -39,7 +39,16 @@ export type JournalEntry =
       resumedFrom?: string;
     }
   | { kind: "phase"; at: number; name: string }
-  | { kind: "agent_start"; at: number; id: string; label: string; phase?: string }
+  | {
+      kind: "agent_start";
+      at: number;
+      id: string;
+      label: string;
+      phase?: string;
+      /** Redacted, capped task text: what the agent was actually asked. */
+      prompt?: string;
+      model?: string;
+    }
   | {
       kind: "agent_end";
       at: number;
@@ -60,6 +69,8 @@ export type JournalEntry =
       fingerprint?: string;
       /** True when this answer came from the journal rather than a model call. */
       replayed?: boolean;
+      /** Copied from the start line, so one record holds the task as well. */
+      prompt?: string;
     }
   | { kind: "log"; at: number; message: string }
   | {

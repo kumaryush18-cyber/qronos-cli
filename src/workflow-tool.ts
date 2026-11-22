@@ -354,6 +354,16 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             ctx,
             outputSchema: request.schema,
             model: request.model,
+            // The panel's Activity block. A display hook: if it ever throws, the
+            // agent keeps working and only the row is lost.
+            onEvent: (event) => {
+              if (!event.tool) return;
+              try {
+                request.onActivity?.({ tool: event.tool, turns: event.turns });
+              } catch {
+                // display only
+              }
+            },
           });
           // Tokens come from the subagent runner; without them the report could
           // not say who did how much work.

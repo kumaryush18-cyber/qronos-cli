@@ -8,6 +8,7 @@
 // `runAgent` function. That keeps the whole thing testable with a fake agent
 // (no tokens, no wait) and lets the tool wire the real subagent later.
 import {
+  AGENT_PROMPT_LIMIT,
   DEFAULT_MAX_LOG_LINES,
   DEFAULT_MAX_RESULT_CHARS,
   DEFAULT_WALL_CLOCK_MS,
@@ -15,7 +16,9 @@ import {
   WorkflowTimeoutError,
   addUsage,
   emptyUsage,
+  MAX_ACTIVITY_ROWS,
   workflowConfigFromEnv,
+  type WorkflowAgentActivity,
   type WorkflowAgentRecord,
   type WorkflowAgentRequest,
   type WorkflowAgentResult,
@@ -27,6 +30,7 @@ import {
   type WorkflowUsage,
 } from "./workflow-types";
 import { extractJson, validateJsonSchema } from "./agent-schema";
+import { cleanText } from "./secret-redact";
 import { parseWorkflowMeta, runWorkflowScript, type WorkflowMeta } from "./workflow-sandbox";
 import { createSlotPool, type SlotPool } from "./workflow-slots";
 import { createResumableWallClock } from "./workflow-clock";
@@ -76,6 +80,19 @@ export interface SharedState {
   paused: boolean;
   /** Calls waiting for a resume, woken together. */
   pauseWaiters: Array<() => void>;
+  /**
+   * What each agent is doing right now, by agent id.
+   *
+   * Shared with nested runs because an id already carries its scope, so there is
+   * no collision; and because a child agent's tools are just as interesting.
+   */
+  activity: Map<string, LiveActivity>;
+}
+
+/** The tool calls of one agent that has not finished yet. */
+export interface LiveActivity {
+  rows: WorkflowAgentActivity[];
+  calls: number;
 }
 
 /** Depth-limited JSON clone, so a script cannot hand back an object graph. */
@@ -169,6 +186,7 @@ export class WorkflowRuntime {
         replayedUsage: emptyUsage(),
         paused: false,
         pauseWaiters: [],
+        activity: new Map(),
       };
     this.wallClock = createResumableWallClock(this.config.wallClockMs, { now: () => this.now() });
   }
@@ -271,6 +289,9 @@ export class WorkflowRuntime {
       schema: options.schema,
       agentType: options.agent,
       model: typeof options.model === "string" && options.model.trim() !== "" ? options.model.trim() : undefined,
+      // Every tool the runner finishes lands here: the count keeps rising, only
+      // the kept rows are capped, so the panel can honestly say "3 of 41".
+      onActivity: ({ tool, turns }) => this.noteActivity(id, tool, turns),
     };
     const fingerprint = fingerprintOf({ prompt: text, agent: request.agentType, model: request.model });
 
@@ -291,8 +312,19 @@ export class WorkflowRuntime {
         phase: this.currentPhase,
         depth: this.depth,
         model: request.model,
+        prompt: this.promptFor(text),
       });
-      this.record({ id, label, index, fingerprint, checked: replayed, durationMs: 0, replayed: true, model: request.model });
+      this.record({
+        id,
+        label,
+        index,
+        fingerprint,
+        checked: replayed,
+        durationMs: 0,
+        replayed: true,
+        model: request.model,
+        prompt: this.promptFor(text),
+      });
       return replayed;
     }
 
@@ -312,6 +344,7 @@ export class WorkflowRuntime {
       phase: this.currentPhase,
       depth: this.depth,
       model: request.model,
+      prompt: this.promptFor(text),
     });
 
     await this.shared.semaphore.acquire();
@@ -337,11 +370,43 @@ export class WorkflowRuntime {
         durationMs: this.now() - startedAt,
         replayed: false,
         model: request.model,
+        prompt: this.promptFor(text),
       });
       return checked;
     } finally {
       this.shared.semaphore.release();
     }
+  }
+
+  /** The prompt as the panel may keep it: redacted first, then cut. */
+  private promptFor(text: string): string {
+    return cleanText(text, AGENT_PROMPT_LIMIT);
+  }
+
+  /**
+   * One tool call finished.
+   *
+   * The count always rises; only the kept rows stop at eight. Every call is
+   * reported, because a panel that says "40 of 200" for the rest of a run is
+   * worse than one that keeps up: the event is a map update, not a disk write.
+   */
+  private noteActivity(id: string, tool: string, turns: number): void {
+    const name = cleanText(String(tool ?? ""), 40).trim();
+    if (name === "") return;
+    const live = this.shared.activity.get(id) ?? { rows: [], calls: 0 };
+    live.calls += 1;
+    live.rows.push({ tool: name, turns: Number.isFinite(turns) ? turns : 0, at: this.now() });
+    if (live.rows.length > MAX_ACTIVITY_ROWS) live.rows.splice(0, live.rows.length - MAX_ACTIVITY_ROWS);
+    this.shared.activity.set(id, live);
+    this.emit({
+      type: "agent_activity",
+      at: this.now(),
+      id,
+      tool: name,
+      turns,
+      count: live.calls,
+      depth: this.depth,
+    });
   }
 
   /** Book one finished agent: the record, the totals, the phase and the event. */
@@ -354,8 +419,11 @@ export class WorkflowRuntime {
     durationMs: number;
     replayed: boolean;
     model?: string;
+    /** The task text, already redacted and capped. */
+    prompt?: string;
   }): void {
-    const { id, label, checked, durationMs, replayed, index, fingerprint, model } = entry;
+    const { id, label, checked, durationMs, replayed, index, fingerprint, model, prompt } = entry;
+    const live = this.shared.activity.get(id);
     const record: WorkflowAgentRecord = {
       id,
       label,
@@ -367,7 +435,13 @@ export class WorkflowRuntime {
       depth: this.depth,
       replayed,
       model,
+      prompt,
+      activity: live && live.rows.length > 0 ? live.rows.slice() : undefined,
+      toolCalls: live && live.calls > 0 ? live.calls : undefined,
     };
+    // A finished agent is no longer live. Keeping its row would make the panel
+    // show it twice: once from the record and once from the live map.
+    this.shared.activity.delete(id);
     this.shared.agents.push(record);
     if (replayed) this.shared.replayed += 1;
     else this.shared.usage = addUsage(this.shared.usage, checked.usage);
@@ -389,6 +463,10 @@ export class WorkflowRuntime {
       scope: this.scope,
       index,
       fingerprint,
+      prompt,
+      activity: record.activity,
+      toolCalls: record.toolCalls,
+      model,
     });
   }
 

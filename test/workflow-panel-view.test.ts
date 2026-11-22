@@ -35,10 +35,35 @@ const job = (overrides: Partial<WorkflowJob> = {}): WorkflowJob => ({
     { id: "#0", label: "coding-agent", ok: true, durationMs: 29_000, usage: { input: 1, output: 1, total: 4_300 }, depth: 1, phase: "Analyze", model: "deepseek/deepseek-v4-flash" },
     { id: "#1", label: "ai-and-tui", ok: false, error: "no answer", durationMs: 4_000, depth: 1, phase: "Analyze", model: "deepseek/deepseek-v4-flash" },
   ],
-  recent: [
-    { type: "agent_start", at: 60_000, id: "#2", label: "ts-support", depth: 1, phase: "Analyze" },
-    { type: "agent_start", at: 60_000, id: "#3", label: "rust-shell", depth: 1, phase: "Analyze" },
-  ] as WorkflowEvent[],
+  // Live agents live in the map, not in the event window: sixteen agents making
+  // forty tool calls each would push every `agent_start` out of a sixty-line
+  // window, and the panel would go blank while the run is busiest.
+  live: new Map([
+    [
+      "#2",
+      {
+        id: "#2",
+        label: "ts-support",
+        phase: "Analyze",
+        prompt: "List the TypeScript helper packages.",
+        startedAt: 60_000,
+        activity: [{ tool: "Bash", turns: 1, at: 60_500 }],
+        toolCalls: 1,
+      },
+    ],
+    [
+      "#3",
+      {
+        id: "#3",
+        label: "rust-shell",
+        phase: "Analyze",
+        startedAt: 60_000,
+        activity: [],
+        toolCalls: 0,
+      },
+    ],
+  ]),
+  recent: [] as WorkflowEvent[],
   settled: Promise.resolve() as unknown as Promise<WorkflowJob>,
   ...overrides,
 });
@@ -97,6 +122,43 @@ describe("toPanelJob", () => {
     expect(built.agents.filter((agent) => agent.queued)).toHaveLength(0);
   });
 
+  test("a live agent carries its prompt and its tool calls", () => {
+    const built = view();
+    const live = built.agents.find((agent) => agent.label === "ts-support");
+    expect(live?.prompt).toContain("TypeScript helper packages");
+    expect(live?.toolCalls).toBe(1);
+    expect(live?.activity?.[0]?.tool).toBe("Bash");
+  });
+
+  test("a finished agent keeps its prompt, activity and count", () => {
+    const built = toPanelJob(
+      job({
+        agents: [
+          {
+            id: "#9",
+            label: "done-one",
+            ok: true,
+            durationMs: 5_000,
+            depth: 1,
+            phase: "Analyze",
+            prompt: "Read the routes.",
+            activity: [
+              { tool: "grep", turns: 1, at: 1 },
+              { tool: "read", turns: 2, at: 2 },
+            ],
+            toolCalls: 2,
+          },
+        ],
+        live: new Map(),
+      }),
+      61_000,
+    );
+    const record = built.agents.find((agent) => agent.label === "done-one");
+    expect(record?.prompt).toBe("Read the routes.");
+    expect(record?.toolCalls).toBe(2);
+    expect(record?.activity?.map((row) => row.tool)).toEqual(["grep", "read"]);
+  });
+
   test("the model travels with the agent", () => {
     expect(view().agents[0]!.model).toContain("deepseek");
   });
@@ -109,7 +171,8 @@ describe("toPanelJob", () => {
         phaseStats: [],
         running: 0,
         agents: [{ id: "#0", label: "solo", ok: true, durationMs: 1, depth: 1 }],
-        recent: [],
+        live: new Map(),
+  recent: [],
       }),
       61_000,
     );
@@ -255,7 +318,8 @@ const finishedJob = () =>
       running: 0,
       planned: [],
       phases: ["Analyze"],
-      recent: [],
+      live: new Map(),
+  recent: [],
     }),
     61_000,
   );

@@ -24,9 +24,11 @@ import { WorkflowReplay, replayRecordsFromJournal } from "./workflow-replay";
 import { parseWorkflowMeta } from "./workflow-sandbox";
 import { sharedSlotPool } from "./workflow-slots";
 import {
+  MAX_ACTIVITY_ROWS,
   addUsage,
   emptyUsage,
   workflowConfigFromEnv,
+  type WorkflowAgentActivity,
   type WorkflowAgentRecord,
   type WorkflowAgentRunner,
   type WorkflowConfig,
@@ -35,6 +37,25 @@ import {
   type WorkflowRunResult,
   type WorkflowUsage,
 } from "./workflow-types";
+
+/**
+ * An agent that is still working, as the panel sees it.
+ *
+ * It lives in a map, not in the event window: sixteen agents making forty tool
+ * calls each would push every `agent_start` out of a sixty-line window, and the
+ * panel would go blank exactly while the run is busiest.
+ */
+export interface WorkflowLiveAgent {
+  id: string;
+  label: string;
+  phase?: string;
+  /** Redacted, capped task text. */
+  prompt?: string;
+  model?: string;
+  startedAt: number;
+  activity: WorkflowAgentActivity[];
+  toolCalls: number;
+}
 
 export type WorkflowJobState = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
 
@@ -61,6 +82,8 @@ export interface WorkflowJob {
   agents: WorkflowAgentRecord[];
   /** The last few events, for a panel that cannot keep its own history. */
   recent: WorkflowEvent[];
+  /** Agents still working, by id. Emptied as each one finishes. */
+  live: Map<string, WorkflowLiveAgent>;
   journalPath?: string;
   /** Set when this job replays the journal of an earlier run. */
   resumedFrom?: string;
@@ -168,6 +191,7 @@ export class WorkflowJobManager {
       phaseStats: [],
       agents: [],
       recent: [],
+      live: new Map(),
       settled: Promise.resolve() as unknown as Promise<WorkflowJob>,
     };
     job.settled = new Promise<WorkflowJob>((resolve) => {
@@ -385,10 +409,43 @@ export class WorkflowJobManager {
         break;
       case "agent_start":
         job.running += 1;
-        journal?.append({ kind: "agent_start", at: event.at, id: event.id, label: event.label, phase: event.phase });
+        job.live.set(event.id, {
+          id: event.id,
+          label: event.label,
+          phase: event.phase,
+          prompt: event.prompt,
+          model: event.model,
+          startedAt: event.at,
+          activity: [],
+          toolCalls: 0,
+        });
+        journal?.append({
+          kind: "agent_start",
+          at: event.at,
+          id: event.id,
+          label: event.label,
+          phase: event.phase,
+          prompt: event.prompt,
+          model: event.model,
+        });
         break;
+      case "agent_activity": {
+        const live = job.live.get(event.id);
+        if (!live) break;
+        live.toolCalls = Math.max(live.toolCalls + 1, event.count);
+        live.activity.push({ tool: event.tool, turns: event.turns, at: event.at });
+        if (live.activity.length > MAX_ACTIVITY_ROWS) {
+          live.activity.splice(0, live.activity.length - MAX_ACTIVITY_ROWS);
+        }
+        // Activity is display-only: it changes nothing a replay would need, so it
+        // stays out of the journal. A journal that grows with every tool call is a
+        // journal that is slow to read and expensive to keep.
+        break;
+      }
       case "agent_end": {
         job.running = Math.max(0, job.running - 1);
+        const live = job.live.get(event.id);
+        job.live.delete(event.id);
         job.done += 1;
         if (!event.ok) job.failed += 1;
         // A replayed answer costs nothing now. It is counted apart, so the token
@@ -409,6 +466,10 @@ export class WorkflowJobManager {
           usage: event.usage,
           depth: event.depth,
           replayed: event.replayed,
+          prompt: event.prompt ?? live?.prompt,
+          activity: event.activity ?? live?.activity,
+          toolCalls: event.toolCalls ?? live?.toolCalls,
+          model: event.model ?? live?.model,
         };
         job.agents.push(record);
         const agentStats = job.phaseStats.find((stat) => stat.name === event.phase);
@@ -429,6 +490,7 @@ export class WorkflowJobManager {
           index: event.index,
           fingerprint: event.fingerprint,
           replayed: event.replayed,
+          prompt: record.prompt,
         });
         break;
       }

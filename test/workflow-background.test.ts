@@ -181,6 +181,7 @@ describe("the job list", () => {
     phaseStats: [],
     agents: [],
     recent: [],
+    live: new Map(),
     settled: Promise.resolve() as never,
   };
 

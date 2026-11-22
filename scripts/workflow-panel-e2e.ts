@@ -15,7 +15,7 @@ import { buildRuntimeOptions, type LaunchOptions } from "../src/pi-launch";
 import { loadJwt } from "../src/credentials";
 import { getCredentialsPath, getQronosAgentDir } from "../src/paths";
 import { PROVIDER_PRESETS } from "../src/provider";
-import { createWorkflowToolExtension } from "../src/workflow-tool";
+import { createWorkflowToolExtension, getLastWorkflowRun } from "../src/workflow-tool";
 import { workflowConfigFromEnv } from "../src/workflow-types";
 import { WorkflowPanel, visibleLength } from "../src/workflow-panel";
 import { approvalRequestFor, buildApprovalLines } from "../src/workflow-approval";
@@ -318,6 +318,26 @@ try {
   panel?.handleInput("\u001b");
   panel?.dispose();
   check("escape closed the panel and lost nothing", overlays.length === 1, `${overlays.length} overlays`);
+
+  /* --- what one agent did, as the panel's detail view will show it --------- */
+  // A real agent, real tools, one cheap call. The panel's Activity block cannot
+  // be proved with a fake runner: the point is that a real tool call arrives.
+  deliveries.length = 0;
+  const toolRun = await run({
+    name: "activity-demo",
+    background: false,
+    script: `const r = await agent("Use the read tool on src/sum.ts and answer with the function name only.", { label: "sum" });
+return r.text;`,
+  });
+  check("a run with tools finished", toolRun.details.ok === true, String(toolRun.details.error ?? ""));
+  const record = getLastWorkflowRun()?.result.agents.at(-1);
+  check("the agent's task text is kept", (record?.prompt ?? "").includes("src/sum.ts"), (record?.prompt ?? "").slice(0, 60));
+  check("the agent's tool calls are counted", (record?.toolCalls ?? 0) >= 1, `${record?.toolCalls ?? 0} calls`);
+  check(
+    "the kept activity names the tool",
+    (record?.activity ?? []).some((row) => row.tool === "read" || row.tool === "ls"),
+    (record?.activity ?? []).map((row) => row.tool).join(","),
+  );
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

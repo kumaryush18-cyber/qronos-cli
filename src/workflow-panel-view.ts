@@ -19,7 +19,7 @@
 //                             │ ↻ rust-shell     · queued
 //
 //   ↑/↓ phase · p pause · x stop · s save · enter view · esc close
-import { formatTokens, type WorkflowUsage } from "./workflow-types";
+import { formatTokens, type WorkflowAgentActivity, type WorkflowUsage } from "./workflow-types";
 import type { WorkflowJob } from "./workflow-jobs";
 import { formatDuration } from "./workflow-glyphs";
 
@@ -63,6 +63,12 @@ export interface PanelAgentView {
   queued?: boolean;
   /** The model this agent used, when it is known. */
   model?: string;
+  /** The task it was given, redacted and capped. */
+  prompt?: string;
+  /** The last few tool calls, newest last. */
+  activity?: WorkflowAgentActivity[];
+  /** Every tool call it made, including the ones past the kept rows. */
+  toolCalls?: number;
 }
 
 export interface PanelPhaseView {
@@ -181,33 +187,37 @@ export function toPanelJob(job: WorkflowJob, now: number = Date.now()): PanelJob
     running: false,
     queued: false,
     model: agent.model,
-    answer: undefined,
+    prompt: agent.prompt,
+    activity: agent.activity,
+    toolCalls: agent.toolCalls,
   })) as PanelAgentView[];
 
-  // `agents` only holds finished ones, so the ones still working are the ones
-  // whose `agent_start` has no `agent_end` after it. They get a row too: a panel
-  // that shows nothing until an agent finishes looks broken exactly when you
-  // most want to look at it.
-  const started = job.recent.filter((event) => event.type === "agent_start");
-  const ended = new Set(job.recent.filter((event) => event.type === "agent_end").map((event) => (event as { id?: string }).id));
-  const working = active ? started.filter((event) => !ended.has((event as { id?: string }).id)) : [];
-  const stillRunning = Math.max(0, Math.min(job.running, working.length));
-  for (const [index, event] of working.slice(-stillRunning).entries()) {
-    const start = event as { at?: number; label?: string; id?: string; phase?: string; depth?: number; model?: string };
+  // `agents` only holds finished ones, so the ones still working come from the
+  // live map the manager keeps. They get a row too: a panel that shows nothing
+  // until an agent finishes looks broken exactly when you most want to look.
+  //
+  // Reading the map instead of the event window matters: sixteen agents making
+  // forty tool calls each would push every `agent_start` out of a sixty-line
+  // window, and the panel would go blank while the run is busiest.
+  const live = job.live ?? new Map();
+  for (const entry of live.values()) {
     agents.push({
-      id: start.id ?? `running-${index}`,
-      label: start.label ?? "working",
+      id: entry.id,
+      label: entry.label,
       ok: false,
       replayed: false,
       tokens: 0,
-      // A real `agent_start` carries a real timestamp; a hand-built one may not.
-      // Clamp to a day, so a bad clock cannot print a silly number.
-      durationMs: Math.min(86_400_000, Math.max(0, now - (start.at ?? now))),
-      phase: start.phase,
-      depth: start.depth ?? 1,
+      // A real `agent_start` carries a real timestamp; clamp to a day, so a bad
+      // clock cannot print a silly number.
+      durationMs: Math.min(86_400_000, Math.max(0, now - entry.startedAt)),
+      phase: entry.phase,
+      depth: 1,
       running: true,
       queued: false,
-      model: start.model,
+      model: entry.model,
+      prompt: entry.prompt,
+      activity: entry.activity,
+      toolCalls: entry.toolCalls,
     });
   }
 

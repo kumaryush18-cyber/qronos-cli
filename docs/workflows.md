@@ -273,6 +273,18 @@ How to read it:
   that flows through the header and the working line. One moving light means one
   thing everywhere in the CLI: this is happening now.
 
+What the panel knows about one agent:
+
+- **The task it was given.** Redacted and capped at 1 200 characters, kept from
+  the moment the agent starts, so a live agent can show what it was asked.
+- **Its tool calls.** The count always rises; the kept rows stop at the last
+  eight, which is what a person actually reads.
+- **Its model**, when the script routed it to one.
+
+Activity is display-only and is never written to the journal: a journal that
+grows with every tool call is slow to read and expensive to keep. A resumed run
+still shows the task, and the tool count arrives with the agent's own record.
+
 Keys:
 
 | Key | What it does |
