@@ -187,6 +187,20 @@ describe("the workflow panel", () => {
     panel.dispose();
   });
 
+  test("the panel says when the task was edited, not just that it ran", async () => {
+    const quick: WorkflowAgentRunner = async (request) => ({ ok: true, text: `answer: ${request.prompt}`, usage: { input: 10, output: 5, total: 15 } });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('only-one'); return 1;" });
+    await until(() => manager.get(job.id)?.done === 1, "the agent to finish");
+    const { panel } = panelFor(manager, { restartAgent: async () => ({ ok: true, edited: true }) });
+    panel.handleInput("\r");
+    panel.handleInput("r");
+    await until(() => plain(panel.render(74).join("\n")).includes("tokens went up"), "the panel to say it ran");
+    // An edited attempt must not look like a plain repeat: the words changed.
+    expect(plain(panel.render(74).join("\n"))).toContain("with the task you edited");
+    panel.dispose();
+  });
+
   test("r on a live run says to stop it first, and asks nothing", async () => {
     const gated = gatedRunner();
     const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config() });

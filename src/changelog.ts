@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.21",
+    highlights: [
+      "The restart card now offers the answer that is usually the right one: edit the task, then run it. Two (or e) opens the words for typing in the card, ctrl+g opens your own $EDITOR on them, enter runs what is there, and esc goes back to the answers without running anything.",
+      "The card shows the task that would be repeated, so you are never agreeing to words you cannot see. A changed task is labelled edited, not the task it had before, and a long one is cut with a count of the hidden lines instead of a silent truncation.",
+      "An edited task becomes the task that was kept, so the Prompt block never shows words that were not really sent. The detail view then reads Prompt · edited and attempt 2 · ran again 1 time, so a second try can never look like the first.",
+      "Each attempt is written down: when it ran, whether it worked, what it cost, and the task when you changed it. Five are kept — enough to see the story, small enough that a record is still a record.",
+      "The safe default is unchanged: the cursor starts on No, closing the card means No, and identical words are not sent as a new task, so an accidental enter costs nothing.",
+      "One editor helper serves both cards now ($EDITOR on a temp file we made, removed whatever happens), so the script card and the task card cannot behave differently when the editor is missing, fails, or changes nothing.",
+      "Proved on claude-haiku-5.5: the card is refused once and nothing is spent, then the task is edited and a second attempt really costs money (scripts/workflow-restart-e2e.ts).",
+    ],
+  },
+  {
     version: "1.0.20",
     highlights: [
       "One agent missed the point and the other eleven were fine. Now you can run that one again: enter opens it, r runs it, and nothing else in the run changes.",

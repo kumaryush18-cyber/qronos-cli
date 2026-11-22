@@ -397,19 +397,29 @@ It costs tokens, so it asks first:
 │   coding-agent                                                 │
 │   claude-haiku-5.5 · 4300 tokens last time                     │
 │                                                                │
+│   Read the parser and find the bug.                            │
+│                                                                │
 │   this calls the model again and spends tokens again           │
 │   the rest of the run is not touched                           │
 │                                                                │
 │   ▸ 1. Yes, run it again                                       │
-│     2. No                                                      │
+│     2. Edit the task, then run it                              │
+│     3. No                                                      │
 │                                                                │
-│   enter choose · y yes · esc no                                │
+│   enter choose · y yes · e edit · esc no                        │
 ╰────────────────────────────────────────────────────────────────╯
 ```
 
 The cursor starts on **No** and closing the card means No, so silence never
 spends anything. `/workflows restart <id> <agent>` is the same thing from a
 command, and the two cannot drift: one function asks, one function runs.
+
+The second answer exists because usually the task was unclear, not the model was
+wrong. `2` (or `e`) opens the task for typing in the card, `ctrl+g` opens your
+`$EDITOR` on it, `enter` runs the words as they stand, and `esc` goes back to the
+answers without running anything. The card marks a changed task with
+`edited, not the task it had before`, so a change is never invisible, and the
+detail view then shows `Prompt · edited` and `attempt 2 · ran again 1 time`.
 
 What a restart does, and what it refuses:
 
@@ -423,7 +433,12 @@ What a restart does, and what it refuses:
 - **A live run is refused**, with a line that says why: two agents must not spend
   on the same job at once. Stop the run, then restart an agent.
 - **The prompt is the one that was kept**, which is redacted and capped. If the
-  session kept none, the restart says so rather than inventing a task.
+  session kept none, the restart says so rather than inventing a task. A task you
+  edit for the restart becomes the kept one, so the Prompt block never shows words
+  that were not really sent.
+- **Each attempt is written down.** The record keeps the last five: when it ran,
+  whether it worked, what it cost, and the task when you changed it. A report can
+  therefore never pass attempt three off as attempt one.
 - **The same agent cannot be started twice at once.** The key is guarded, so a
   double keypress is one call, not two.
 
@@ -716,6 +731,17 @@ use it, so it can only be called when the model asks for it directly.
 | `src/workflow-panel.ts` | The overlay: box, colour, shimmer, keys, and the ticker that stops. |
 | `src/workflow-panel-view.ts` | The panel's text, pure: header, phases, agent rows, agent view. |
 | `src/workflow-approval.ts` | The question before a run: plan preview, cost, three answers, `$EDITOR`. |
+| `src/workflow-waiting.ts` | The `※ Waiting for N dynamic workflows` row, and its stop rule. |
+| `src/workflow-note.ts` | The note after a run: what ended, what it cost, one line. |
+| `src/workflow-table.ts` | The results table: phases, agents, tokens, failures, bars. |
+| `src/workflow-save.ts` | `s` saves the script, never over an existing file. |
+| `src/workflow-permissions.ts` | Which tool, how dangerous, allowed or not: one pure decision. |
+| `src/workflow-card-style.ts` | The card's rows, colours and border, shared by both cards. |
+| `src/workflow-tool-approval.ts` | The card that asks before a tool runs inside a run. |
+| `src/workflow-context-size.ts` | `[1m]` / `[200k]`, and nothing at all when the size is unknown. |
+| `src/workflow-restart.ts` | Run one agent again: the request, the refusals, the one write. |
+| `src/workflow-restart-confirm.ts` | The card that asks before a restart, with the task editable. |
+| `src/editor-edit.ts` | `$EDITOR` on a piece of text, once, with a path we made. |
 
 Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
 `test/workflow-notice.test.ts`, `test/workflow-glyphs.test.ts`,
@@ -723,6 +749,18 @@ Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
 `test/workflow-background.test.ts`, `test/workflow-replay.test.ts`,
 `test/workflow-clock.test.ts`, `test/workflow-pause.test.ts`,
 `test/workflow-resume.test.ts`, `test/workflow-panel-view.test.ts`,
-`test/workflow-panel.test.ts`, `test/workflow-approval.test.ts`. Real-model E2E: `scripts/workflow-e2e.ts` and
-`scripts/workflow-panel-e2e.ts` (`QRONOS_E2E_MODEL=claude-haiku-5.5`). They use a fake agent, so they spend no tokens
-and take no seconds.
+`test/workflow-panel.test.ts`, `test/workflow-approval.test.ts`,
+`test/workflow-permissions.test.ts`, `test/workflow-tool-approval.test.ts`,
+`test/workflow-tool-gate.test.ts`, `test/workflow-tool-gate-card.test.ts`,
+`test/workflow-waiting.test.ts`, `test/workflow-note.test.ts`,
+`test/workflow-table.test.ts`, `test/workflow-save.test.ts`,
+`test/workflow-activity.test.ts`, `test/workflow-context-size.test.ts`,
+`test/workflow-restart.test.ts`, `test/workflow-restart-confirm.test.ts`,
+`test/editor-edit.test.ts`.
+
+Real-model E2E, with `QRONOS_E2E_MODEL=claude-haiku-5.5`:
+
+- `scripts/workflow-e2e.ts` — the runtime, with a fake agent: no tokens, no seconds.
+- `scripts/workflow-panel-e2e.ts` — the two-column panel, the detail view, the keys.
+- `scripts/workflow-tool-approval-e2e.ts` — the card stops a real `bash` call.
+- `scripts/workflow-restart-e2e.ts` — a restart is refused once, then costs money.

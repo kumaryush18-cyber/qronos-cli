@@ -68,6 +68,10 @@ export interface PanelAgentView {
   contextWindow?: number;
   /** True when this agent was run again from the detail view. */
   restarted?: boolean;
+  /** How many times this agent was run again, after the first time. */
+  attempts?: number;
+  /** True when the last restart used words the user edited. */
+  editedPrompt?: boolean;
   /** The task it was given, redacted and capped. */
   prompt?: string;
   /** The last few tool calls, newest last. */
@@ -208,6 +212,8 @@ export function toPanelJob(job: WorkflowJob, now: number = Date.now()): PanelJob
     model: agent.model,
     contextWindow: agent.contextWindow,
     restarted: agent.restarted,
+    attempts: agent.attempts?.length ?? 0,
+    editedPrompt: agent.attempts?.at(-1)?.prompt !== undefined,
     prompt: agent.prompt,
     activity: agent.activity,
     toolCalls: agent.toolCalls,
@@ -578,6 +584,13 @@ function detailLines(state: PanelState, agent: PanelAgentView, job: PanelJobView
   lines.push({ text: truncate(model, width), style: "detail" });
   lines.push({ text: truncate(facts, width), style: "detail" });
   if (agent.depth > 1) lines.push({ text: `nested, level ${agent.depth}`, style: "detail" });
+  if (agent.attempts !== undefined && agent.attempts > 0) {
+    const tries = agent.attempts + 1;
+    lines.push({
+      text: truncate(`attempt ${tries} · ran again ${agent.attempts} time${agent.attempts === 1 ? "" : "s"}`, width),
+      style: "detail",
+    });
+  }
   lines.push({ text: "", style: "empty" });
 
   // --- Prompt ---------------------------------------------------------------
@@ -586,7 +599,9 @@ function detailLines(state: PanelState, agent: PanelAgentView, job: PanelJobView
   lines.push({
     text: blockHead(
       "Prompt",
-      promptLines.length === 0 ? "not kept" : `${promptLines.length} line${promptLines.length === 1 ? "" : "s"}`,
+      promptLines.length === 0
+        ? "not kept"
+        : `${promptLines.length} line${promptLines.length === 1 ? "" : "s"}${agent.editedPrompt ? " · edited" : ""}`,
       cursor === 0,
       open.prompt === true,
       promptLines.length > PREVIEW_LINES,

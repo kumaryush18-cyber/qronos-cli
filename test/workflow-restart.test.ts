@@ -147,3 +147,83 @@ describe("running one agent again", () => {
     expect(JSON.stringify(lines[0])).toContain("restarted");
   });
 });
+
+describe("running an agent again with new words", () => {
+  const runEcho = (async (request: { prompt: string }) => ({
+    ok: true,
+    text: `did: ${request.prompt}`,
+    usage: { input: 50, output: 10, cacheRead: 0, cacheWrite: 0, total: 60 },
+  })) as never;
+
+  test("the edited task is what the model is asked", async () => {
+    let asked = "";
+    const target = job();
+    await restartAgent({
+      job: target,
+      agentId: "#0",
+      prompt: "read the writer instead",
+      runAgent: (async (request: { prompt: string }) => {
+        asked = request.prompt;
+        return { ok: true, text: "" };
+      }) as never,
+    });
+    expect(asked).toBe("read the writer instead");
+  });
+
+  test("the record keeps the words that were really used", async () => {
+    const target = job();
+    const outcome = await restartAgent({ job: target, agentId: "#0", prompt: "  read the writer  ", runAgent: runEcho });
+    expect(outcome.ok).toBe(true);
+    const agent = target.agents[0]!;
+    expect(agent.prompt).toBe("read the writer");
+  });
+
+  test("an empty edit is the same task it had", async () => {
+    let asked = "";
+    const target = job();
+    await restartAgent({
+      job: target,
+      agentId: "#0",
+      prompt: "   ",
+      runAgent: (async (request: { prompt: string }) => {
+        asked = request.prompt;
+        return { ok: true, text: "" };
+      }) as never,
+    });
+    expect(asked).toBe("read package.json");
+  });
+
+  test("the history holds one entry per run again, with what it cost", async () => {
+    const target = job();
+    await restartAgent({ job: target, agentId: "#0", runAgent: runEcho, now: () => 5_000 });
+    await restartAgent({ job: target, agentId: "#0", prompt: "new words", runAgent: runEcho, now: () => 6_000 });
+    const attempts = target.agents[0]!.attempts ?? [];
+    expect(attempts.length).toBe(2);
+    expect(attempts[0]!.tokens).toBe(60);
+    expect(attempts[0]!.prompt).toBeUndefined();
+    expect(attempts[1]!.prompt).toBe("new words");
+    expect(attempts[1]!.at).toBe(6_000);
+  });
+
+  test("the history is capped, so a record never grows for ever", async () => {
+    const target = job();
+    for (let run = 0; run < 8; run += 1) {
+      await restartAgent({ job: target, agentId: "#0", runAgent: runEcho });
+    }
+    expect(target.agents[0]!.attempts!.length).toBe(5);
+  });
+
+  test("the bill rises by the edited attempt, and the replay count does not", async () => {
+    const target = job();
+    await restartAgent({ job: target, agentId: "#0", prompt: "new words", runAgent: runEcho });
+    expect(target.tokens.total).toBe(180);
+    expect(target.replayedTokens.total).toBe(0);
+  });
+
+  test("the other agents keep their history", async () => {
+    const target = job();
+    await restartAgent({ job: target, agentId: "#0", prompt: "new words", runAgent: runEcho });
+    expect(target.agents[1]!.attempts).toBeUndefined();
+    expect(target.agents[1]!.restarted).toBeUndefined();
+  });
+});

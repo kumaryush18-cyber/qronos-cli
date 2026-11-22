@@ -218,6 +218,18 @@ describe("lists and pruning", () => {
     expect(job.tokens.total).toBeGreaterThan(before);
   });
 
+  test("restartAgent can send new words for the second attempt", async () => {
+    const { runner, calls } = fakeRunner();
+    const manager = new WorkflowJobManager({ runAgent: runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('one'); return 1;" });
+    await job.settled;
+    const outcome = await manager.restartAgent(job.id, "#0", "one, but shorter");
+    expect(outcome.ok).toBe(true);
+    expect(calls).toEqual(["one", "one, but shorter"]);
+    expect(job.agents[0]!.prompt).toBe("one, but shorter");
+    expect(job.agents[0]!.attempts?.[0]?.prompt).toBe("one, but shorter");
+  });
+
   test("restartAgent refuses a live run and a missing agent", async () => {
     let release: (() => void) | undefined;
     const runner: WorkflowAgentRunner = async () => {

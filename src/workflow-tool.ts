@@ -159,7 +159,10 @@ function agentLines(result: WorkflowRunResult, maxTokens: number, limit: number)
     const bar = tokenBar(agent.usage?.total ?? 0, maxTokens, 8);
     const time = formatDuration(agent.durationMs).padStart(6);
     const why = agent.error ? `  ${agent.error}` : "";
-    return `  ${mark} ${pad(depth + label, nameWidth + 4)} ${bar} ${tokens} ${time}${why}`;
+    // A restart is new work, so the row says so. An edited task says so too: the
+    // words changed, and a report that hid that would misdescribe the answer.
+    const again = agent.restarted ? (agent.attempts?.at(-1)?.prompt !== undefined ? "  ran again, task edited" : "  ran again") : "";
+    return `  ${mark} ${pad(depth + label, nameWidth + 4)} ${bar} ${tokens} ${time}${why}${again}`;
   });
 }
 
@@ -763,20 +766,22 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
            * The question comes first because a restart spends tokens. Answering
            * "no" is the default, and a host that cannot show the card gets a no.
            */
-          const restartOne = async (jobId: string, agentId: string): Promise<{ ok: boolean; error?: string }> => {
+          const restartOne = async (jobId: string, agentId: string): Promise<{ ok: boolean; error?: string; edited?: boolean }> => {
             const job = manager?.get(jobId);
             if (!job) return { ok: false, error: "no such run" };
             if (!manager) return { ok: false, error: "no workflow manager yet" };
             const agent = job.agents.find((entry) => entry.id === agentId);
             if (!agent) return { ok: false, error: "no such agent in this run" };
-            const approved = await askRestartConfirm(ctx, {
+            const answer = await askRestartConfirm(ctx, {
               label: agent.label,
               model: agent.model,
               tokens: agent.usage?.total,
+              // The task goes on the card, so "edit" starts from what really ran.
+              prompt: agent.prompt,
             });
-            if (!approved) return { ok: false, error: "not restarted: you said no" };
-            const outcome = await manager.restartAgent(jobId, agentId);
-            return outcome.ok ? { ok: true } : { ok: false, error: outcome.error };
+            if (!answer.approved) return { ok: false, error: "not restarted: you said no" };
+            const outcome = await manager.restartAgent(jobId, agentId, answer.prompt);
+            return outcome.ok ? { ok: true, edited: answer.prompt !== undefined } : { ok: false, error: outcome.error };
           };
 
           // Saving a script is one function for the `s` key and the command: two
@@ -852,7 +857,10 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             const outcome = await restartOne(job.id, agent.id);
             ctx.ui.notify(
               outcome.ok
-                ? [`Ran "${agent.label}" again in ${job.id}.`, "Its tokens went up and the run's total was not rewritten."].join("\n")
+                ? [
+                    `Ran "${agent.label}" again in ${job.id}${outcome.edited ? " with the task you edited" : ""}.`,
+                    "Its tokens went up and the run's total was not rewritten.",
+                  ].join("\n")
                 : outcome.error ?? "It did not run.",
               outcome.ok ? "info" : "warning",
             );

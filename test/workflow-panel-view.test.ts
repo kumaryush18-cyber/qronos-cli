@@ -367,6 +367,30 @@ describe("the agent view", () => {
   const shown = (overrides: Partial<PanelState> = {}) =>
     text(buildPanelLines(state({ job: detailed(), mode: "agent", selectedAgent: 0, ...overrides })));
 
+  test("a restarted agent says how many attempts it has had", () => {
+    const view = detailed();
+    const agent = view.agents[0]!;
+    agent.restarted = true;
+    agent.attempts = 2;
+    const shownView = text(buildPanelLines(state({ job: view, mode: "agent", selectedAgent: 0 })));
+    expect(shownView).toContain("attempt 3");
+    expect(shownView).toContain("ran again 2 times");
+  });
+
+  test("an edited task is marked in the prompt block", () => {
+    const view = detailed();
+    const agent = view.agents[0]!;
+    agent.editedPrompt = true;
+    const shownView = text(buildPanelLines(state({ job: view, mode: "agent", selectedAgent: 0 })));
+    expect(shownView).toContain("· edited");
+  });
+
+  test("a plain agent shows no attempt line and no edit mark", () => {
+    const shownAll = shown();
+    expect(shownAll).not.toContain("attempt ");
+    expect(shownAll).not.toContain("· edited");
+  });
+
   test("it keeps a list of agents on the left and the chosen one on the right", () => {
     const lines = buildPanelLines(state({ job: detailed(), mode: "agent", selectedAgent: 0 }));
     expect(lines[0]!.text).toContain("Agents · Analyze");

@@ -32,14 +32,11 @@
 //   2. If there is no terminal to ask in (tests, a script, an E2E run), the run
 //      goes ahead. A guard that blocks headless use would be worse than none.
 //   3. Saying "No" is free and final: nothing is launched, nothing is saved.
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { parseWorkflowMeta, type WorkflowMeta, type WorkflowPhasePreview } from "./workflow-sandbox";
 import { shimmerPhase, shimmerText } from "./shimmer";
+import { editTextInEditor } from "./editor-edit";
 
 export type ApprovalLineStyle =
   | "title"
@@ -429,31 +426,9 @@ function visible(text: string): number {
 
 /** Open `script` in the user's editor and read it back. */
 export function editScriptInEditor(script: string): string | undefined {
-  const editor = process.env.VISUAL || process.env.EDITOR;
-  if (!editor) return undefined;
-  let dir: string | undefined;
-  try {
-    dir = mkdtempSync(join(tmpdir(), "qronos-wf-edit-"));
-    const file = join(dir, "workflow.js");
-    writeFileSync(file, script, "utf8");
-    // The editor is the user's own program, run once, with no shell strings from
-    // the model: the path is a temp file we created.
-    const parts = editor.split(/\s+/).filter(Boolean);
-    const result = spawnSync(parts[0]!, [...parts.slice(1), file], { stdio: "inherit" });
-    if (result.error || result.status !== 0) return undefined;
-    const updated = readFileSync(file, "utf8");
-    return updated.trim() === script.trim() ? undefined : updated;
-  } catch {
-    return undefined;
-  } finally {
-    if (dir) {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // a temp file left behind is not worth an error
-      }
-    }
-  }
+  // The one editor helper, so the script card and the prompt card cannot behave
+  // differently when $EDITOR is missing or fails.
+  return editTextInEditor(script, { fileName: "workflow.js" });
 }
 
 /**

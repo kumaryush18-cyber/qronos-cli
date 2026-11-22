@@ -54,7 +54,7 @@ export interface WorkflowPanelOptions {
    * Returns the outcome as a value, never a throw: the panel shows a line either
    * way, and a panel that dies on a refusal is worse than no key at all.
    */
-  restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
 }
 
 /** A job the panel can show: the newest running one, else the newest of all. */
@@ -75,7 +75,7 @@ export class WorkflowPanel {
   private readonly now: () => number;
   private readonly frameMs: number;
   private readonly saveScript?: (jobId: string) => string | undefined;
-  private readonly restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  private readonly restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
   /** The last thing the panel said, shown in the footer. */
   private notice?: string;
 
@@ -223,7 +223,9 @@ export class WorkflowPanel {
         this.notice = `running ${chosen.label} again…`;
         this.requestRender();
         void this.restartAgent(job.id, chosen.id).then((outcome) => {
-          this.notice = outcome.ok ? `${chosen.label} ran again: tokens went up` : (outcome.error ?? "it did not run");
+          this.notice = outcome.ok
+            ? `${chosen.label} ran again${outcome.edited ? " with the task you edited" : ""}: tokens went up`
+            : (outcome.error ?? "it did not run");
           this.requestRender();
         });
         return;
@@ -454,7 +456,7 @@ export async function openWorkflowPanel(
   options: {
     width?: number;
     saveScript?: (jobId: string) => string | undefined;
-    restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string }>;
+    restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
   } = {},
 ): Promise<boolean> {
   const width = options.width ?? PANEL_WIDTH;

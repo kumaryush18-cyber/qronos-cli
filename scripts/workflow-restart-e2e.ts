@@ -65,6 +65,7 @@ const tools = [
 const keyPlan: string[][] = [["\r"]];
 let cardIndex = 0;
 const cards: string[] = [];
+const afterKeys: string[] = [];
 
 const ctx = {
   cwd: project,
@@ -81,7 +82,14 @@ const ctx = {
       const drawn = component.render(66).map((line: string) => line.replace(/\u001b\[[0-9;]*m/g, ""));
       cards.push(drawn.join("\n"));
       check(`a card was shown (${options.overlay ? "overlay" : "inline"})`, true, drawn[1]?.trim().slice(0, 48) ?? "");
-      for (const key of keys) component.handleInput(key);
+      for (const key of keys) {
+        component.handleInput(key);
+        // A card that is still open is photographed again, so an edit made by a
+        // key in this list is visible: the first snapshot is the card as it came up.
+        if (component.finished !== true) {
+          afterKeys.push(component.render(66).map((line: string) => line.replace(/\u001b\[[0-9;]*m/g, "")).join("\n"));
+        }
+      }
       return undefined;
     },
   },
@@ -164,7 +172,7 @@ check("closing the card without choosing restarts nothing", /not restarted|you s
 const afterRefusal = await send(jobId);
 check("the run is unchanged after a refusal", before === afterRefusal);
 check("the card said it costs tokens again", (cards.at(-1) ?? "").includes("spends tokens again"));
-check("the card started on the safe answer", (cards.at(-1) ?? "").includes("2. No"));
+check("the card started on the safe answer", (cards.at(-1) ?? "").includes("3. No"));
 
 /* --- 2. say yes: one agent runs again ---------------------------------- */
 keyPlan.push(["y"]);
@@ -174,6 +182,22 @@ const after = await send(jobId);
 check("the tokens went up", tokensOf(after) > tokensOf(before), `${tokensOf(before)} -> ${tokensOf(after)}`);
 check("a second card was shown for the second ask", cards.length >= 2);
 check("the run still names both agents", /alpha/.test(after) && /beta/.test(after));
+
+/* --- 3. edit the task, then run it -------------------------------------- */
+const beforeEdit = await send(jobId);
+// 2 opens the task, the typing goes in as one chunk, enter runs it.
+keyPlan.push(["2", " Then say in four words what the file is.", "\r"]);
+const editedRun = await send(`restart ${jobId} alpha`);
+const thirdCard = cards.at(-1) ?? "";
+check("the card showed the task that would be repeated", thirdCard.includes("Read a.txt"));
+check("the card let the task be edited", /Edit the task, then run it/.test(thirdCard), "the third answer is on the card");
+check("a changed task is labelled on the card", (afterKeys.at(-1) ?? "").includes("edited, not the task it had before"));
+check("the edited restart ran", /again/i.test(editedRun) && !/did not run/i.test(editedRun), editedRun.slice(0, 80));
+check("the message says the task was edited", /edited/i.test(editedRun), editedRun.split("\n")[0] ?? "");
+const afterEdit = await send(jobId);
+check("the edited attempt cost money too", tokensOf(afterEdit) > tokensOf(beforeEdit), `${tokensOf(beforeEdit)} -> ${tokensOf(afterEdit)}`);
+check("the run says the task was edited", /ran again, task edited/.test(afterEdit));
+check("the run still names both agents after an edit", /alpha/.test(afterEdit) && /beta/.test(afterEdit));
 
 console.log("");
 if (failures.length === 0) {

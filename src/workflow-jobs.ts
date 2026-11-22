@@ -318,8 +318,10 @@ export class WorkflowJobManager {
    * Guarded in three ways: a live run is refused (two agents must not spend at
    * once on the same job), the same agent cannot be restarted twice at the same
    * moment, and the refusal is a value the caller can show instead of a throw.
+   *
+   * `prompt` is the edited task, when the user changed it before running again.
    */
-  async restartAgent(id: string, agentId: string): Promise<RestartOutcome> {
+  async restartAgent(id: string, agentId: string, prompt?: string): Promise<RestartOutcome> {
     const job = this.jobs.get(id);
     const refusal = restartRefusal(job, agentId);
     if (refusal || !job) return { ok: false, error: refusal ?? "no such run" };
@@ -331,6 +333,8 @@ export class WorkflowJobManager {
       return await restartAgent({
         job,
         agentId,
+        // The new words, when the user changed them; otherwise the same task.
+        prompt,
         runAgent: this.options.runAgent,
         now: this.now,
         journal: this.makeJournal(id),

@@ -247,6 +247,18 @@ export interface WorkflowAgentActivity {
 }
 
 /** One finished agent, kept for the report and `/workflows`. */
+/** One attempt at an agent's task, kept so a report can show the whole story. */
+export interface WorkflowAgentAttempt {
+  at: number;
+  ok: boolean;
+  error?: string;
+  /** What this attempt cost, when the provider said. */
+  tokens?: number;
+  durationMs?: number;
+  /** The task, only when it was changed for this attempt. */
+  prompt?: string;
+}
+
 export interface WorkflowAgentRecord {
   id: string;
   label: string;
@@ -272,6 +284,14 @@ export interface WorkflowAgentRecord {
    */
   restarted?: boolean;
   restartedAt?: number;
+  /**
+   * The restarts this agent has had, oldest first, capped at five.
+   *
+   * Each entry keeps what was really asked (`prompt` only when it changed), what
+   * it cost and whether it worked, so a report can never pass attempt two off as
+   * attempt one.
+   */
+  attempts?: WorkflowAgentAttempt[];
   /** The task it was given, redacted and capped. Never the whole world. */
   prompt?: string;
   /** The last few tool calls, newest last. */

@@ -125,6 +125,7 @@ Storing it inline is an explicit opt-in.
 | `/usage` | credits left today |
 | `/memory` | what this project has learned (`view`, `stats`, `sync`, `add`, `forget`, `clear`) |
 | `/workflows` | live workflows: phases, agents, tokens; `<id>`, `pause`, `resume`, `stop`, `restart`, `save`, `saved`, `panel` |
+| `r` in an agent | run that one agent again — same task, or one you edit first; it asks before it spends |
 | `/bug` | report a problem |
 | `/update` | update the CLI |
 | `Esc` | interrupt the running turn (only that) |
