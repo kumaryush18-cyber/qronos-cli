@@ -20,6 +20,7 @@ import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, replayMar
 import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { openWorkflowPanel } from "./workflow-panel";
+import { saveWorkflowScript } from "./workflow-save";
 import { approvalRequestFor, askWorkflowApproval } from "./workflow-approval";
 import { sharedSlotPool } from "./workflow-slots";
 import {
@@ -582,14 +583,46 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
       });
 
       qronos.registerCommand("workflows", {
-        description: "Watch workflow runs: pause, resume, stop; see what is saved on disk",
+        description: "Watch workflow runs: pause, resume, stop, save a script; see what is saved on disk",
         handler: async (args: string, ctx: ExtensionCommandContext) => {
           const words = (args ?? "").trim().split(/\s+/).filter(Boolean);
           const manager = state.manager;
 
+          // Saving a script is one function for the `s` key and the command: two
+          // ways to do the same thing must not drift.
+          const saveScript = (jobId: string): string | undefined => {
+            const job = manager?.get(jobId);
+            if (!job) return undefined;
+            try {
+              const saved = saveWorkflowScript({ cwd: process.cwd(), name: job.name, script: job.script });
+              return saved.path;
+            } catch {
+              return undefined;
+            }
+          };
+
           // `/workflows panel`: the live overlay, the same thing Alt+W opens.
           if (words[0] === "panel") {
-            await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never);
+            await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never, { saveScript });
+            return;
+          }
+
+          // `/workflows save <id>`: keep the script in the project.
+          if (words[0] === "save") {
+            const job = words[1]
+              ? manager?.get(words[1])
+              : (manager?.active()[0] ?? manager?.list()[0]);
+            if (!job) {
+              ctx.ui.notify("No workflow to save yet.", "info");
+              return;
+            }
+            const path = saveScript(job.id);
+            ctx.ui.notify(
+              path
+                ? [`Saved ${job.name} to ${path}`, "Run it again by pasting the file into a prompt, or git add it and keep it with the project."].join("\n")
+                : `Could not write the script for ${job.id}.`,
+              path ? "info" : "warning",
+            );
             return;
           }
 
@@ -711,7 +744,18 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
         qronos.registerShortcut("alt+w", {
           description: "Workflow panel",
           handler: async (ctx: ExtensionCommandContext | any) => {
-            await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never);
+            const manager = managerFor();
+            await openWorkflowPanel(ctx, manager, (ctx as { theme?: unknown }).theme as never, {
+              saveScript: (jobId: string) => {
+                const job = manager.get(jobId);
+                if (!job) return undefined;
+                try {
+                  return saveWorkflowScript({ cwd: process.cwd(), name: job.name, script: job.script }).path;
+                } catch {
+                  return undefined;
+                }
+              },
+            });
           },
         });
       }

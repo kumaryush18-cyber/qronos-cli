@@ -90,8 +90,9 @@ Storing it inline is an explicit opt-in.
   resumed, stopped or replayed from its journal. A run of three or more written agent calls asks
   first: a card shows the phases, the cost, and `1. Yes` / `2. View raw script` / `3. No`, with
   `ctrl+g` to edit the script in `$EDITOR`. `Alt+W` (or `/workflows panel`) opens a live
-  panel: phase bars, one row per agent, the 3 s shimmer on whatever is working now, and
-  `space` to pause, `x` to stop.
+  panel in two columns: the phases on the left, the agents of the phase you point at on the
+  right, with the model, tokens and time of each one, the 3 s shimmer on whatever is working
+  now, and `p` to pause, `x` to stop, `s` to save the script into `.qronos/workflows/`.
   See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
@@ -113,7 +114,7 @@ Storing it inline is an explicit opt-in.
 | `/status`, `/doctor` | session and environment diagnostics |
 | `/usage` | credits left today |
 | `/memory` | what this project has learned (`view`, `stats`, `sync`, `add`, `forget`, `clear`) |
-| `/workflows` | live workflows: phases, agents, tokens; `<id>`, `pause`, `resume`, `stop`, `saved`, `panel` |
+| `/workflows` | live workflows: phases, agents, tokens; `<id>`, `pause`, `resume`, `stop`, `save`, `saved`, `panel` |
 | `/bug` | report a problem |
 | `/update` | update the CLI |
 | `Esc` | interrupt the running turn (only that) |

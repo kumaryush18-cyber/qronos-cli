@@ -19,6 +19,8 @@ import {
   buildPanelLines,
   moveIndex,
   toPanelJob,
+  withAnswers,
+  type PanelAgentView,
   type PanelJobView,
   type PanelLine,
   type PanelLineStyle,
@@ -43,6 +45,8 @@ export interface WorkflowPanelOptions {
   height?: number;
   now?: () => number;
   frameMs?: number;
+  /** Write the run's report to disk and return its path, for the `s` key. */
+  saveScript?: (jobId: string) => string | undefined;
 }
 
 /** A job the panel can show: the newest running one, else the newest of all. */
@@ -62,8 +66,13 @@ export class WorkflowPanel {
   readonly height: number;
   private readonly now: () => number;
   private readonly frameMs: number;
+  private readonly saveScript?: (jobId: string) => string | undefined;
+  /** The last thing the panel said, shown in the footer. */
+  private notice?: string;
 
   selectedAgent = 0;
+  /** Which phase is under the cursor; the right column follows it. */
+  selectedPhase = 0;
   /** Which job to look at, by id, so a list that reorders cannot swap rows. */
   jobId?: string;
   mode: PanelMode = "list";
@@ -80,6 +89,7 @@ export class WorkflowPanel {
     this.height = options.height ?? PANEL_HEIGHT;
     this.now = options.now ?? Date.now;
     this.frameMs = options.frameMs ?? PANEL_FRAME_MS;
+    this.saveScript = options.saveScript;
     this.startTicker();
   }
 
@@ -88,6 +98,19 @@ export class WorkflowPanel {
   }
 
   invalidate(): void {}
+
+  /** Answer texts, from the recent events the job keeps. */
+  private answersFor(job: PanelJobView): Record<string, string> {
+    const record = this.manager.get(job.id);
+    const out: Record<string, string> = {};
+    for (const event of record?.recent ?? []) {
+      if (event.type !== "agent_end") continue;
+      const text = (event as { text?: string }).text;
+      const id = (event as { id?: string }).id;
+      if (id && text && text.trim() !== "") out[id] = text;
+    }
+    return out;
+  }
 
   /** The job under the cursor right now, or the newest live one. */
   job(): PanelJobView | undefined {
@@ -100,11 +123,13 @@ export class WorkflowPanel {
 
   render(width: number): string[] {
     const panelWidth = Math.max(30, Math.min(this.width, width));
-    const job = this.job();
+    const base = this.job();
+    const job = base ? withAnswers(base, this.answersFor(base)) : undefined;
     const phase = this.frame * (this.frameMs / 3_000);
     const lines = buildPanelLines({
       jobs: this.manager.list().map((entry) => toPanelJob(entry, this.now())),
       job,
+      selectedPhase: this.selectedPhase,
       selectedAgent: this.selectedAgent,
       mode: this.mode,
       width: panelWidth,
@@ -143,17 +168,32 @@ export class WorkflowPanel {
       this.done();
       return;
     }
-    if (matchesKey(data, "up") || matchesKey(data, "down")) {
+    if (matchesKey(data, "tab")) {
+      // Tab switches between runs when there is more than one; a run per tab is
+      // easier to follow than a list of runs above the panel.
       const jobs = this.manager.list();
       if (jobs.length > 1) {
         const current = Math.max(0, jobs.findIndex((entry) => entry.id === job?.id));
-        const next = jobs[moveIndex(current, jobs.length, matchesKey(data, "up") ? -1 : 1)];
+        const next = jobs[(current + 1) % jobs.length];
         if (next) this.jobId = next.id;
-      } else if (matchesKey(data, "up")) {
-        this.selectedAgent = moveIndex(this.selectedAgent, job?.agents.length ?? 0, -1);
-      } else {
-        this.selectedAgent = moveIndex(this.selectedAgent, job?.agents.length ?? 0, 1);
+        this.selectedPhase = 0;
+        this.selectedAgent = 0;
       }
+      this.requestRender();
+      return;
+    }
+    if (matchesKey(data, "up") || matchesKey(data, "down")) {
+      const delta = matchesKey(data, "up") ? -1 : 1;
+      // Arrows walk the phases, like Claude Code: the left column is the map of
+      // the run, and the right column shows the phase you are pointing at.
+      this.selectedPhase = moveIndex(this.selectedPhase, job?.phases.length ?? 0, delta);
+      this.selectedAgent = 0;
+      this.requestRender();
+      return;
+    }
+    if (matchesKey(data, "left") || matchesKey(data, "right")) {
+      const delta = matchesKey(data, "left") ? -1 : 1;
+      this.selectedAgent = moveIndex(this.selectedAgent, agentsInPhase(job, this.selectedPhase).length, delta);
       this.requestRender();
       return;
     }
@@ -164,7 +204,7 @@ export class WorkflowPanel {
       }
       return;
     }
-    if (matchesKey(data, "space")) {
+    if (data === "p" || data === "P" || matchesKey(data, "space")) {
       if (!job) return;
       if (job.state === "running") this.manager.pause(job.id);
       else if (job.state === "paused") this.manager.resume(job.id);
@@ -175,6 +215,13 @@ export class WorkflowPanel {
     if (data === "x" || data === "X") {
       if (!job) return;
       if (job.state === "running" || job.state === "paused" || job.state === "queued") this.manager.cancel(job.id);
+      this.requestRender();
+      return;
+    }
+    if (data === "s" || data === "S") {
+      if (!job || !this.saveScript) return;
+      const path = this.saveScript(job.id);
+      this.notice = path ? `saved to ${path}` : "nothing to save yet";
       this.requestRender();
       return;
     }
@@ -220,9 +267,14 @@ export class WorkflowPanel {
   /** The last line: which run, and whether its record is on disk. */
   private footer(job: PanelJobView | undefined, width: number): PanelLine[] {
     if (!job) return [];
+    // A thing the panel just did (saved, or could not save) outranks the id line:
+    // it answers a key the user pressed a moment ago.
+    const lines: PanelLine[] = [];
+    if (this.notice) lines.push({ text: truncateToWidth(`  ${this.notice}`, width - 2, "…", false), style: "hint" });
     const where = job.journalPath ? "journal on disk" : "no journal";
     const resumed = job.resumedFrom ? ` · replayed from ${job.resumedFrom}` : "";
-    return [{ text: truncateToWidth(`  ${job.id} · ${where}${resumed}`, width - 2, "…", false), style: "hint" }];
+    lines.push({ text: truncateToWidth(`  ${job.id} · ${where}${resumed}`, width - 2, "…", false), style: "hint" });
+    return lines;
   }
 
   /**
@@ -270,8 +322,13 @@ export class WorkflowPanel {
     switch (style) {
       case "title":
         return ansi(PHASE_BLUE);
-      case "job-selected":
+      case "phase-selected":
+      case "column-head":
         return ansi(PHASE_BLUE);
+      case "description":
+        return paint("muted", text);
+      case "agent-queued":
+        return paint("muted", text);
       case "phase":
         return ansi(PHASE_BLUE);
       case "phase-failed":
@@ -323,7 +380,7 @@ export async function openWorkflowPanel(
   ctx: ExtensionCommandContext | any,
   manager: WorkflowJobManager,
   theme: Theme,
-  options: { width?: number } = {},
+  options: { width?: number; saveScript?: (jobId: string) => string | undefined } = {},
 ): Promise<void> {
   const width = options.width ?? PANEL_WIDTH;
   await (ctx.ui.custom as any)(
@@ -334,6 +391,7 @@ export async function openWorkflowPanel(
         done,
         requestRender: () => tui.requestRender?.(),
         width,
+        saveScript: options.saveScript,
       }),
     { overlay: true, overlayOptions: { anchor: "center", width, maxHeight: PANEL_HEIGHT } },
   );
@@ -348,3 +406,11 @@ export const PANEL_GLYPHS = {
   cross: "✗",
   rail: "┆",
 } as const;
+
+/** Agents of a phase, in the order the right column shows them. */
+function agentsInPhase(job: PanelJobView | undefined, phaseIndex = 0): PanelAgentView[] {
+  if (!job) return [];
+  const phase = job.phases[Math.min(Math.max(0, phaseIndex), Math.max(0, job.phases.length - 1))];
+  if (!phase) return [];
+  return job.agents.filter((agent) => agent.phase === phase.name);
+}

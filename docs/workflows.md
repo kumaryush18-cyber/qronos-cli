@@ -227,58 +227,81 @@ screen. It is the same shape as the Agent Hub (`Alt+A`), and for the same
 reason: a workflow can run for ten minutes, and a command that prints a snapshot
 is not the same as watching it.
 
+It is two columns: the phases of the run on the left, the agents of the phase you
+are pointing at on the right. One long mixed list made you scroll to connect a
+phase with its work; a column each means the connection is on the same line.
+
 ```
 ╭──────────────────────────────────────────────────────────────────────╮
-│auth-audit              3 running · 9 done · 42.1k tokens · 2m 05s    │
-│  ┆ running · hj6qy01                                                  │
+│analyze-src                              2/5 agents · 1m 05s          │
+│Map the source tree by purpose using 5 parallel subagents             │
+│  1 failed · 1 replayed · 42.1k tokens                                │
 │                                                                      │
-│  ▸ Understand       4 agents          ███                12.1k        │
-│  ▸ Review           8 agents   ✗ 1    ██████████         31.4k        │
+│Phases                       │ Analyze · 5 agents                     │
+│▸ 1 Analyze 2/5              │ ✻ coding-agent  deepseek-v4 · 0 tokens 29s
+│                             │ ✻ ai-and-tui    deepseek-v4 · 0 tokens 29s
+│                             │ ↻ waiting                        queued│
+│                             │ ↻ waiting                        queued│
+│                             │ ↻ waiting                        queued│
 │                                                                      │
-│  ▸ ✻ routes.ts                    ████████       7.1k  00:19         │
-│  ┆ ✓ middleware.ts                ██████         5.0k  00:12         │
-│  ┆ ↺ db.ts                        ██████         5.0k   skip replayed│
-│  ┆ ✗ auth.ts                      ██             1.2k  00:04         │
-│       no answer from the model                                        │
-│                                                                      │
-│ space pause · x stop · enter agent · ↑↓ job · esc close               │
+│p pause · x stop · s save · enter view · ↑↓ phase · tab run · esc close│
 │  wf_hj6qy01 · journal on disk                                        │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
 How to read it:
 
-- The first line is the run: its name, what is happening now, and the cost in
-  tokens and time.
-- Phase rows have a bar of their tokens, so the expensive stage is obvious.
-  The phase that is working right now carries the **same 3 s pale-orange band**
+- **The first line is the run.** Its name on the left; on the right, how many
+  agents have finished out of how many the script planned, and how long it has
+  been going. `2/5` counts finished agents, not started ones, so it never runs
+  backwards.
+- **The second line is what the script says it does**, taken from
+  `meta.description`. If the script declares no description, the line is left
+  out.
+- **The third line is the detail that matters**: failures, replays and the
+  token bill. It is only there when there is something to say.
+- **The phases column** is the map of the run: `▸` is where the cursor is, the
+  number is the phase's place, and `2/5` is finished out of planned.
+- **The agents column** shows one row per agent of the selected phase: a glyph,
+  the label, the model, the tokens and the time. Rows are sorted the way you
+  look at them: still working first, then failures, then the ones that cost the
+  most.
+- **Queued rows** are agents the plan promised and the script has not started
+  yet. Their name is unknown until they start, so the row says `waiting` and the
+  right-hand side says `queued`.
+- The phase that is working right now carries the **same 3 s pale-orange band**
   that flows through the header and the working line. One moving light means one
   thing everywhere in the CLI: this is happening now.
-- Agent rows are sorted the way you look at them: still working first, then
-  failures, then the ones that cost the most. A bright green `✓` is done, a dark
-  red `✗` failed, a blue `↺` was answered from the journal and cost nothing.
-- A running agent's time counts up while you watch.
 
 Keys:
 
 | Key | What it does |
 |---|---|
-| `space` | Pause a running run, or resume a paused one. Nothing is replayed by a live resume. |
+| `p` | Pause a running run, or resume a paused one. Nothing is replayed by a live resume. `space` does the same. |
 | `x` | Stop the run. Agents in flight are cancelled. |
-| `enter` | Open one agent: its phase, cost, time, error and answer. |
-| `↑` `↓` | Move between runs (or between agents inside one agent's view). |
+| `s` | Save the script to `<project>/.qronos/workflows/<name>.js`, so a good run can be used again tomorrow. An existing file is never overwritten: the new one gets `-2`, `-3`. |
+| `enter` | Open one agent: its phase, cost, time, model, error and answer. |
+| `↑` `↓` | Move between phases; the right column follows. |
+| `←` `→` | Move between the agents of the phase. |
+| `tab` | Move to the next run, when there is more than one. |
 | `r` | Replay a finished run from its journal, without leaving the panel. |
 | `esc` | Back out of an agent, or close the panel. |
 
-Three rules the panel keeps:
+Every key is also a command, because a floating panel must never be the only way
+to do something: `p` is `/workflows pause`, `x` is `/workflows stop`, `s` is
+`/workflows save`, and `r` is `/workflows resume` on a saved run.
+
+Four rules the panel keeps:
 
 1. **It only reads.** It holds no job of its own, so closing it can never lose a
    run. Everything it can do is also a `/workflows` command.
 2. **The ticker stops.** Redrawing costs terminal time; the panel redraws every
    120 ms only while a run is live, draws one last frame when the last run ends,
    and then stops.
-3. **It says how much of a run you are seeing.** `12 more` is printed when there
-   are more agents than rows, so nothing is silently cut.
+3. **It says how much of a run you are seeing.** `… 6 more agents in Analyze` is
+   printed when a phase has more agents than rows, so nothing is silently cut.
+4. **A live run is never called failed.** A run with a live agent shows the
+   working mark, however many agents have already failed.
 
 ## Why a script, and not just many `agent` calls
 

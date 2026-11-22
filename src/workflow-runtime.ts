@@ -283,8 +283,16 @@ export class WorkflowRuntime {
     });
     if (saved?.hit) {
       const replayed = this.checkSchema(saved.result, options.schema);
-      this.emit({ type: "agent_start", at: this.now(), id, label, phase: this.currentPhase, depth: this.depth });
-      this.record({ id, label, index, fingerprint, checked: replayed, durationMs: 0, replayed: true });
+      this.emit({
+        type: "agent_start",
+        at: this.now(),
+        id,
+        label,
+        phase: this.currentPhase,
+        depth: this.depth,
+        model: request.model,
+      });
+      this.record({ id, label, index, fingerprint, checked: replayed, durationMs: 0, replayed: true, model: request.model });
       return replayed;
     }
 
@@ -303,6 +311,7 @@ export class WorkflowRuntime {
       label,
       phase: this.currentPhase,
       depth: this.depth,
+      model: request.model,
     });
 
     await this.shared.semaphore.acquire();
@@ -319,7 +328,16 @@ export class WorkflowRuntime {
         };
       }
       const checked = this.checkSchema(result, options.schema);
-      this.record({ id, label, index, fingerprint, checked, durationMs: this.now() - startedAt, replayed: false });
+      this.record({
+        id,
+        label,
+        index,
+        fingerprint,
+        checked,
+        durationMs: this.now() - startedAt,
+        replayed: false,
+        model: request.model,
+      });
       return checked;
     } finally {
       this.shared.semaphore.release();
@@ -335,8 +353,9 @@ export class WorkflowRuntime {
     checked: WorkflowAgentResult;
     durationMs: number;
     replayed: boolean;
+    model?: string;
   }): void {
-    const { id, label, checked, durationMs, replayed, index, fingerprint } = entry;
+    const { id, label, checked, durationMs, replayed, index, fingerprint, model } = entry;
     const record: WorkflowAgentRecord = {
       id,
       label,
@@ -347,6 +366,7 @@ export class WorkflowRuntime {
       usage: checked.usage,
       depth: this.depth,
       replayed,
+      model,
     };
     this.shared.agents.push(record);
     if (replayed) this.shared.replayed += 1;

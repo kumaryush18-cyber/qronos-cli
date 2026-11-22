@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.14",
+    highlights: [
+      "The workflow panel is now two columns, like Claude Code's: the phases on the left, the agents of the phase you are pointing at on the right. One long mixed list made you scroll to connect a phase with its work; a column each puts the connection on the same line.",
+      "Each agent row carries its model, its tokens and its time, and the header says how many agents have finished out of how many the script planned (2/5, not 5 running), with the description under it.",
+      "Agents the plan promised and the script has not started yet get a row too: the mark is ↻ and the side says queued. A panel that is empty while five agents are queued looks broken exactly when you most want to look at it.",
+      "New keys: p pauses (space still works), ↑↓ walks the phases, ←→ walks the agents of a phase, tab moves between runs, and s saves the script to <project>/.qronos/workflows/<name>.js so a good run can be used again tomorrow. An existing file is never overwritten: the new one gets -2, -3.",
+      "s is also /workflows save <id>, because a floating panel must never be the only way to do something.",
+      "The panel's notice line says where the script went, or that nothing could be written. A failed save never takes a run down with it.",
+      "Two runs that start in the same millisecond used to be able to swap places in the list. The id breaks the tie now, so a list that descends by time stays still.",
+    ],
+  },
+  {
     version: "1.0.13",
     highlights: [
       "Workflows ask before they spend. A run of three or more written agent calls now shows a card first: the name, the description, the phases with their agent counts and a sample task, an estimate of the cost, and the three answers Claude Code offers — 1. Yes, run it, 2. View raw script, 3. No.",

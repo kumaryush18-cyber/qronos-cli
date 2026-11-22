@@ -163,6 +163,87 @@ describe("the workflow panel", () => {
     panel.dispose();
   });
 
+  test("the arrows walk the phases, and the right column follows", async () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });
+    manager.launch({
+      script: "phase('First')\nawait agent('one')\nphase('Second')\nawait agent('two')\nreturn 1;",
+      name: "two-phases",
+    });
+    const { panel } = panelFor(manager);
+    const shown = () => plain(panel.render(74).join("\n"));
+    // The plan appears when the script says `phase(...)`, so wait for the event
+    // instead of guessing a sleep length.
+    await until(() => shown().includes("▸ 1 First"), "the first phase");
+    gated.release(1);
+    await until(() => shown().includes("Second"), "the second phase");
+    panel.handleInput("\u001b[B");
+    const after = shown();
+    expect(after).toContain("▸ 2 Second");
+    expect(after).toContain("  1 First");
+    panel.dispose();
+    gated.release(1);
+    manager.cancel(manager.list()[0]!.id);
+  });
+
+  test("tab moves to the next run when there is more than one", () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });
+    const first = manager.launch({ script: "await agent('a'); return 1;", name: "first-run" });
+    const second = manager.launch({ script: "await agent('b'); return 2;", name: "second-run" });
+    const { panel } = panelFor(manager);
+    const shown = () => plain(panel.render(74).join("\n"));
+    // The panel opens on the newest run; tab must land on the other one, not on
+    // the same view again.
+    expect(shown()).toContain(second.name);
+    expect(shown()).toContain("job 1/2");
+    panel.handleInput("\t");
+    expect(shown()).toContain(first.name);
+    expect(shown()).toContain("job 2/2");
+    panel.handleInput("\t");
+    expect(shown()).toContain(second.name);
+    panel.dispose();
+    manager.cancel(first.id);
+    manager.cancel(second.id);
+  });
+
+  test("s saves the script and says where it went", () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "return 1;", name: "saved-run" });
+    const asked: string[] = [];
+    const { panel } = panelFor(manager, {
+      saveScript: (id: string) => {
+        asked.push(id);
+        return "/tmp/somewhere/saved-run.js";
+      },
+    });
+    panel.handleInput("s");
+    expect(asked).toEqual([job.id]);
+    expect(plain(panel.render(74).join("\n"))).toContain("saved to /tmp/somewhere/saved-run.js");
+    panel.dispose();
+    manager.cancel(job.id);
+  });
+
+  test("s without anything to save does nothing and does not throw", () => {
+    const manager = new WorkflowJobManager({ runAgent: gatedRunner().runner, config: config(), agentDir: tempDir() });
+    const { panel, closedCount } = panelFor(manager);
+    panel.handleInput("s");
+    expect(closedCount()).toBe(0);
+    panel.dispose();
+  });
+
+  test("s says nothing-to-save when the write failed", () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "return 1;", name: "x" });
+    const { panel } = panelFor(manager, { saveScript: () => undefined });
+    panel.handleInput("s");
+    expect(plain(panel.render(74).join("\n"))).toContain("nothing to save yet");
+    panel.dispose();
+    manager.cancel(job.id);
+  });
+
   test("the ticker redraws while a run is live and stops when it ends", async () => {
     const gated = gatedRunner();
     const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });

@@ -192,10 +192,11 @@ try {
   const live = plain((panel?.render(74) ?? []).join("\n"));
   console.log(live);
   check("the panel shows the run by name", live.includes("panel-demo"), live.split("\n")[0] ?? "");
-  check("the panel shows the live counters", /running/.test(live), live.slice(0, 120));
+  check("the panel shows the live counters", /\d+\/\d+ agents · /.test(live), live.slice(0, 120));
   check("the panel draws the agents that are working", (live.match(/✻/g) ?? []).length >= 1, `${(live.match(/✻/g) ?? []).length} rows`);
   const widths = new Set((panel?.render(74) ?? []).map((line) => visibleLength(line)));
   check("every line is the same width", widths.size === 1, [...widths].join(","));
+  check("the panel is two columns", live.includes("Phases") && live.includes("│"), live.split("\n")[3] ?? "");
 
   const frameDeadline = Date.now() + 4_000;
   while (frames.length < 2 && Date.now() < frameDeadline) await wait(50);
@@ -216,7 +217,7 @@ try {
   check("the run finished and delivered its report", deliveries.length === 1, `${deliveries.length} deliveries`);
   const done = plain((panel?.render(74) ?? []).join("\n"));
   console.log(done);
-  check("the panel shows the finished run", /finished|done/.test(done), done.split("\n")[0] ?? "");
+  check("the panel shows the finished run", /\d+\/\d+ agents/.test(done), done.split("\n")[0] ?? "");
   check("the panel shows a tick for the finished agents", done.includes("✓"), done.slice(0, 200));
   check("the panel kept drawing to the end", (panel?.render(74) ?? []).length > 4, "no lines");
 

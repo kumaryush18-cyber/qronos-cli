@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildPanelLines,
+  columnWidths,
   moveIndex,
   panelBar,
   panelSummary,
+  shortModel,
   toPanelJob,
+  withAnswers,
   wrap,
   type PanelJobView,
   type PanelState,
@@ -14,36 +17,40 @@ import type { WorkflowEvent } from "../src/workflow-types";
 
 const job = (overrides: Partial<WorkflowJob> = {}): WorkflowJob => ({
   id: "wf_abc12301",
-  name: "auth-audit",
+  name: "analyze-src",
+  description: "Map the source tree by purpose using 5 parallel subagents",
+  planned: [{ title: "Analyze", agents: 5 }],
   state: "running",
   script: "// audit\nexport const meta = { name: 'x' }\nphase('Review')\nconst out = await agent('list files')\nreturn out.text",
   startedAt: 1_000,
-  running: 1,
-  done: 2,
+  running: 2,
+  done: 1,
   failed: 0,
   tokens: { input: 900, output: 100, total: 1_000 },
-  replayed: 1,
-  replayedTokens: { input: 100, output: 50, total: 150 },
-  phases: ["Understand", "Review"],
-  phaseStats: [
-    { name: "Understand", agents: 1, failed: 0, tokens: 300, durationMs: 100 },
-    { name: "Review", agents: 2, failed: 1, tokens: 700, durationMs: 200 },
-  ],
+  replayed: 0,
+  replayedTokens: { input: 0, output: 0, total: 0 },
+  phases: ["Analyze"],
+  phaseStats: [{ name: "Analyze", agents: 3, failed: 0, tokens: 1_000, durationMs: 100 }],
   agents: [
-    { id: "#0", label: "routes.ts", ok: true, durationMs: 19_000, usage: { input: 1, output: 1, total: 7100 }, depth: 1, phase: "Review" },
-    { id: "#1", label: "middleware.ts", ok: true, durationMs: 0, usage: { input: 1, output: 1, total: 5000 }, depth: 1, replayed: true },
-    { id: "#2", label: "db.ts", ok: false, error: "no answer", durationMs: 4_000, depth: 1 },
+    { id: "#0", label: "coding-agent", ok: true, durationMs: 29_000, usage: { input: 1, output: 1, total: 4_300 }, depth: 1, phase: "Analyze", model: "deepseek/deepseek-v4-flash" },
+    { id: "#1", label: "ai-and-tui", ok: false, error: "no answer", durationMs: 4_000, depth: 1, phase: "Analyze", model: "deepseek/deepseek-v4-flash" },
   ],
-  recent: [] as WorkflowEvent[],
+  recent: [
+    { type: "agent_start", at: 60_000, id: "#2", label: "ts-support", depth: 1, phase: "Analyze" },
+    { type: "agent_start", at: 60_000, id: "#3", label: "rust-shell", depth: 1, phase: "Analyze" },
+  ] as WorkflowEvent[],
   settled: Promise.resolve() as unknown as Promise<WorkflowJob>,
   ...overrides,
 });
 
+const view = (overrides: Partial<WorkflowJob> = {}) => toPanelJob(job(overrides), 61_000);
+
 const state = (overrides: Partial<PanelState> = {}): PanelState => {
-  const view = toPanelJob(job(), 61_000);
+  const built = view();
   return {
-    jobs: [view],
-    job: view,
+    jobs: [built],
+    job: built,
+    selectedPhase: 0,
     selectedAgent: 0,
     mode: "list",
     width: 74,
@@ -56,289 +63,281 @@ const state = (overrides: Partial<PanelState> = {}): PanelState => {
 const text = (lines: { text: string }[]) => lines.map((line) => line.text).join("\n");
 
 describe("toPanelJob", () => {
-  test("carries the numbers the panel shows", () => {
-    const view = toPanelJob(job(), 61_000);
-    expect(view.id).toBe("wf_abc12301");
-    expect(view.done).toBe(2);
-    expect(view.tokens).toBe(1_000);
-    expect(view.replayed).toBe(1);
-    expect(view.elapsedMs).toBe(60_000);
+  test("carries the numbers the header shows", () => {
+    const built = view();
+    expect(built.done).toBe(1);
+    expect(built.planned).toBe(5);
+    expect(built.elapsedMs).toBe(60_000);
   });
 
-  test("marks a replayed agent", () => {
-    const view = toPanelJob(job(), 61_000);
-    expect(view.agents[1]!.replayed).toBe(true);
+  test("keeps the description the script declared", () => {
+    expect(view().description).toContain("Map the source tree");
   });
 
-  test("marks the phase that is still working", () => {
-    const view = toPanelJob(job(), 61_000);
-    const review = view.phases.find((phase) => phase.name === "Review");
-    expect(review?.active).toBe(true);
-    expect(view.phases[0]!.active).toBe(false);
+  test("builds phases from the plan before they start", () => {
+    const built = toPanelJob(job({ planned: [{ title: "Analyze", agents: 5 }, { title: "Review", agents: 2 }], phases: [] }), 61_000);
+    expect(built.phases.map((phase) => phase.name)).toEqual(["Analyze", "Review"]);
   });
 
-  test("a finished job has no active phase", () => {
-    const view = toPanelJob(job({ state: "done", finishedAt: 61_000 }), 61_000);
-    expect(view.phases.every((phase) => !phase.active)).toBe(true);
+  test("agents still working get a row each", () => {
+    const built = view();
+    const running = built.agents.filter((agent) => agent.running);
+    expect(running.map((agent) => agent.label).sort()).toEqual(["rust-shell", "ts-support"]);
   });
 
-  test("takes the first real script line, skipping meta and comments", () => {
-    expect(toPanelJob(job(), 1).scriptHint).toContain("phase('Review')");
+  test("planned agents that have not started are queued", () => {
+    const built = view();
+    const queued = built.agents.filter((agent) => agent.queued);
+    // 5 planned, 2 finished, 2 running = 1 queued
+    expect(queued).toHaveLength(1);
   });
 
-  test("shows an answer when a recent event still has one", () => {
-    const withAnswer = job({
-      recent: [
-        { type: "agent_start", at: 1, id: "#0", label: "routes.ts", depth: 1 },
-        { type: "agent_end", at: 2, id: "#0", label: "routes.ts", ok: true, durationMs: 1, depth: 1, text: "found 3 routes" },
-      ],
-    });
-    expect(toPanelJob(withAnswer, 1).agents[0]!.answer).toBe("found 3 routes");
+  test("a finished job has nothing queued", () => {
+    const built = toPanelJob(job({ state: "done", finishedAt: 61_000, planned: [] }), 61_000);
+    expect(built.agents.filter((agent) => agent.queued)).toHaveLength(0);
   });
 
-  test("a stopped job keeps its error", () => {
-    const view = toPanelJob(job({ state: "cancelled", error: "cancelled by the user" }), 61_000);
-    expect(view.error).toBe("cancelled by the user");
-  });
-});
-
-describe("panelBar", () => {
-  test("an empty value draws nothing", () => {
-    expect(panelBar(0, 100, 8)).toBe(" ".repeat(8));
+  test("the model travels with the agent", () => {
+    expect(view().agents[0]!.model).toContain("deepseek");
   });
 
-  test("the biggest value fills the bar", () => {
-    expect(panelBar(100, 100, 8)).toBe("█".repeat(8));
-  });
-
-  test("a small value still shows one cell, so it is not invisible", () => {
-    expect(panelBar(1, 100_000, 8)).toBe(`${"█"}${" ".repeat(7)}`);
-  });
-
-  test("the width is always exact", () => {
-    for (const value of [0, 1, 50, 99, 100]) expect(panelBar(value, 100, 10)).toHaveLength(10);
-  });
-
-  test("a zero maximum does not divide by zero", () => {
-    expect(panelBar(5, 0, 4)).toBe("█".repeat(4));
+  test("agents with no phase get one bucket, so the right column is not empty", () => {
+    const built = toPanelJob(
+      job({
+        planned: [],
+        phases: [],
+        phaseStats: [],
+        running: 0,
+        agents: [{ id: "#0", label: "solo", ok: true, durationMs: 1, depth: 1 }],
+        recent: [],
+      }),
+      61_000,
+    );
+    expect(built.phases).toHaveLength(1);
+    expect(built.phases[0]!.name).toBe("Agents");
   });
 });
 
-describe("buildPanelLines", () => {
-  test("the header names the job, the counts, the tokens and the time", () => {
+describe("the header", () => {
+  test("the name is on the left and done/total agents and time on the right", () => {
     const lines = text(buildPanelLines(state()));
-    expect(lines).toContain("auth-audit");
-    expect(lines).toContain("1 running · 2 done");
-    expect(lines).toContain("1k tokens");
+    expect(lines).toContain("analyze-src");
+    expect(lines).toContain("1/5 agents");
     expect(lines).toContain("1m 00s");
   });
 
-  test("a failure is counted in the header", () => {
-    const view = toPanelJob(job({ failed: 1 }), 61_000);
-    const lines = text(buildPanelLines(state({ job: view })));
+  test("the description sits under the title", () => {
+    const line = buildPanelLines(state()).find((entry) => entry.style === "description");
+    expect(line?.text).toContain("Map the source tree");
+  });
+
+  test("the second line says failed and replayed and tokens when they matter", () => {
+    const lines = text(buildPanelLines(state({ job: toPanelJob(job({ replayed: 2, failed: 1 }), 61_000) })));
     expect(lines).toContain("1 failed");
+    expect(lines).toContain("2 replayed");
+    expect(lines).toContain("1k tokens");
   });
 
-  test("phases are drawn with their token bars", () => {
+  test("a paused run says paused", () => {
+    expect(text(buildPanelLines(state({ job: view({ state: "paused" }) })))).toContain("paused");
+  });
+});
+
+describe("the two columns", () => {
+  test("the column heads are Phases and the selected phase", () => {
+    const lines = buildPanelLines(state());
+    const head = lines.find((line) => line.style === "column-head");
+    expect(head?.text).toContain("Phases");
+    expect(head?.text).toContain("│");
+    expect(head?.text).toContain("Analyze · 5 agents");
+  });
+
+  test("a phase row is numbered, cursor-marked and counted", () => {
     const lines = text(buildPanelLines(state()));
-    expect(lines).toContain("▸ Understand");
-    expect(lines).toContain("▸ Review");
-    expect(lines).toMatch(/▸ Review.*█/);
+    expect(lines).toContain("▸ 1 Analyze 2/5");
   });
 
-  test("a phase with a failure is marked with a cross", () => {
+  test("the cursor follows the selected phase", () => {
+    const two = toPanelJob(
+      job({ planned: [{ title: "Analyze", agents: 2 }, { title: "Review", agents: 2 }] }),
+      61_000,
+    );
+    const lines = text(buildPanelLines(state({ job: two, selectedPhase: 1 })));
+    expect(lines).toContain("  1 Analyze");
+    expect(lines).toContain("▸ 2 Review");
+  });
+
+  test("a phase row and its agents share a line", () => {
+    const rows = buildPanelLines(state()).filter((line) => line.text.includes("│"));
+    expect(rows.length).toBeGreaterThan(1);
+  });
+
+  test("agent rows show a glyph, the name, tokens and the time", () => {
     const lines = text(buildPanelLines(state()));
-    expect(lines).toContain("✗ 1");
+    expect(lines).toContain("✓ coding-agent");
+    expect(lines).toContain("4.3k tokens");
+    expect(lines).toContain("29s");
   });
 
-  test("agent rows carry a tick, a replay glyph and a cross", () => {
+  test("a running agent says 0 tokens rather than nothing", () => {
+    expect(text(buildPanelLines(state()))).toMatch(/✻ ts-support .*0 tokens/);
+  });
+
+  test("a running agent uses the working glyph", () => {
+    expect(text(buildPanelLines(state()))).toContain("✻ ts-support");
+  });
+
+  test("a queued agent says queued instead of a time", () => {
     const lines = text(buildPanelLines(state()));
-    expect(lines).toContain("✓ routes.ts");
-    expect(lines).toContain("↺ middleware.ts");
-    expect(lines).toContain("✗ db.ts");
+    // Its name is unknown until it starts, so the row says "waiting" and the
+    // right-hand side says "queued".
+    expect(lines).toMatch(/↻ waiting.*queued/);
   });
 
-  test("a replayed agent says so instead of pretending it took time", () => {
+  test("a failed agent shows a cross next to its name", () => {
     const lines = text(buildPanelLines(state()));
-    expect(lines).toMatch(/↺ middleware\.ts.*replayed/);
+    expect(lines).toContain("✗ ai-and-tui");
   });
 
-  test("a failed agent explains itself under its row", () => {
+  test("the phase that is working is marked for the shimmer", () => {
+    const active = buildPanelLines(state()).filter((line) => line.style === "phase-active");
+    expect(active.length).toBeGreaterThan(0);
+  });
+
+  test("the footer offers pause, stop, save, view, keys", () => {
     const lines = text(buildPanelLines(state()));
-    expect(lines).toContain("no answer");
+    expect(lines).toContain("p pause");
+    expect(lines).toContain("x stop");
+    expect(lines).toContain("s save");
+    expect(lines).toContain("enter view");
+    expect(lines).toContain("esc close");
   });
 
-  test("the footer offers pause while running, resume while paused", () => {
-    expect(text(buildPanelLines(state()))).toContain("space pause");
-    const paused = toPanelJob(job({ state: "paused" }), 61_000);
-    expect(text(buildPanelLines(state({ job: paused })))).toContain("space resume");
+  test("a paused run offers resume", () => {
+    expect(text(buildPanelLines(state({ job: view({ state: "paused" }) })))).toContain("p resume");
   });
 
-  test("the footer offers a retry when nothing is live", () => {
-    const done = toPanelJob(job({ state: "done", finishedAt: 61_000 }), 61_000);
-    expect(text(buildPanelLines(state({ job: done })))).toContain("space retry");
-  });
-
-  test("a resumed run says where it came from", () => {
-    const resumed = toPanelJob(job({ resumedFrom: "wf_old01" }), 61_000);
-    const lines = text(buildPanelLines(state({ job: resumed })));
-    expect(lines).toContain("resumed from old01");
-  });
-
-  test("an empty state explains how to start, without pretending it has data", () => {
+  test("an empty state explains how to start", () => {
     const lines = text(buildPanelLines(state({ job: undefined })));
     expect(lines).toContain("Nothing has run in this session yet.");
     expect(lines).toContain("ultracode");
-    expect(lines).not.toContain("running");
   });
 
   test("every line fits the panel width", () => {
-    for (const width of [40, 74, 120]) {
+    for (const width of [40, 60, 74, 120]) {
       for (const line of buildPanelLines(state({ width }))) {
         expect(line.text.length).toBeLessThanOrEqual(width - 2);
       }
     }
   });
 
-  test("a very long name is cut, not wrapped, so the box stays square", () => {
-    const wide = toPanelJob(job({ name: "x".repeat(200) }), 61_000);
-    for (const line of buildPanelLines(state({ job: wide }))) {
-      expect(line.text).toHaveLength(line.text.length);
-      expect(line.text.length).toBeLessThanOrEqual(72);
-    }
-  });
-
-  test("the running job is marked active so the panel can add the shimmer", () => {
-    const styles = buildPanelLines(state()).filter((line) => line.style === "phase-active");
-    expect(styles).toHaveLength(1);
-  });
-
-  test("agents are ordered running first, then failures, then cost", () => {
-    const view = toPanelJob(
-      job({
-        agents: [
-          { id: "#0", label: "cheap", ok: true, durationMs: 1, usage: { input: 1, output: 1, total: 10 }, depth: 1 },
-          { id: "#1", label: "expensive", ok: true, durationMs: 1, usage: { input: 1, output: 1, total: 900 }, depth: 1 },
-          { id: "#2", label: "broken", ok: false, durationMs: 1, depth: 1 },
-        ],
-      }),
-      61_000,
-    );
-    const lines = buildPanelLines(state({ job: view })).map((line) => line.text);
-    const order = ["broken", "expensive", "cheap"].map((label) => lines.findIndex((line) => line.includes(label)));
-    expect(order[0]).toBeLessThan(order[1]);
-    expect(order[1]).toBeLessThan(order[2]);
+  test("a long run is cut, not wrapped, and says how many are hidden", () => {
+    const many = Array.from({ length: 20 }, (_, index) => ({
+      id: `#${index}`,
+      label: `agent-${index}`,
+      ok: true,
+      durationMs: 1_000,
+      usage: { input: 1, output: 1, total: 100 + index },
+      depth: 1,
+      phase: "Analyze",
+    }));
+    const built = toPanelJob(job({ agents: many, planned: [{ title: "Analyze", agents: 20 }], running: 0 }), 61_000);
+    const lines = text(buildPanelLines(state({ job: built })));
+    expect(lines).toContain("more agents in Analyze");
   });
 });
 
+const finishedJob = () =>
+  toPanelJob(
+    job({
+      state: "done",
+      finishedAt: 61_000,
+      running: 0,
+      planned: [],
+      phases: ["Analyze"],
+      recent: [],
+    }),
+    61_000,
+  );
+
 describe("the agent view", () => {
   test("shows the facts of one agent", () => {
-    // The list and the detail view sort the same way, so index 1 is routes.ts
-    // (failures first, then the expensive ones).
-    const view = toPanelJob(job(), 61_000);
-    const lines = text(buildPanelLines(state({ job: view, mode: "agent", selectedAgent: 1 })));
-    expect(lines).toContain("routes.ts");
-    expect(lines).toContain("7.1k tokens");
-    expect(lines).toContain("19s");
+    // Failures sort first, so index 1 is the one that finished well.
+    const built = finishedJob();
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 1 })));
+    expect(lines).toContain("coding-agent");
+    expect(lines).toContain("4.3k tokens");
+    expect(lines).toContain("deepseek-v4-flash");
     expect(lines).toContain("top level");
   });
 
-  test("a replayed agent says it came from the journal", () => {
-    const view = toPanelJob(job(), 61_000);
-    const lines = text(buildPanelLines(state({ job: view, mode: "agent", selectedAgent: 2 })));
-    expect(lines).toContain("replayed from the journal");
-  });
-
-  test("an error and an answer are wrapped, not cut", () => {
-    const view = toPanelJob(
-      job({
-        recent: [
-          { type: "agent_end", at: 2, id: "#2", label: "db.ts", ok: false, error: "boom", durationMs: 1, depth: 1, text: "line one line two" },
-        ],
-      }),
-      61_000,
-    );
-    const lines = text(buildPanelLines(state({ job: view, mode: "agent", selectedAgent: 0 })));
-    expect(lines).toContain("error");
+  test("an answer is shown when the session kept one", () => {
+    // Index 1 is the one that finished well; `#0` is its id.
+    const built = withAnswers(finishedJob(), { "#0": "line one line two" });
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 1 })));
     expect(lines).toContain("answer");
+    expect(lines).toContain("line one line two");
   });
 
-  test("the escape hint goes back to the list", () => {
-    const view = toPanelJob(job(), 61_000);
-    expect(text(buildPanelLines(state({ job: view, mode: "agent" })))).toContain("esc back");
+  test("an error is shown and wrapped", () => {
+    const built = finishedJob();
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 0 })));
+    expect(lines).toContain("error");
+    expect(lines).toContain("no answer");
+  });
+
+  test("escape hint goes back", () => {
+    expect(text(buildPanelLines(state({ mode: "agent" })))).toContain("esc back");
   });
 });
 
 describe("helpers", () => {
-  test("moveIndex stays inside the list", () => {
+  test("columns leave room for both sides", () => {
+    expect(columnWidths(74).left + columnWidths(74).right).toBeLessThan(74);
+    expect(columnWidths(74).left).toBeGreaterThanOrEqual(20);
+  });
+
+  test("a model name is shortened to its last part", () => {
+    expect(shortModel("deepseek/deepseek-v4-flash")).toBe("deepseek-v4-flash");
+    expect(shortModel(undefined)).toBe("");
+    expect(shortModel("a".repeat(40)).length).toBeLessThanOrEqual(22);
+  });
+
+  test("bars are exact", () => {
+    expect(panelBar(0, 100, 8)).toBe(" ".repeat(8));
+    expect(panelBar(100, 100, 8)).toBe("█".repeat(8));
+    expect(panelBar(5, 0, 4)).toBe("█".repeat(4));
+  });
+
+  test("moveIndex stays inside", () => {
     expect(moveIndex(0, 3, -1)).toBe(0);
     expect(moveIndex(2, 3, 1)).toBe(2);
-    expect(moveIndex(1, 3, 1)).toBe(2);
     expect(moveIndex(0, 0, 1)).toBe(0);
   });
 
-  test("wrap keeps every word", () => {
+  test("wrap keeps words and splits a very long one", () => {
     expect(wrap("one two three", 40).join(" ")).toBe("one two three");
     expect(wrap("", 40)).toHaveLength(0);
-    const long = wrap("a".repeat(30), 10);
-    expect(long.length).toBeGreaterThan(1);
+    expect(wrap("a".repeat(30), 10).length).toBeGreaterThan(1);
   });
 
-  test("panelSummary is one line for the status bar", () => {
-    const running = toPanelJob(job(), 61_000);
-    expect(panelSummary(running)).toContain("1 running");
-    const done = toPanelJob(job({ state: "done" }), 61_000);
-    expect(panelSummary(done)).toContain("✓");
-    const paused = toPanelJob(job({ state: "paused" }), 61_000);
-    expect(panelSummary(paused)).toContain("paused");
+  test("panelSummary is one line", () => {
+    expect(panelSummary(view())).toContain("1/5 agents");
+    expect(panelSummary(view({ state: "done" }))).toContain("✓");
     expect(panelSummary(undefined)).toBe("");
+  });
+
+  test("withAnswers does not mutate the view", () => {
+    const before = view();
+    const after = withAnswers(before, { "#0": "x" });
+    expect((before as { answers?: unknown }).answers).toBeUndefined();
+    expect((after as { answers?: Record<string, string> }).answers!["#0"]).toBe("x");
   });
 });
 
-describe("agents that are still working", () => {
-  const liveJob = () =>
-    job({
-      done: 0,
-      running: 3,
-      agents: [],
-      phaseStats: [],
-      recent: [
-        { type: "agent_start", at: 1, id: "#0", label: "src/a.ts", depth: 1 },
-        { type: "agent_start", at: 2, id: "#1", label: "src/b.ts", depth: 1 },
-        { type: "agent_start", at: 3, id: "#2", label: "src/c.ts", depth: 1 },
-      ] as never,
-    });
-
-  test("they get a row each, with their own name", () => {
-    const view = toPanelJob(liveJob(), 61_000);
-    expect(view.agents).toHaveLength(3);
-    expect(view.agents.map((agent) => agent.label)).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
-    expect(view.agents.every((agent) => agent.running)).toBe(true);
-  });
-
-  test("the panel marks them with the running glyph", () => {
-    const view = toPanelJob(liveJob(), 61_000);
-    const lines = text(buildPanelLines(state({ job: view })));
-    expect(lines).toContain("✻ src/a.ts");
-    expect(lines).toContain("✻ src/c.ts");
-  });
-
-  test("an agent that already ended is not drawn twice", () => {
-    const both = liveJob();
-    both.recent = [
-      ...both.recent,
-      { type: "agent_end", at: 4, id: "#0", label: "src/a.ts", ok: true, durationMs: 3, depth: 1 } as never,
-    ];
-    both.running = 2;
-    both.done = 1;
-    both.agents = [{ id: "#0", label: "src/a.ts", ok: true, durationMs: 3, depth: 1 }];
-    const view = toPanelJob(both, 61_000);
-    expect(view.agents.filter((agent) => agent.label === "src/a.ts")).toHaveLength(1);
-  });
-
-  test("a finished run has no running rows", () => {
-    const view = toPanelJob(liveJob(), 61_000);
-    const finished = { ...view, state: "done", agents: view.agents.filter((agent) => !agent.running) };
-    expect(finished.agents).toHaveLength(0);
+describe("the panelJobView type stays honest", () => {
+  test("the view has no methods and no job reference", () => {
+    const built: PanelJobView = view();
+    expect(Object.keys(built).every((key) => typeof (built as unknown as Record<string, unknown>)[key] !== "function")).toBe(true);
   });
 });

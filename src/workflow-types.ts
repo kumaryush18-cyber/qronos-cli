@@ -89,7 +89,7 @@ export type WorkflowEvent =
   | { type: "run_start"; at: number; scriptChars: number; depth: number }
   | { type: "phase"; at: number; name: string; depth: number }
   | { type: "log"; at: number; message: string; depth: number }
-  | { type: "agent_start"; at: number; id: string; label: string; phase?: string; depth: number }
+  | { type: "agent_start"; at: number; id: string; label: string; phase?: string; depth: number; model?: string }
   | { type: "paused"; at: number; depth: number }
   | { type: "resumed"; at: number; depth: number }
   | {
@@ -137,6 +137,8 @@ export interface WorkflowAgentRecord {
   depth: number;
   /** True when this agent's answer was replayed from the journal, not called. */
   replayed?: boolean;
+  /** The model this agent asked, when it was routed to one. */
+  model?: string;
 }
 
 /** Per-phase totals, so the panel can say who did how much. */

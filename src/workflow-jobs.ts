@@ -21,6 +21,7 @@ import {
   type SavedRun,
 } from "./workflow-journal";
 import { WorkflowReplay, replayRecordsFromJournal } from "./workflow-replay";
+import { parseWorkflowMeta } from "./workflow-sandbox";
 import { sharedSlotPool } from "./workflow-slots";
 import {
   addUsage,
@@ -44,6 +45,9 @@ export interface WorkflowJob {
   script: string;
   startedAt: number;
   finishedAt?: number;
+  /** What the script said about itself in `export const meta`. */
+  description?: string;
+  planned?: { title: string; agents: number }[];
   /** The run's own result, once it settled. */
   result?: WorkflowRunResult;
   error?: string;
@@ -137,6 +141,13 @@ export class WorkflowJobManager {
     const name = (saved?.name ?? (input.name && input.name.trim() !== "" ? input.name : "workflow")).slice(0, 60);
     const args = input.args ?? saved?.args;
     const replay = saved ? new WorkflowReplay(replayRecordsFromJournal(saved.entries)) : undefined;
+    // The plan the script declared. Used by the panel to show a phase and its
+    // queued agents before anything has finished; it never affects the run.
+    const meta = parseWorkflowMeta(script);
+    const planned = (meta.phases ?? []).map((phase) => ({
+      title: phase.title,
+      agents: phase.agents ?? 0,
+    }));
 
     const job: WorkflowJob = {
       id,
@@ -145,6 +156,8 @@ export class WorkflowJobManager {
       script,
       startedAt: this.now(),
       resumedFrom: resumeFrom,
+      description: (meta.description ?? "").slice(0, 300) || undefined,
+      planned: planned.length > 0 ? planned : undefined,
       running: 0,
       done: 0,
       failed: 0,
@@ -237,7 +250,10 @@ export class WorkflowJobManager {
   }
 
   list(): WorkflowJob[] {
-    return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt);
+    // Newest first. Two runs can start in the same millisecond, so the id breaks
+    // the tie: ids carry an increasing sequence, and a list whose order flips
+    // between two identical timestamps is a list that flickers.
+    return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt || (a.id < b.id ? 1 : -1));
   }
 
   /** Running, queued or paused jobs. */
