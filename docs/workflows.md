@@ -373,6 +373,70 @@ Four rules the panel keeps:
 4. **A live run is never called failed.** A run with a live agent shows the
    working mark, however many agents have already failed.
 
+### While it runs: the waiting row
+
+A background run outlives the turn that started it. The answer arrives, the
+working line stops, and the run keeps going — so the CLI needs a second row, one
+that belongs to the run and not to the turn:
+
+```
+※ Waiting for 1 dynamic workflow to finish
+```
+
+- The words are Claude Code's. The count is in plain English: `1 dynamic
+  workflow`, `3 dynamic workflows`. It goes away the moment the last run ends.
+- The `※` breathes and the same 3 s pale-orange band flows through the words as
+  through the header and the working line. One moving light means one thing in
+  the whole CLI: this is happening now. A line that lives for ten minutes and
+  never moves looks like a frozen terminal.
+- The row sits **below** the working line and **above** the editor, so both can
+  be true at once: the assistant is answering and a workflow is running.
+- **The ticker stops.** It redraws every 150 ms only while something is waiting.
+  When the count reaches zero it draws one last empty frame and stops. A quiet
+  CLI must not spend the battery of a busy one.
+- The row only knows a **number**. It cannot start, stop, pause or read a run.
+  That is why it can never cost a token or lose work: the work is in the job
+  manager, and the row is told how many jobs are live.
+
+The count comes from the job manager itself (`onActiveChange`), not from the
+places that start and stop runs. One hook means one place to be right, so a run
+that ends by being cancelled from the panel cannot leave the row behind.
+
+### When the panel closes
+
+```
+└ Dynamic workflows dialog dismissed
+```
+
+One muted line, in the transcript, at the weight of a footnote. It is a **custom
+entry**, not a message: it is drawn for you and never sent to the model, so
+closing a dialog cannot wake the assistant up or spend a token. If a host cannot
+draw entries, the line is simply absent — never an error.
+
+### The table at the end
+
+A fan-out answers the same questions about N things. Prose makes the reader
+compare five paragraphs by eye; a table makes the shape of the answer visible:
+
+```
+results:
+#             │ project      │ about
+──────────────┼──────────────┼───────────────────────────
+coding-agent  │ coding-agent │ the agent loop
+ai-and-tui    │ ai-and-tui   │ providers and the TUI
+```
+
+- It appears when **at least two agents returned structured data** — that is,
+  when the script asked for a `schema` and the answer passed the check.
+- Columns are the keys the agents agreed on, in the order they first appeared.
+  A key only one agent used is still a column, with a gap: a gap says "this one
+  did not answer that", and a missing column would hide it.
+- `#` is the agent's label, so every row can be traced back to a real agent.
+- A cell is one line, cut at 28 characters with a visible `…`. A 200-character
+  description would otherwise push the last column off the screen.
+- Nothing is invented. A run with no structured data gets no table at all
+  rather than an empty frame around nothing.
+
 ## Why a script, and not just many `agent` calls
 
 A tool call returns its result into the conversation. Ten calls return ten

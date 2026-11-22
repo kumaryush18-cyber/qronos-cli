@@ -190,6 +190,23 @@ describe("the report", () => {
     expect(text).toContain("1 failed");
   });
 
+  test("a run whose agents returned data ends with a table", () => {
+    const text = renderWorkflowReport("areas", {
+      ...base,
+      agents: [
+        { id: "wf-1", label: "coding-agent", ok: true, durationMs: 10, depth: 1, data: { project: "coding-agent", about: "the agent loop" } },
+        { id: "wf-2", label: "ai-and-tui", ok: true, durationMs: 10, depth: 1, data: { project: "ai-and-tui", about: "providers and the TUI" } },
+      ],
+    });
+    expect(text).toContain("results:");
+    expect(text).toContain("project");
+    expect(text).toContain("coding-agent");
+  });
+
+  test("a run without structured data gets no table, not an empty one", () => {
+    expect(renderWorkflowReport("areas", base)).not.toContain("results:");
+  });
+
   test("a huge value is shortened with a visible marker", () => {
     const text = renderWorkflowReport("big", { ...base, value: "y".repeat(9000) });
     expect(text).toContain("more characters in the run details");

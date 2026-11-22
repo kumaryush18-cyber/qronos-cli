@@ -37,6 +37,7 @@ import { createFileCompletionExtension } from "./file-completion-extension";
 import { createToolAliasesExtension } from "./tool-aliases";
 import { createErrorNoticeExtension } from "./error-notice";
 import { createWorkingLineExtension } from "./working-line";
+import { createWorkflowWaitingExtension } from "./workflow-waiting";
 import { ensureKeybindingDefaults } from "./keybindings";
 import { ensureUiDefaults, installSmoothScrolling } from "./ui-defaults";
 import { resolveTuiMode } from "./env";
@@ -346,6 +347,9 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // whole run (prompt -> final answer), not per model call. No tool, no model
   // call of its own.
   const workingLineExtension: InlineExtension = createWorkingLineExtension();
+  // Below the working line and above the editor: a background run outlives the
+  // turn, so it needs its own row that the end of a turn does not clear.
+  const waitingLineExtension: InlineExtension = createWorkflowWaitingExtension();
 
   // defense-in-depth block + report for any tool outside
   // ALLOWED_TOOL_NAMES that somehow reaches a tool_call event.
@@ -469,6 +473,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     // Before ads on purpose: pi stacks aboveEditor widgets in insertion order,
     // so registering this one first keeps the working line above the ad box.
     workingLineExtension,
+    waitingLineExtension,
     adsExtension,
     usageToolExtension,
     buyToolExtension,

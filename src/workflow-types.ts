@@ -176,6 +176,8 @@ export type WorkflowEvent =
       model?: string;
       activity?: WorkflowAgentActivity[];
       toolCalls?: number;
+      /** The checked data, so the report can table it. Never journaled. */
+      data?: unknown;
     }
   | {
       type: "run_end";
@@ -222,6 +224,13 @@ export interface WorkflowAgentRecord {
   activity?: WorkflowAgentActivity[];
   /** Every tool call it made, including the ones past the kept rows. */
   toolCalls?: number;
+  /**
+   * The checked data when the agent was asked for a schema.
+   *
+   * Kept so the report can end with a table of what the run found. It is not
+   * journaled: a resumed run re-reads the answer text and checks it again.
+   */
+  data?: unknown;
 }
 
 /** Per-phase totals, so the panel can say who did how much. */

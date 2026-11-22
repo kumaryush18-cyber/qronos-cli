@@ -18,6 +18,7 @@ import { PROVIDER_PRESETS } from "../src/provider";
 import { createWorkflowToolExtension, getLastWorkflowRun } from "../src/workflow-tool";
 import { workflowConfigFromEnv } from "../src/workflow-types";
 import { WorkflowPanel, visibleLength } from "../src/workflow-panel";
+import { createWorkflowWaitingExtension } from "../src/workflow-waiting";
 import { approvalRequestFor, buildApprovalLines } from "../src/workflow-approval";
 
 const failures: string[] = [];
@@ -114,9 +115,13 @@ const ctx = {
 
 const tools: Array<Record<string, any>> = [];
 const deliveries: Array<{ content: string; customType: string }> = [];
+/** Notes the extension puts in the transcript (custom entries, not messages). */
+const notes: Array<{ type: string; data: unknown }> = [];
+const entryRenderers = new Map<string, (...args: any[]) => any>();
 const overlays: Array<Record<string, any>> = [];
 let commandHandler: ((args: string, ctx: unknown) => Promise<void>) | undefined;
 let panelShortcut: ((ctx: unknown) => Promise<void>) | undefined;
+let handlersSessionStart: ((event: unknown, ctx: unknown) => void) | undefined;
 createWorkflowToolExtension({
   config: { ...workflowConfigFromEnv({}), wallClockMs: 600_000, concurrency: 4, maxAgents: 12 },
   agentDir,
@@ -130,6 +135,8 @@ createWorkflowToolExtension({
   },
   sendMessage: (message: Record<string, any>) =>
     deliveries.push({ content: String(message.content), customType: String(message.customType) }),
+  appendEntry: (type: string, data: unknown) => notes.push({ type, data }),
+  registerEntryRenderer: (type: string, renderer: (...args: any[]) => any) => entryRenderers.set(type, renderer),
   on: () => {},
 } as never);
 
@@ -143,7 +150,17 @@ const run = (params: Record<string, unknown>) =>
 const commandNotices: Array<{ text: string }> = [];
 async function sendCommand(args: string): Promise<string> {
   commandNotices.length = 0;
-  await commandHandler?.(args, { ui: { notify: (text: string) => commandNotices.push({ text }) } });
+  await commandHandler?.(args, {
+    ui: {
+      notify: (text: string) => commandNotices.push({ text }),
+      // A panel needs somewhere to live; the harness answers like a real host.
+      custom: async (build: any, options: any) => {
+        overlays.push(options);
+        build({ requestRender: () => {} }, { fg: (_slot: string, text: string) => text }, {}, () => {});
+        return undefined;
+      },
+    },
+  });
   return commandNotices.map((entry) => entry.text).join(" ");
 }
 /** The panel colours its lines, so assertions read them without escape codes. */
@@ -222,6 +239,55 @@ try {
   check("the panel shows the finished run", /\d+\/\d+ agents/.test(done), done.split("\n")[0] ?? "");
   check("the panel shows a tick for the finished agents", done.includes("✓"), done.slice(0, 200));
   check("the panel kept drawing to the end", (panel?.render(74) ?? []).length > 4, "no lines");
+
+  /* --- the waiting row, the dismissal note and the results table --------- */
+  // The waiting row is told the count by the job manager, not by hand: this
+  // proves the wiring from a real run all the way to the widget's line.
+  const waitingExt = createWorkflowWaitingExtension({ frameMs: 20 });
+  const waitingWidgets: Array<{ component: { render: (width: number) => string[] } }> = [];
+  (waitingExt as unknown as { factory: (api: unknown) => void }).factory({
+    on: (name: string, handler: (...args: any[]) => void) => {
+      if (name === "session_start") handlersSessionStart = handler;
+    },
+  } as never);
+  handlersSessionStart?.({}, {
+    ui: {
+      setWidget: (_id: string, factory: any) => waitingWidgets.push({ component: factory({ requestRender: () => {} }, {}) }),
+    },
+  });
+  const waitingLines = () => waitingWidgets[0]?.component.render(80) ?? [];
+  check("no run, no waiting row", waitingLines().length === 0, waitingLines().join(" | "));
+
+  deliveries.length = 0;
+  const waitingRun = await run({ name: "waiting-demo", script: "await agent('count to three'); return 1;" });
+  const waitingDeadline = Date.now() + 20_000;
+  while (waitingLines().length === 0 && Date.now() < waitingDeadline) await wait(100);
+  const waitingLine = plain(waitingLines()[0] ?? "");
+  console.log(waitingLine);
+  check("a live run draws the waiting row", waitingLine.includes("Waiting for"), waitingLine);
+  check("the row says how many runs wait", /Waiting for \d+ dynamic workflows? to finish/.test(waitingLine), waitingLine);
+  check("the row is coloured and animating", (waitingLines()[0] ?? "").includes("\u001b["), "no colour codes");
+
+  const goneDeadline = Date.now() + 90_000;
+  while (waitingLines().length > 0 && Date.now() < goneDeadline) await wait(200);
+  check("the row goes away when the run ends", waitingLines().length === 0, plain(waitingLines()[0] ?? "no row"));
+  void waitingRun;
+
+  // Closing the panel leaves one muted line in the transcript, and no message.
+  const notesBefore = notes.length;
+  const messagesBefore = deliveries.length;
+  await sendCommand("panel");
+  check("closing the panel appends exactly one note", notes.length === notesBefore + 1, `${notes.length - notesBefore} notes`);
+  const note = notes.at(-1);
+  check("the note is the dismissal line", JSON.stringify(note?.data ?? {}).includes("Dynamic workflows dialog dismissed"), JSON.stringify(note?.data));
+  check("the note is not a message to the model", deliveries.length === messagesBefore, `${deliveries.length - messagesBefore} messages`);
+  const noteRenderer = entryRenderers.get(String(note?.type ?? ""));
+  check("a renderer exists for the note", typeof noteRenderer === "function", String(typeof noteRenderer));
+  check(
+    "the note renders as one plain line",
+    plain(String(noteRenderer?.({ data: note?.data }, {}, { fg: (_s: string, t: string) => t })?.render(80)?.[0] ?? "")).startsWith("└"),
+    String(noteRenderer?.({ data: note?.data }, {}, { fg: (_s: string, t: string) => t })?.render(80)?.[0] ?? ""),
+  );
 
   /* one agent's own view: the picture on screenshot 18 */
   panel?.handleInput("\r");
@@ -332,7 +398,7 @@ try {
   /* closing is safe */
   panel?.handleInput("\u001b");
   panel?.dispose();
-  check("escape closed the panel and lost nothing", overlays.length === 1, `${overlays.length} overlays`);
+  check("escape closed the panel and lost nothing", overlays.length >= 1, `${overlays.length} overlays`);
 
   /* --- what one agent did, as the panel's detail view will show it --------- */
   // A real agent, real tools, one cheap call. The panel's Activity block cannot
@@ -375,6 +441,23 @@ return out.map((r) => r.text).join(" | ");`,
     (record?.activity ?? []).some((row) => row.tool === "read" || row.tool === "ls"),
     (record?.activity ?? []).map((row) => row.tool).join(","),
   );
+
+  /* --- a real schema fan-out, which ends with a table --------------------- */
+  deliveries.length = 0;
+  const tableRun = await run({
+    name: "table-demo",
+    background: false,
+    script: `const REPORT = { type: "object", required: ["project", "about"], properties: { project: { type: "string" }, about: { type: "string" } } };
+const areas = ["agent loop", "terminal UI"];
+const ask = (a) => "Reply with JSON only, no prose: " + JSON.stringify({ project: a, about: "one short line" });
+const out = await parallel(areas.map((a) => agent(ask(a), { label: a, schema: REPORT })));
+return out.map((r) => (r.ok ? r.data : null));`,
+  });
+  check("a schema fan-out finished", tableRun.details.ok === true, String(tableRun.details.error ?? ""));
+  const report = String(tableRun.content[0]?.text ?? "");
+  check("the report ends with a results table", report.includes("results:"), report.slice(-300));
+  check("the table has the agent column and the agreed keys", /#\s*│\s*project\s*│\s*about/.test(report), report.slice(-200));
+  check("the table holds what the agents really returned", /agent loop|terminal UI/.test(report), report.slice(-200));
 
   /* --- the detail view over a live agent that really called a tool -------- */
   await run({

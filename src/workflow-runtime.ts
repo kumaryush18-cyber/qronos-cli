@@ -480,6 +480,9 @@ export class WorkflowRuntime {
     else this.shared.usage = addUsage(this.shared.usage, checked.usage);
     if (replayed) this.shared.replayedUsage = addUsage(this.shared.replayedUsage, checked.usage);
     this.bumpPhase(record);
+    // The checked data, when a schema was given. Not journaled: a resumed run
+    // reads the answer text again and checks it against the same schema.
+    record.data = checked.data;
     this.emit({
       type: "agent_end",
       at: this.now(),
@@ -500,6 +503,7 @@ export class WorkflowRuntime {
       activity: record.activity,
       toolCalls: record.toolCalls,
       model,
+      data: checked.data,
     });
   }
 

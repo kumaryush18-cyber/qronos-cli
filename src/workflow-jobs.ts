@@ -116,6 +116,12 @@ export interface WorkflowJobManagerOptions {
   now?: () => number;
   /** Called exactly once per job, when it settles. */
   onSettle?: (job: WorkflowJob) => void;
+  /**
+   * Called whenever the number of live jobs changes. The waiting row above the
+   * editor listens to this; it is one hook instead of one call per transition,
+   * so a new transition cannot forget it.
+   */
+  onActiveChange?: (active: number) => void;
   /** For tests: run the job body on the current tick. */
   startImmediately?: boolean;
 }
@@ -228,6 +234,7 @@ export class WorkflowJobManager {
       },
     });
     this.runtimes.set(id, runtime);
+    this.announceActive();
 
     const start = () => {
       job.state = "running";
@@ -368,9 +375,20 @@ export class WorkflowJobManager {
     return removed;
   }
 
+  /** Tell a listener how many runs are live, never letting it break a job. */
+  private announceActive(): void {
+    if (!this.options.onActiveChange) return;
+    try {
+      this.options.onActiveChange(this.active().length);
+    } catch {
+      // A display hook must never break the run it is reporting on.
+    }
+  }
+
   private settle(job: WorkflowJob): void {
     if (job.settledState) return;
     job.settledState = true;
+    this.announceActive();
     try {
       this.options.onSettle?.(job);
     } catch {
@@ -470,6 +488,7 @@ export class WorkflowJobManager {
           activity: event.activity ?? live?.activity,
           toolCalls: event.toolCalls ?? live?.toolCalls,
           model: event.model ?? live?.model,
+          data: event.data,
         };
         job.agents.push(record);
         const agentStats = job.phaseStats.find((stat) => stat.name === event.phase);

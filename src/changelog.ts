@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.18",
+    highlights: [
+      "A background workflow now has a row of its own above the editor: ※ Waiting for 1 dynamic workflow to finish. Before this the CLI looked idle while five agents worked and the token bill went up.",
+      "The row is alive: the ※ breathes and the same 3 s pale-orange band flows through the words as through the header and the working line. One moving light means one thing everywhere: this is happening now.",
+      "It sits below the working line, so both can be true at once: the assistant is answering and a workflow is still running. The ticker stops when the last run ends — one final empty frame, then nothing.",
+      "The count comes from the job manager itself, not from the places that start and stop runs. One hook, so a run cancelled from the panel cannot leave the row behind. The row only knows a number: it cannot start, stop or read a run.",
+      "Closing the panel now leaves one muted line in the chat: └ Dynamic workflows dialog dismissed. It is a custom entry, not a message, so it is drawn for you and never sent to the model.",
+      "A finished run ends with a table of the structured results when at least two agents returned schema-checked data: # then the keys they agreed on. A key only one agent used is still a column, with a gap, because a gap is information.",
+      "Table cells are one line and cut at 28 characters with a visible …, so a long description cannot push the last column off the screen. A run with no structured data gets no table at all.",
+      "Proved on claude-haiku-5.5 with a real schema fan-out: the waiting row appeared and went away, the dismissal line was appended, and the report ended with a table of what the agents really returned (54 checks).",
+    ],
+  },
+  {
     version: "1.0.17",
     highlights: [
       "enter in the workflow panel now opens one agent properly: a list of the agents on the left, and that agent's whole story on the right, in the same shape Claude Code uses.",

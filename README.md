@@ -95,6 +95,9 @@ Storing it inline is an explicit opt-in.
   now, and `p` to pause, `x` to stop, `s` to save the script into `.qronos/workflows/`.
   `enter` opens one agent: what it was asked, the last tool calls with their arguments
   (`read(path: package.json)`), how long it has been idle, and its answer or error.
+  While a background run is live a second row sits above the editor —
+  `※ Waiting for 1 dynamic workflow to finish`, with the same 3 s orange shimmer — and a
+  finished run ends with a table of the structured results when the agents used a `schema`.
   See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.

@@ -58,7 +58,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
     expect(opts.settingsManager.getThemeSetting()).toBe("qronos-claude");
   });
 
-  test("buildRuntimeOptions registers exactly the thirty-three known extensions — no more, no less", () => {
+  test("buildRuntimeOptions registers exactly the thirty-four known extensions — no more, no less", () => {
     const opts = buildRuntimeOptions(baseOpts("http://example.test"), "session-a");
     // the closed set deliberately grew to six with qronos-buy-tool;
     // 2026-09-01: to seven with qronos-error-notice (one readable line on a
@@ -114,6 +114,10 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // process, no fs and no network, and the subagents it spawns reuse the same
     // runner as qronos-agent, so there is still no second model call in the
     // main turn: the calls happen inside subagents, one at a time per slot.
+    // 2026-11-26: to thirty-four with qronos-workflow-waiting: the row above the
+    // editor that says "Waiting for 1 dynamic workflow to finish" while a
+    // background run is live. A widget and one shared counter; no tool, no
+    // model call, and its ticker stops the moment the last run ends.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "qronos-ads",
@@ -149,6 +153,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-memory",
         "qronos-compact",
         "qronos-workflow",
+        "qronos-workflow-waiting",
       ].sort(),
     );
   });

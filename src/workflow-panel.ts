@@ -425,8 +425,11 @@ export async function openWorkflowPanel(
   manager: WorkflowJobManager,
   theme: Theme,
   options: { width?: number; saveScript?: (jobId: string) => string | undefined } = {},
-): Promise<void> {
+): Promise<boolean> {
   const width = options.width ?? PANEL_WIDTH;
+  // A host without overlays (a script, a test, a plain terminal UI) cannot show
+  // a floating panel. Saying so is better than throwing at the user.
+  if (typeof ctx?.ui?.custom !== "function") return false;
   await (ctx.ui.custom as any)(
     (tui: any, panelTheme: Theme, _kb: any, done: () => void) =>
       new WorkflowPanel({
@@ -439,6 +442,7 @@ export async function openWorkflowPanel(
       }),
     { overlay: true, overlayOptions: { anchor: "center", width, maxHeight: PANEL_HEIGHT } },
   );
+  return true;
 }
 
 /** The glyphs and colours this panel uses, for the tests and for docs. */

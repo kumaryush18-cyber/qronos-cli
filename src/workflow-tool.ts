@@ -21,6 +21,9 @@ import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { openWorkflowPanel } from "./workflow-panel";
 import { saveWorkflowScript } from "./workflow-save";
+import { resultTableSection } from "./workflow-table";
+import { setWaitingWorkflows } from "./workflow-waiting";
+import { appendWorkflowNote, registerWorkflowNoteRenderer } from "./workflow-note";
 import { approvalRequestFor, askWorkflowApproval } from "./workflow-approval";
 import { sharedSlotPool } from "./workflow-slots";
 import {
@@ -196,6 +199,10 @@ export function renderWorkflowReport(name: string, result: WorkflowRunResult): s
     lines.push("", "--- log ---");
     lines.push(...logs.slice(-15));
   }
+  // A fan-out answers the same questions about N things. A table is how a
+  // person compares them; prose is how they stop trying. Only agents that
+  // really returned structured data are tabulated — nothing is invented.
+  lines.push(...resultTableSection(result.agents));
   return lines.join("\n");
 }
 
@@ -336,6 +343,10 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
   return {
     name: "qronos-workflow",
     factory(qronos: ExtensionAPI) {
+      // Registered before anything can append a note, so the first
+      // "dialog dismissed" line is drawn instead of silently stored.
+      registerWorkflowNoteRenderer(qronos as never);
+
       /** One subagent, mapped onto the workflow result shape. */
       const runAgentOnce = async (
         request: Parameters<WorkflowAgentRunner>[0],
@@ -403,6 +414,15 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             const ctx = state.toolCtx;
             if (!ctx) return Promise.resolve({ ok: false, text: "", error: "no session context" });
             return runAgentOnce(request, signal, ctx);
+          },
+          // The waiting row above the editor follows this: one hook, so a run
+          // that ends by being cancelled cannot leave the row behind.
+          onActiveChange: (active) => {
+            try {
+              setWaitingWorkflows(active);
+            } catch {
+              // A display hook must never break a run.
+            }
           },
           onSettle: (job) => {
             const result = job.result ?? resultFromJob(job);
@@ -613,7 +633,12 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
 
           // `/workflows panel`: the live overlay, the same thing Alt+W opens.
           if (words[0] === "panel") {
-            await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never, { saveScript });
+            const shown = await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never, {
+              saveScript,
+            });
+            // Only a panel that really opened can be dismissed. In a host with
+            // no overlays there is nothing to close, so there is nothing to say.
+            if (shown) appendWorkflowNote(qronos, "Dynamic workflows dialog dismissed");
             return;
           }
 
@@ -755,7 +780,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           description: "Workflow panel",
           handler: async (ctx: ExtensionCommandContext | any) => {
             const manager = managerFor();
-            await openWorkflowPanel(ctx, manager, (ctx as { theme?: unknown }).theme as never, {
+            const shown = await openWorkflowPanel(ctx, manager, (ctx as { theme?: unknown }).theme as never, {
               saveScript: (jobId: string) => {
                 const job = manager.get(jobId);
                 if (!job) return undefined;
@@ -766,6 +791,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
                 }
               },
             });
+            if (shown) appendWorkflowNote(qronos, "Dynamic workflows dialog dismissed");
           },
         });
       }
