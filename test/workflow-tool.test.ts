@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   WORKFLOW_TOOL_NAME,
   createWorkflowToolExtension,
@@ -11,7 +11,7 @@ import {
 } from "../src/workflow-tool";
 import { workflowConfigFromEnv, type WorkflowRunResult } from "../src/workflow-types";
 import { WorkflowJobManager } from "../src/workflow-jobs";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SubagentRunner } from "../src/agent-tool";
@@ -63,6 +63,70 @@ describe("the detail of a job that was restarted", () => {
     // A detail line that still showed the old count would hide the second charge.
     expect(after).not.toBe(before);
     expect(after).toContain("30 tokens");
+  });
+});
+
+
+/** Run the tool once with the given params and a fake runner. */
+async function runTool(options: { runner: SubagentRunner }, params: Record<string, unknown>) {
+  const { tools, api } = fakePi();
+  (createWorkflowToolExtension({ runner: options.runner, agentDir: mkdtempSync(join(tmpdir(), "qronos-wf-file-")) }) as unknown as { factory: (api: unknown) => void }).factory(api);
+  const tool = tools[0] as { execute: Function };
+  return tool.execute("1", params, undefined, undefined, ctx);
+}
+
+describe("a script saved on disk", () => {
+  let dir = "";
+  let real = "";
+
+  beforeEach(() => {
+    real = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), "qronos-scriptfile-"));
+    mkdirSync(join(dir, ".qronos", "workflows"), { recursive: true });
+    writeFileSync(join(dir, ".qronos", "workflows", "saved-one.js"), "await agent('hello'); return 1;\n");
+    process.chdir(dir);
+  });
+
+  afterEach(() => {
+    process.chdir(real);
+  });
+
+  test("scriptFile runs the text that is on disk, and the name comes from the file", async () => {
+    const { runner, prompts } = fakeRunner();
+    const job = await runTool({ runner }, { scriptFile: "saved-one", background: false });
+    expect(job.details.ok).toBe(true);
+    expect(prompts).toEqual(["hello"]);
+    expect(job.details.name).toBe("saved-one");
+  });
+
+  test("a path works as well as a name", async () => {
+    const { runner, prompts } = fakeRunner();
+    const job = await runTool({ runner }, { scriptFile: join(dir, ".qronos", "workflows", "saved-one.js"), background: false });
+    expect(prompts.length).toBe(1);
+    expect(job.details.name).toBe("saved-one");
+  });
+
+  test("an unknown name is refused before anything runs", async () => {
+    const { runner, prompts } = fakeRunner();
+    const job = await runTool({ runner }, { scriptFile: "nope", background: false });
+    expect(job.details.ok).toBe(false);
+    expect(prompts).toEqual([]);
+    expect(job.content[0]!.text).toContain("no saved script");
+  });
+
+  test("an empty file is refused with its own reason", async () => {
+    writeFileSync(join(dir, ".qronos", "workflows", "empty.js"), "  \n");
+    const { runner } = fakeRunner();
+    const job = await runTool({ runner }, { scriptFile: "empty", background: false });
+    expect(job.details.ok).toBe(false);
+    expect(job.content[0]!.text).toContain("the file is empty");
+  });
+
+  test("no script, no id and no file is still an error", async () => {
+    const { runner } = fakeRunner();
+    const job = await runTool({ runner }, { background: false });
+    expect(job.details.ok).toBe(false);
+    expect(job.content[0]!.text).toContain("scriptFile");
   });
 });
 

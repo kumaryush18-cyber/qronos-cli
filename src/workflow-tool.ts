@@ -21,6 +21,10 @@ import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { openWorkflowPanel } from "./workflow-panel";
 import { saveWorkflowScript } from "./workflow-save";
+import { listSavedScripts, readSavedScript, resolveSavedScript, savedScriptLine, scriptDirFor, scriptProblem } from "./workflow-library";
+import { askConfirm } from "./workflow-confirm";
+import { editTextInEditor } from "./editor-edit";
+import { writeFileSync } from "node:fs";
 import { resultTableSection } from "./workflow-table";
 import { decideToolUse, grantKeys, readToolFacts, refusalReason } from "./workflow-permissions";
 import { askToolApproval } from "./workflow-tool-approval";
@@ -68,8 +72,13 @@ const PARAMS = {
       description:
         "Resume a saved run by its id (for example wf_qhj6qy01). The script is replayed and every finished agent that has not changed is answered from the journal instead of the model. `script` is then ignored.",
     },
+    scriptFile: {
+      type: "string",
+      description:
+        "Run a script saved on disk, by path or by name (for example two-looks). The file is read here, so the script is used exactly as it is on disk and never retyped. `script` is then ignored.",
+    },
   },
-  required: ["script"],
+  required: [],
 } as const;
 
 /** The last run, for `/workflows`. Kept small and never persisted. */
@@ -609,12 +618,43 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           "Run a JavaScript workflow that fans work out to subagents and returns only the final result.",
         parameters: PARAMS as unknown as Record<string, unknown>,
         async execute(_toolCallId: string, params: any, _signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionToolContext): Promise<any> {
-          const script = typeof params?.script === "string" ? params.script : "";
-          const name = (typeof params?.name === "string" && params.name.trim() !== "" ? params.name : "workflow").slice(0, 60);
+          let script = typeof params?.script === "string" ? params.script : "";
+          let name = (typeof params?.name === "string" && params.name.trim() !== "" ? params.name : "workflow").slice(0, 60);
           const resumeFrom = typeof params?.resumeFrom === "string" ? params.resumeFrom.trim() : "";
+          const scriptFile = typeof params?.scriptFile === "string" ? params.scriptFile.trim() : "";
+
+          // A saved script is read from disk, so the file the user edited is the
+          // file that runs: no retyping, no drift between the two.
+          if (scriptFile !== "") {
+            const dir = scriptDirFor(process.cwd());
+            const saved =
+              resolveSavedScript(dir, scriptFile) ??
+              // A full path is not a name, so it is read as it is, and the name
+              // comes from the file itself.
+              (readSavedScript(scriptFile) !== undefined
+                ? { name: scriptFile.split(/[\\/]/).at(-1)!.replace(/\.js$/, ""), path: scriptFile, bytes: 0 }
+                : undefined);
+            if (!saved) {
+              return {
+                content: [{ type: "text" as const, text: `Error: no saved script "${scriptFile}". /workflows scripts lists them.` }],
+                details: { ok: false, reason: "no-script-file" },
+              };
+            }
+            const text = readSavedScript(saved.path);
+            const problem = scriptProblem(text);
+            if (problem) {
+              return {
+                content: [{ type: "text" as const, text: `Error: ${saved.path}: ${problem}.` }],
+                details: { ok: false, reason: "bad-script-file" },
+              };
+            }
+            script = text!;
+            if (name === "workflow") name = (saved.name || "workflow").slice(0, 60);
+          }
+
           if (script.trim() === "" && resumeFrom === "") {
             return {
-              content: [{ type: "text" as const, text: "Error: the workflow needs a script (or a resumeFrom id)." }],
+              content: [{ type: "text" as const, text: "Error: the workflow needs a script (or a resumeFrom id, or a scriptFile)." }],
               details: { ok: false, reason: "no-script" },
             };
           }
@@ -907,6 +947,107 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             } catch (error) {
               ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
             }
+            return;
+          }
+
+          // `/workflows scripts`: the scripts you saved, newest first.
+          if (words[0] === "scripts") {
+            const dir = scriptDirFor(process.cwd());
+            const scripts = listSavedScripts(dir);
+            if (scripts.length === 0) {
+              ctx.ui.notify(
+                [`No scripts saved in this project yet.`, `A run is saved with \`s\` in the panel, or /workflows save <id>.`, `They live in ${dir}`].join("\n"),
+                "info",
+              );
+              return;
+            }
+            const stamp = Date.now();
+            const lines = [
+              `saved scripts in ${dir}`,
+              "",
+              ...scripts.map((script) => `  ${pad(script.name.slice(0, 30), 31)} ${savedScriptLine({ ...script, name: "" }, stamp).replace(/^ · /, "")}`),
+              "",
+              `run one with /workflows run <name>`,
+              `edit one with /workflows edit <name>`,
+            ];
+            ctx.ui.notify(lines.join("\n"), "info");
+            return;
+          }
+
+          // `/workflows run <name>`: a saved script, run like any other workflow.
+          //
+          // A command handler cannot run tools — only the model can — so this does
+          // not pretend to start a run by itself. It checks the file, then asks the
+          // chat's own agent to call the tool with `scriptFile`, which reads the
+          // exact text from disk and shows the normal approval card.
+          if (words[0] === "run") {
+            const dir = scriptDirFor(process.cwd());
+            const script = words[1] ? resolveSavedScript(dir, words.slice(1).join(" ")) : undefined;
+            if (!script) {
+              const known = listSavedScripts(dir).map((entry) => entry.name);
+              ctx.ui.notify(
+                words[1]
+                  ? [`No saved script called "${words.slice(1).join(" ")}".`, known.length > 0 ? `Saved: ${known.join(", ")}` : "Nothing is saved in this project yet."].join("\n")
+                  : "Name a saved script: /workflows scripts lists them.",
+                "info",
+              );
+              return;
+            }
+            const text = readSavedScript(script.path);
+            const problem = scriptProblem(text);
+            if (problem) {
+              ctx.ui.notify(`${script.path}: ${problem}.`, "warning");
+              return;
+            }
+            ctx.ui.notify(
+              [`Starting ${script.name} from ${script.path}.`, "The card comes next; nothing runs until you answer it."].join("\n"),
+              "info",
+            );
+            qronos.sendUserMessage(
+              `Run the saved workflow script at ${script.path} by calling the ${WORKFLOW_TOOL_NAME} tool with scriptFile: "${script.path}". Use the file as it is; do not retype or change it.`,
+            );
+            return;
+          }
+
+          // `/workflows edit <name>`: change a saved script, and save only if you
+          // say so. A file that is silently rewritten is a file you cannot trust.
+          if (words[0] === "edit") {
+            const dir = scriptDirFor(process.cwd());
+            const script = words[1] ? resolveSavedScript(dir, words.slice(1).join(" ")) : undefined;
+            if (!script) {
+              ctx.ui.notify(
+                words[1] ? `No saved script called "${words.slice(1).join(" ")}". /workflows scripts lists them.` : "Name a script: /workflows scripts lists them.",
+                "info",
+              );
+              return;
+            }
+            const before = readSavedScript(script.path);
+            if (before === undefined) {
+              ctx.ui.notify(`${script.path} could not be read.`, "warning");
+              return;
+            }
+            const edited = editTextInEditor(before, { fileName: `${script.name}.js` });
+            if (edited === undefined) {
+              ctx.ui.notify(`Nothing changed in ${script.path}.`, "info");
+              return;
+            }
+            const save = await askConfirm(ctx, {
+              title: "Save the change?",
+              lines: [script.path, "the file on disk would be replaced"],
+              yes: "Yes, save it",
+              no: "No, leave the file alone",
+            });
+            if (!save) {
+              ctx.ui.notify(`Not saved. ${script.path} is unchanged.`, "info");
+              return;
+            }
+            try {
+              writeFileSync(script.path, edited.endsWith("\n") ? edited : `${edited}\n`, "utf8");
+            } catch (error) {
+              ctx.ui.notify(`Could not save ${script.path}: ${error instanceof Error ? error.message : String(error)}`, "warning");
+              return;
+            }
+            ctx.ui.notify(`Saved ${script.path}. Run it with /workflows run ${script.name}.`, "info");
             return;
           }
 

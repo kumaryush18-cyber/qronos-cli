@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.22",
+    highlights: [
+      "A saved script can run again. /workflows scripts lists what is in .qronos/workflows, /workflows run <name> starts one, and /workflows edit <name> opens it in your editor. Saving without a way back is a drawer that only opens one way.",
+      "run never pretends to start the run by itself: a command cannot run tools, so it asks the chat's own agent to call the workflow tool with scriptFile, and the tool reads the exact text from disk. Nothing is retyped, so the file you edited is the file that runs.",
+      "The approval card still comes first, and it names the script and where it came from. A file on disk is not more trustworthy than a script from a chat.",
+      "edit asks before it writes: Save the change? with the path, the cursor on No, and no overlay meaning No. An edited project file is never replaced in silence.",
+      "Names are forgiving in one narrow way: review, review.js and Review all find the same script. Anything else is no such script, with the list, because guessing which script someone meant is worse than saying no.",
+      "The workflow tool gained a scriptFile parameter, so a model can point at a saved script instead of pasting it — one path for a script from the chat and a script from disk.",
+      "Proved on claude-haiku-5.5, end to end: a script written where s would write it, listed, run for real (two agents, 3.8k tokens), edited, declined once, then saved (18 checks, scripts/workflow-scripts-e2e.ts).",
+    ],
+  },
+  {
     version: "1.0.21",
     highlights: [
       "The restart card now offers the answer that is usually the right one: edit the task, then run it. Two (or e) opens the words for typing in the card, ctrl+g opens your own $EDITOR on them, enter runs what is there, and esc goes back to the answers without running anything.",

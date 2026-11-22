@@ -53,6 +53,45 @@ minutes.
 
 The status line shows `⏸` while a run is paused.
 
+### A script you saved, run again tomorrow
+
+`s` writes a script into `<project>/.qronos/workflows/<name>.js`, so it can live in
+git next to the code it describes. Saving is only half of it: three commands read
+those files back.
+
+```
+/workflows scripts        # what is saved: name, size, when it was last written
+/workflows run review     # run one
+/workflows edit review    # change one, and save the change only if you say so
+```
+
+`run` **does not start the run by itself**, and that is deliberate: a command
+handler cannot run tools, and a workflow whose agents cannot read or write is a
+workflow that fails. So the command checks the file, then asks the chat's own
+agent to call the `workflow` tool with `scriptFile: "<path>"`. The tool reads the
+file, so the text that runs is the text on disk — nothing is retyped, and nothing
+can drift. The usual approval card comes first and names the script.
+
+`edit` opens the file in `$VISUAL` / `$EDITOR`, and then asks:
+
+```
+╭──────────────────────────────────────────────────────────────╮
+│ Save the change?                                             │
+│   .qronos/workflows/review.js                                │
+│   the file on disk would be replaced                         │
+│   ▸ 1. Yes, save it                                          │
+│     2. No, leave the file alone                              │
+╰──────────────────────────────────────────────────────────────╯
+```
+
+The cursor starts on **No**, closing the card means No, and a host with no
+overlay means No. An edited workspace file is never written in silence.
+
+Names are forgiving in one narrow way: an exact name, an exact file name, or the
+slug form all find the same file, so `Review`, `review.js` and `review` are one
+script. Anything else is "no such script", with the list — guessing which script
+someone meant is worse than saying no.
+
 ### Resume a run that is not live any more: replay
 
 If the process ended, the run was stopped with `/workflows stop`, or the machine
@@ -303,7 +342,9 @@ Keys:
 
 Every key is also a command, because a floating panel must never be the only way
 to do something: `p` is `/workflows pause`, `x` is `/workflows stop`, `s` is
-`/workflows save`, and `r` is `/workflows resume` on a saved run.
+`/workflows save`, and `r` is `/workflows resume` on a saved run. The scripts on
+disk have commands of their own: `/workflows scripts`, `run <name>` and
+`edit <name>`.
 
 ### One agent, in full
 
@@ -735,6 +776,8 @@ use it, so it can only be called when the model asks for it directly.
 | `src/workflow-note.ts` | The note after a run: what ended, what it cost, one line. |
 | `src/workflow-table.ts` | The results table: phases, agents, tokens, failures, bars. |
 | `src/workflow-save.ts` | `s` saves the script, never over an existing file. |
+| `src/workflow-library.ts` | The saved scripts, read back: list, find by name, read. |
+| `src/workflow-confirm.ts` | The small yes/no card, cursor on No. |
 | `src/workflow-permissions.ts` | Which tool, how dangerous, allowed or not: one pure decision. |
 | `src/workflow-card-style.ts` | The card's rows, colours and border, shared by both cards. |
 | `src/workflow-tool-approval.ts` | The card that asks before a tool runs inside a run. |
@@ -756,7 +799,8 @@ Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
 `test/workflow-table.test.ts`, `test/workflow-save.test.ts`,
 `test/workflow-activity.test.ts`, `test/workflow-context-size.test.ts`,
 `test/workflow-restart.test.ts`, `test/workflow-restart-confirm.test.ts`,
-`test/editor-edit.test.ts`.
+`test/workflow-library.test.ts`, `test/workflow-confirm.test.ts`,
+`test/workflow-scripts-command.test.ts`, `test/editor-edit.test.ts`.
 
 Real-model E2E, with `QRONOS_E2E_MODEL=claude-haiku-5.5`:
 
@@ -764,3 +808,4 @@ Real-model E2E, with `QRONOS_E2E_MODEL=claude-haiku-5.5`:
 - `scripts/workflow-panel-e2e.ts` — the two-column panel, the detail view, the keys.
 - `scripts/workflow-tool-approval-e2e.ts` — the card stops a real `bash` call.
 - `scripts/workflow-restart-e2e.ts` — a restart is refused once, then costs money.
+- `scripts/workflow-scripts-e2e.ts` — a saved script is listed, run from disk, edited and saved.
