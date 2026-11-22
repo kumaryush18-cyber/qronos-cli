@@ -92,7 +92,8 @@ Storing it inline is an explicit opt-in.
   `ctrl+g` to edit the script in `$EDITOR`. `Alt+W` (or `/workflows panel`) opens a live
   panel in two columns: the phases on the left, the agents of the phase you point at on the
   right, with the model, tokens and time of each one, the 3 s shimmer on whatever is working
-  now, and `p` to pause, `x` to stop, `s` to save the script into `.qronos/workflows/`.
+  now, and `p` to pause, `x` to stop, `s` to save the script into `.qronos/workflows/`,
+  `r` on one agent to run that agent again (it asks first, because it spends tokens again).
   `enter` opens one agent: what it was asked, the last tool calls with their arguments
   (`read(path: package.json)`), how long it has been idle, and its answer or error.
   While a background run is live a second row sits above the editor —
@@ -123,7 +124,7 @@ Storing it inline is an explicit opt-in.
 | `/status`, `/doctor` | session and environment diagnostics |
 | `/usage` | credits left today |
 | `/memory` | what this project has learned (`view`, `stats`, `sync`, `add`, `forget`, `clear`) |
-| `/workflows` | live workflows: phases, agents, tokens; `<id>`, `pause`, `resume`, `stop`, `save`, `saved`, `panel` |
+| `/workflows` | live workflows: phases, agents, tokens; `<id>`, `pause`, `resume`, `stop`, `restart`, `save`, `saved`, `panel` |
 | `/bug` | report a problem |
 | `/update` | update the CLI |
 | `Esc` | interrupt the running turn (only that) |

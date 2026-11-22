@@ -504,6 +504,7 @@ export class WorkflowRuntime {
       replayed,
       model,
       prompt,
+      contextWindow: checked.contextWindow,
       activity: live && live.rows.length > 0 ? live.rows.slice() : undefined,
       toolCalls: live && live.calls > 0 ? live.calls : undefined,
     };
@@ -538,6 +539,7 @@ export class WorkflowRuntime {
       activity: record.activity,
       toolCalls: record.toolCalls,
       model,
+      contextWindow: checked.contextWindow,
       data: checked.data,
     });
   }

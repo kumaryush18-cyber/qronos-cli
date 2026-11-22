@@ -335,8 +335,13 @@ the right column is that agent's story, in three blocks.
 ```
 
 - **The header** is the agent's name and what it is doing: `● Running`,
-  `✓ Done`, `✗ Failed` or `↺ Replayed`. The glyph is the same one the list uses,
-  so the two screens never disagree.
+  `✓ Done`, `✗ Failed`, `↺ Replayed`, or `✓ Done · restarted` for one you ran
+  again. The glyph is the same one the list uses, so the two screens never
+  disagree.
+- **The model line** carries the context size when the model reports one:
+  `claude-haiku-5.5 [1m]`. It answers a real question at a glance — did this
+  agent have room to read the whole file, or did it work blind? An unknown size
+  shows the name alone; an invented number would be worse than none.
 - **The facts line** is the bill and the clock: tokens, how many tool calls, and
   either `idle 1m 01s` for an agent that is still working or `took 29s` for one
   that is finished. Idle counts from the last tool call, which is the question
@@ -353,9 +358,13 @@ the right column is that agent's story, in three blocks.
 
 `tab` moves the cursor between the three blocks and `enter` opens the one under
 it. Blocks are closed when you arrive, because a long task would otherwise push
-the keys off the screen the moment you press `enter`. `p`, `x` and `r` still
-work here: it is the same run, and a screen that hides the controls of the run
-you are watching is a dead end.
+the keys off the screen the moment you press `enter`. `p` and `x` still work
+here: it is the same run, and a screen that hides the controls of the run you
+are watching is a dead end.
+
+`r` means **"run this agent again"** inside this screen, and "replay this run"
+on the list screen — the screen you are looking at decides which agent it is
+about.
 
 The arrows move between the agents of the phase, and `esc` goes back to the
 phases. Queued agents are not in this list, because there is nothing to show
@@ -372,6 +381,51 @@ Four rules the panel keeps:
    printed when a phase has more agents than rows, so nothing is silently cut.
 4. **A live run is never called failed.** A run with a live agent shows the
    working mark, however many agents have already failed.
+
+### Running one agent again
+
+Sometimes one agent misses the point and the other eleven were fine. `r` on that
+agent runs it again, with the same words, model and phase, and changes nothing
+else in the run.
+
+It costs tokens, so it asks first:
+
+```
+╭────────────────────────────────────────────────────────────────╮
+│ Run this agent again?                                          │
+│                                                                │
+│   coding-agent                                                 │
+│   claude-haiku-5.5 · 4300 tokens last time                     │
+│                                                                │
+│   this calls the model again and spends tokens again           │
+│   the rest of the run is not touched                           │
+│                                                                │
+│   ▸ 1. Yes, run it again                                       │
+│     2. No                                                      │
+│                                                                │
+│   enter choose · y yes · esc no                                │
+╰────────────────────────────────────────────────────────────────╯
+```
+
+The cursor starts on **No** and closing the card means No, so silence never
+spends anything. `/workflows restart <id> <agent>` is the same thing from a
+command, and the two cannot drift: one function asks, one function runs.
+
+What a restart does, and what it refuses:
+
+- **It never lies about the bill.** `tokens` goes up by what the second attempt
+  cost, and `replayedTokens` does not move: a restart is new work, not a replay.
+  The row says `✓ Done · restarted`, so a cheaper-looking report cannot hide it.
+- **The other agents are not touched.** Only the chosen record changes, which is
+  why the code that writes it is one small function.
+- **Old tool rows go.** They belong to the old attempt, and showing them beside a
+  new answer would invite the wrong conclusion.
+- **A live run is refused**, with a line that says why: two agents must not spend
+  on the same job at once. Stop the run, then restart an agent.
+- **The prompt is the one that was kept**, which is redacted and capped. If the
+  session kept none, the restart says so rather than inventing a task.
+- **The same agent cannot be started twice at once.** The key is guarded, so a
+  double keypress is one call, not two.
 
 ### While it runs: the waiting row
 

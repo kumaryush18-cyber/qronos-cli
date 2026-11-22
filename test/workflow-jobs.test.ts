@@ -204,6 +204,55 @@ describe("lists and pruning", () => {
     expect(manager.list()).toHaveLength(2);
   });
 
+
+  test("restartAgent runs one agent again against the same dispatch", async () => {
+    const { runner, calls } = fakeRunner();
+    const manager = new WorkflowJobManager({ runAgent: runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('one'); return 1;" });
+    await job.settled;
+    const before = job.tokens.total;
+    const outcome = await manager.restartAgent(job.id, "#0");
+    expect(outcome.ok).toBe(true);
+    expect(calls).toEqual(["one", "one"]);
+    expect(job.agents[0]!.restarted).toBe(true);
+    expect(job.tokens.total).toBeGreaterThan(before);
+  });
+
+  test("restartAgent refuses a live run and a missing agent", async () => {
+    let release: (() => void) | undefined;
+    const runner: WorkflowAgentRunner = async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { ok: true, text: "x" };
+    };
+    const manager = new WorkflowJobManager({ runAgent: runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('one'); return 1;" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const live = await manager.restartAgent(job.id, "#0");
+    expect(live.ok).toBe(false);
+    release?.();
+    await job.settled;
+    const missing = await manager.restartAgent(job.id, "#99");
+    expect(missing.ok === false && String(missing.error).includes("no such agent")).toBe(true);
+  });
+
+  test("the same agent cannot be restarted twice at once", async () => {
+    let calls = 0;
+    let release: (() => void) | undefined;
+    const runner: WorkflowAgentRunner = async () => {
+      calls += 1;
+      if (calls === 2) await new Promise<void>((resolve) => (release = resolve));
+      return { ok: true, text: "x" };
+    };
+    const manager = new WorkflowJobManager({ runAgent: runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('one'); return 1;" });
+    await job.settled;
+    const first = manager.restartAgent(job.id, "#0");
+    const second = await manager.restartAgent(job.id, "#0");
+    expect(second.ok).toBe(false);
+    release?.();
+    expect((await first).ok).toBe(true);
+  });
+
   test("onSettle runs exactly once per job", async () => {
     const settled: string[] = [];
     const { runner } = fakeRunner();

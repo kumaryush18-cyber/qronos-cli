@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.20",
+    highlights: [
+      "One agent missed the point and the other eleven were fine. Now you can run that one again: enter opens it, r runs it, and nothing else in the run changes.",
+      "It costs tokens, so it asks first — and the cursor starts on No: this calls the model again and spends tokens again, the rest of the run is not touched. Closing the card means No, so silence never spends anything.",
+      "The bill stays honest. tokens goes up by what the second attempt cost and replayedTokens does not move, because a restart is new work and not a replay. The row says ✓ Done · restarted, so a report can never pass the second charge off as free.",
+      "A live run is refused with a line that says why: stop the run first, so two agents cannot spend on the same job at once. The same agent cannot be started twice at once either — one keypress is one call.",
+      "The agent detail header now carries the context size beside the model name: claude-haiku-5.5 [1m]. It answers the question you actually have about a stuck agent: did it have room to read the whole file? An unknown size shows the name alone, never a guessed number.",
+      "The old tool rows are dropped on a restart, because they belong to the old attempt, and showing them beside a new answer would invite the wrong conclusion.",
+      "Proved against claude-haiku-5.5: a real two-agent run, one agent restarted with a real card, its tokens went up, the other agent was byte-for-byte untouched (checks in scripts/workflow-restart-e2e.ts).",
+    ],
+  },
+  {
     version: "1.0.19",
     highlights: [
       "A workflow subagent can no longer use a tool in silence. Every call a subagent makes now meets the chat's own permission mode, read at the moment the tool would run — not when the run started.",

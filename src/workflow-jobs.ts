@@ -23,6 +23,7 @@ import {
 import { WorkflowReplay, replayRecordsFromJournal } from "./workflow-replay";
 import { parseWorkflowMeta } from "./workflow-sandbox";
 import { sharedSlotPool } from "./workflow-slots";
+import { restartAgent, restartRefusal, type RestartOutcome } from "./workflow-restart";
 import {
   MAX_ACTIVITY_ROWS,
   addUsage,
@@ -161,6 +162,8 @@ export function safeJson(value: unknown, limit = 20_000): unknown {
 export class WorkflowJobManager {
   private readonly jobs = new Map<string, WorkflowJob>();
   private readonly runtimes = new Map<string, WorkflowRuntime>();
+  /** Restarts in flight, so one agent cannot be run twice at once. */
+  private readonly restarting = new Set<string>();
   private readonly options: WorkflowJobManagerOptions;
   private readonly config: WorkflowConfig;
   private readonly now: () => number;
@@ -307,6 +310,36 @@ export class WorkflowJobManager {
   /** Running, queued or paused jobs. */
   active(): WorkflowJob[] {
     return this.list().filter((job) => job.state !== "done" && job.state !== "failed" && job.state !== "cancelled");
+  }
+
+  /**
+   * Run one agent of a finished run again.
+   *
+   * Guarded in three ways: a live run is refused (two agents must not spend at
+   * once on the same job), the same agent cannot be restarted twice at the same
+   * moment, and the refusal is a value the caller can show instead of a throw.
+   */
+  async restartAgent(id: string, agentId: string): Promise<RestartOutcome> {
+    const job = this.jobs.get(id);
+    const refusal = restartRefusal(job, agentId);
+    if (refusal || !job) return { ok: false, error: refusal ?? "no such run" };
+
+    const key = `${id}:${agentId}`;
+    if (this.restarting.has(key)) return { ok: false, error: "that agent is already running again" };
+    this.restarting.add(key);
+    try {
+      return await restartAgent({
+        job,
+        agentId,
+        runAgent: this.options.runAgent,
+        now: this.now,
+        journal: this.makeJournal(id),
+      });
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      this.restarting.delete(key);
+    }
   }
 
   cancel(id: string): boolean {
@@ -505,6 +538,9 @@ export class WorkflowJobManager {
           activity: event.activity ?? live?.activity,
           toolCalls: event.toolCalls ?? live?.toolCalls,
           model: event.model ?? live?.model,
+          // The size is known when the agent ends, not when it starts, so the
+          // record carries it and a live row keeps the plain name.
+          contextWindow: event.contextWindow,
           data: event.data,
         };
         job.agents.push(record);

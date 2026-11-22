@@ -48,6 +48,13 @@ export interface WorkflowPanelOptions {
   frameMs?: number;
   /** Write the run's report to disk and return its path, for the `s` key. */
   saveScript?: (jobId: string) => string | undefined;
+  /**
+   * Run one agent again, for the `r` key in the agent view.
+   *
+   * Returns the outcome as a value, never a throw: the panel shows a line either
+   * way, and a panel that dies on a refusal is worse than no key at all.
+   */
+  restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 /** A job the panel can show: the newest running one, else the newest of all. */
@@ -68,6 +75,7 @@ export class WorkflowPanel {
   private readonly now: () => number;
   private readonly frameMs: number;
   private readonly saveScript?: (jobId: string) => string | undefined;
+  private readonly restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string }>;
   /** The last thing the panel said, shown in the footer. */
   private notice?: string;
 
@@ -95,6 +103,7 @@ export class WorkflowPanel {
     this.now = options.now ?? Date.now;
     this.frameMs = options.frameMs ?? PANEL_FRAME_MS;
     this.saveScript = options.saveScript;
+    this.restartAgent = options.restartAgent;
     this.startTicker();
   }
 
@@ -199,6 +208,24 @@ export class WorkflowPanel {
         const path = this.saveScript(job.id);
         this.notice = path ? `saved to ${path}` : "nothing to save yet";
         this.requestRender();
+        return;
+      }
+      if (data === "r" || data === "R") {
+        // In the agent view `r` means "run this one again", not "replay the run":
+        // the screen you are looking at decides which agent it is about.
+        const chosen = agentsInPhase(job, this.selectedPhase)[this.selectedAgent];
+        if (!job || !chosen || !this.restartAgent) return;
+        if (job.state === "running" || job.state === "paused" || job.state === "queued") {
+          this.notice = "stop the run first: two agents must not spend at once";
+          this.requestRender();
+          return;
+        }
+        this.notice = `running ${chosen.label} again…`;
+        this.requestRender();
+        void this.restartAgent(job.id, chosen.id).then((outcome) => {
+          this.notice = outcome.ok ? `${chosen.label} ran again: tokens went up` : (outcome.error ?? "it did not run");
+          this.requestRender();
+        });
         return;
       }
       return;
@@ -424,7 +451,11 @@ export async function openWorkflowPanel(
   ctx: ExtensionCommandContext | any,
   manager: WorkflowJobManager,
   theme: Theme,
-  options: { width?: number; saveScript?: (jobId: string) => string | undefined } = {},
+  options: {
+    width?: number;
+    saveScript?: (jobId: string) => string | undefined;
+    restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  } = {},
 ): Promise<boolean> {
   const width = options.width ?? PANEL_WIDTH;
   // A host without overlays (a script, a test, a plain terminal UI) cannot show
@@ -439,6 +470,7 @@ export async function openWorkflowPanel(
         requestRender: () => tui.requestRender?.(),
         width,
         saveScript: options.saveScript,
+        restartAgent: options.restartAgent,
       }),
     { overlay: true, overlayOptions: { anchor: "center", width, maxHeight: PANEL_HEIGHT } },
   );

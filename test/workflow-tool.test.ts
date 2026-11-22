@@ -4,11 +4,16 @@ import {
   createWorkflowToolExtension,
   getLastWorkflowRun,
   renderWorkflowDetail,
+  renderJobDetail,
   renderWorkflowReport,
   resetLastWorkflowRun,
   resetWorkflowJobs,
 } from "../src/workflow-tool";
 import { workflowConfigFromEnv, type WorkflowRunResult } from "../src/workflow-types";
+import { WorkflowJobManager } from "../src/workflow-jobs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SubagentRunner } from "../src/agent-tool";
 
 /** A fake subagent runner: no model, no wait, records every prompt. */
@@ -42,6 +47,23 @@ const ctx = { cwd: "/repo" } as never;
 afterEach(() => {
   resetLastWorkflowRun();
   resetWorkflowJobs();
+});
+
+
+describe("the detail of a job that was restarted", () => {
+  test("the token line is rebuilt from the job, not from the settled snapshot", async () => {
+    // With a real usage number, so the second attempt really costs more.
+    const { runner } = fakeRunner(() => ({ usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, total: 15 } }));
+    const manager = new WorkflowJobManager({ runAgent: runner as never, config: workflowConfigFromEnv({}), agentDir: mkdtempSync(join(tmpdir(), "qronos-tool-")) });
+    const job = manager.launch({ script: "await agent('one'); return 1;" });
+    await job.settled;
+    const before = renderJobDetail(job);
+    await manager.restartAgent(job.id, job.agents[0]!.id);
+    const after = renderJobDetail(job);
+    // A detail line that still showed the old count would hide the second charge.
+    expect(after).not.toBe(before);
+    expect(after).toContain("30 tokens");
+  });
 });
 
 describe("the tool", () => {

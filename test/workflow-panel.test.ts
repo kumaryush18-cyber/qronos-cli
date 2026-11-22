@@ -163,6 +163,56 @@ describe("the workflow panel", () => {
     panel.dispose();
   });
 
+  test("r in the detail view asks to run that one agent again", async () => {
+    const quick: WorkflowAgentRunner = async (request) => ({
+      ok: true,
+      text: `answer: ${request.prompt}`,
+      usage: { input: 10, output: 5, total: 15 },
+    });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('only-one'); return 1;" });
+    await until(() => manager.get(job.id)?.done === 1, "the agent to finish");
+    const asked: string[] = [];
+    const { panel } = panelFor(manager, {
+      restartAgent: async (jobId: string, agentId: string) => {
+        asked.push(`${jobId}:${agentId}`);
+        return { ok: true };
+      },
+    });
+    panel.handleInput("\r");
+    panel.handleInput("r");
+    await until(() => asked.length > 0, "the restart to be asked for");
+    expect(asked[0]).toBe(`${job.id}:#0`);
+    await until(() => plain(panel.render(74).join("\n")).includes("tokens went up"), "the panel to say it ran");
+    panel.dispose();
+  });
+
+  test("r on a live run says to stop it first, and asks nothing", async () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config() });
+    manager.launch({ script: "await agent('one'); await agent('two'); return 1;" });
+    // One agent finished, one still working: the detail view can open, and the
+    // run is still live, which is exactly the case that must be refused.
+    await until(() => gated.waiting > 0, "the first agent to start");
+    gated.release(1);
+    const job = manager.list()[0]!;
+    await until(() => job.done === 1, "the first agent to finish");
+    const asked: string[] = [];
+    const { panel } = panelFor(manager, {
+      restartAgent: async (jobId: string) => {
+        asked.push(jobId);
+        return { ok: true };
+      },
+    });
+    panel.handleInput("\r");
+    expect(panel.mode).toBe("agent");
+    panel.handleInput("r");
+    expect(asked).toEqual([]);
+    expect(plain(panel.render(74).join("\n"))).toContain("stop the run first");
+    panel.dispose();
+    manager.cancel(job.id);
+  });
+
   test("tab walks the blocks of the detail view and enter opens the one under the cursor", async () => {
     const quick: WorkflowAgentRunner = async (request) => ({
       ok: true,

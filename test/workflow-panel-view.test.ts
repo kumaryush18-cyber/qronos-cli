@@ -381,6 +381,26 @@ describe("the agent view", () => {
     expect(lines).toContain("4.3k tokens · 6 tools · took 29s");
   });
 
+  test("the size of the context sits beside the model name", () => {
+    const built = detailed();
+    built.agents[0]!.contextWindow = 1_000_000;
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 0 })));
+    expect(lines).toContain("deepseek-v4-flash [1m]");
+  });
+
+  test("an unknown size leaves the name alone, not a guess", () => {
+    const lines = shown();
+    expect(lines).toContain("deepseek-v4-flash");
+    expect(lines).not.toMatch(/deepseek-v4-flash \[/);
+  });
+
+  test("a smaller window says 200k", () => {
+    const built = detailed();
+    built.agents[0]!.contextWindow = 200_000;
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 0 })));
+    expect(lines).toContain("deepseek-v4-flash [200k]");
+  });
+
   test("a running agent says idle instead of took", () => {
     const built = view();
     const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 0 })));
@@ -474,6 +494,7 @@ describe("the agent view", () => {
     expect(lines).toContain("↑↓ agent");
     expect(lines).toContain("tab block");
     expect(lines).toContain("enter expand");
+    expect(lines).toContain("r rerun");
     expect(lines).toContain("esc back");
   });
 

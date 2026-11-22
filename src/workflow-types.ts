@@ -90,6 +90,13 @@ export interface WorkflowAgentResult {
   usage?: WorkflowUsage;
   /** True when this answer came from the journal instead of a model call. */
   replayed?: boolean;
+  /**
+   * The context window of the model this agent ran on.
+   *
+   * Carried with the answer because the panel reads a job later, when there is
+   * no registry to ask. Not journaled: a resumed agent asks the registry again.
+   */
+  contextWindow?: number;
 }
 
 export type WorkflowAgentRunner = (
@@ -208,8 +215,9 @@ export type WorkflowEvent =
       fingerprint?: string;
       /** The task, the last few tool calls, and how many there were. */
       prompt?: string;
-      /** The model this agent asked. */
+      /** The model this agent asked, and how much room it had. */
       model?: string;
+      contextWindow?: number;
       activity?: WorkflowAgentActivity[];
       toolCalls?: number;
       /** The checked data, so the report can table it. Never journaled. */
@@ -254,6 +262,16 @@ export interface WorkflowAgentRecord {
   replayed?: boolean;
   /** The model this agent asked, when it was routed to one. */
   model?: string;
+  /** How much room that model had: 1 000 000 shows as `[1m]` beside the name. */
+  contextWindow?: number;
+  /**
+   * True when this agent was run again from the detail view.
+   *
+   * New work, not a replay: the tokens were spent a second time. The row says so,
+   * because a report must never pass old work off as new — or new work as free.
+   */
+  restarted?: boolean;
+  restartedAt?: number;
   /** The task it was given, redacted and capped. Never the whole world. */
   prompt?: string;
   /** The last few tool calls, newest last. */

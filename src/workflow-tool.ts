@@ -24,6 +24,7 @@ import { saveWorkflowScript } from "./workflow-save";
 import { resultTableSection } from "./workflow-table";
 import { decideToolUse, grantKeys, readToolFacts, refusalReason } from "./workflow-permissions";
 import { askToolApproval } from "./workflow-tool-approval";
+import { askRestartConfirm } from "./workflow-restart-confirm";
 import { getExecutionMode, setExecutionMode } from "./execution-modes";
 import { setWaitingWorkflows } from "./workflow-waiting";
 import { appendWorkflowNote, registerWorkflowNoteRenderer } from "./workflow-note";
@@ -265,7 +266,10 @@ export function renderJobList(active: WorkflowJob[], all: WorkflowJob[]): string
 
 /** One job, in detail: phases with tokens, then agents sorted by cost. */
 export function renderJobDetail(job: WorkflowJob): string {
-  const result = job.result ?? resultFromJob(job);
+  // Always rebuilt from the job, never the settled snapshot: an agent can be run
+  // again after the run ended, and a detail line that still shows the old token
+  // count would hide the second charge.
+  const result = resultFromJob(job);
   const live = job.state === "running" || job.state === "queued" || job.state === "paused";
   // A live job is not a finished job, and calling it "failed" would be a lie that
   // makes people stop a healthy run.
@@ -334,6 +338,32 @@ export interface CreateWorkflowToolOptions {
   now?: () => number;
   /** Live events, for the Hub or a future panel. */
   onEvent?: (event: WorkflowEvent) => void;
+}
+
+/**
+ * The context window of the model an agent ran on.
+ *
+ * A routed agent names its own model; otherwise the session's. When the registry
+ * cannot answer, the answer is `undefined` — an invented size would be worse than
+ * no size, and the header says the model name alone.
+ */
+function contextWindowFor(ctx: ExtensionToolContext, model?: string): number | undefined {
+  try {
+    const session = (ctx.model as { contextWindow?: number; id?: string } | undefined) ?? undefined;
+    const wanted = (model ?? "").trim();
+    if (wanted === "" || wanted === session?.id) {
+      const size = session?.contextWindow;
+      return typeof size === "number" && size > 0 ? size : undefined;
+    }
+    const registry = ctx.modelRegistry as
+      | { find?: (provider: string, id: string) => { contextWindow?: number } | undefined; getAll?: () => Array<{ id: string; contextWindow?: number }> }
+      | undefined;
+    const found = registry?.find?.("qronos", wanted) ?? registry?.getAll?.().find((entry) => entry.id === wanted);
+    const size = found?.contextWindow;
+    return typeof size === "number" && size > 0 ? size : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The name to put on a card before the script's own `meta.name` is known. */
@@ -409,21 +439,26 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           const usage = outcome.usage
             ? { input: outcome.usage.input, output: outcome.usage.output, total: outcome.usage.total }
             : undefined;
+          // How much room the model had, read from the registry now, because a
+          // later `/workflows` read has no registry to ask. Unknown is fine: the
+          // header then shows the name alone, never a made-up number.
+          const contextWindow = contextWindowFor(ctx, request.model);
           if (outcome.structured) {
-            return { ok: true, text: outcome.output, data: outcome.structured.value, usage };
+            return { ok: true, text: outcome.output, data: outcome.structured.value, usage, contextWindow };
           }
           if (outcome.schemaIssues && outcome.schemaIssues.length > 0) {
             return {
               ok: false,
               text: outcome.output,
               usage,
+              contextWindow,
               error: `schema not satisfied: ${outcome.schemaIssues
                 .slice(0, 3)
                 .map((issue) => `${issue.path || "value"} ${issue.message}`)
                 .join("; ")}`,
             };
           }
-          return { ok: true, text: outcome.output, usage };
+          return { ok: true, text: outcome.output, usage, contextWindow };
         } catch (error) {
           return { ok: false, text: "", error: error instanceof Error ? error.message : String(error) };
         }
@@ -721,6 +756,29 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           const words = (args ?? "").trim().split(/\s+/).filter(Boolean);
           const manager = state.manager;
 
+          /**
+           * Ask, then run one agent again. One function for the `r` key inside the
+           * panel and for `/workflows restart`, so the two cannot drift.
+           *
+           * The question comes first because a restart spends tokens. Answering
+           * "no" is the default, and a host that cannot show the card gets a no.
+           */
+          const restartOne = async (jobId: string, agentId: string): Promise<{ ok: boolean; error?: string }> => {
+            const job = manager?.get(jobId);
+            if (!job) return { ok: false, error: "no such run" };
+            if (!manager) return { ok: false, error: "no workflow manager yet" };
+            const agent = job.agents.find((entry) => entry.id === agentId);
+            if (!agent) return { ok: false, error: "no such agent in this run" };
+            const approved = await askRestartConfirm(ctx, {
+              label: agent.label,
+              model: agent.model,
+              tokens: agent.usage?.total,
+            });
+            if (!approved) return { ok: false, error: "not restarted: you said no" };
+            const outcome = await manager.restartAgent(jobId, agentId);
+            return outcome.ok ? { ok: true } : { ok: false, error: outcome.error };
+          };
+
           // Saving a script is one function for the `s` key and the command: two
           // ways to do the same thing must not drift.
           const saveScript = (jobId: string): string | undefined => {
@@ -738,6 +796,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           if (words[0] === "panel") {
             const shown = await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never, {
               saveScript,
+              restartAgent: restartOne,
             });
             // Only a panel that really opened can be dismissed. In a host with
             // no overlays there is nothing to close, so there is nothing to say.
@@ -760,6 +819,42 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
                 ? [`Saved ${job.name} to ${path}`, "Run it again by pasting the file into a prompt, or git add it and keep it with the project."].join("\n")
                 : `Could not write the script for ${job.id}.`,
               path ? "info" : "warning",
+            );
+            return;
+          }
+
+          // `/workflows restart <id> <agent>`: run one agent again. It costs
+          // tokens, so the card asks first; the panel's `r` does the same thing.
+          if (words[0] === "restart") {
+            // The run is optional: `restart alpha` is about the newest run, and a
+            // word that is not a job id is read as an agent name instead.
+            const job = (words[1] ? manager?.get(words[1]) : undefined) ?? manager?.list()[0];
+            if (!job) {
+              ctx.ui.notify(
+                [
+                  "No workflow to restart.",
+                  "A run started with background: false finishes inside the turn and is not kept as a job, so there is nothing to re-run its agents from.",
+                  "Start one in the background, then /workflows to see it.",
+                ].join("\n"),
+                "info",
+              );
+              return;
+            }
+            const name = words[2] ?? (words[1] && words[1] !== job.id ? words[1] : undefined);
+            const agent =
+              (name ? job.agents.find((entry) => entry.id === name) : undefined) ??
+              (name ? job.agents.find((entry) => entry.label === name) : undefined) ??
+              job.agents.at(-1);
+            if (!agent) {
+              ctx.ui.notify(`${job.id} has no finished agent to restart yet.`, "warning");
+              return;
+            }
+            const outcome = await restartOne(job.id, agent.id);
+            ctx.ui.notify(
+              outcome.ok
+                ? [`Ran "${agent.label}" again in ${job.id}.`, "Its tokens went up and the run's total was not rewritten."].join("\n")
+                : outcome.error ?? "It did not run.",
+              outcome.ok ? "info" : "warning",
             );
             return;
           }

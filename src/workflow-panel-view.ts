@@ -22,6 +22,7 @@
 import { formatTokens, type WorkflowAgentActivity, type WorkflowUsage } from "./workflow-types";
 import type { WorkflowJob } from "./workflow-jobs";
 import { formatDuration } from "./workflow-glyphs";
+import { modelWithContext } from "./workflow-context-size";
 
 export type PanelLineStyle =
   | "title"
@@ -63,6 +64,10 @@ export interface PanelAgentView {
   queued?: boolean;
   /** The model this agent used, when it is known. */
   model?: string;
+  /** How much room that model had: 1 000 000 draws as `[1m]`. */
+  contextWindow?: number;
+  /** True when this agent was run again from the detail view. */
+  restarted?: boolean;
   /** The task it was given, redacted and capped. */
   prompt?: string;
   /** The last few tool calls, newest last. */
@@ -201,6 +206,8 @@ export function toPanelJob(job: WorkflowJob, now: number = Date.now()): PanelJob
     running: false,
     queued: false,
     model: agent.model,
+    contextWindow: agent.contextWindow,
+    restarted: agent.restarted,
     prompt: agent.prompt,
     activity: agent.activity,
     toolCalls: agent.toolCalls,
@@ -522,7 +529,7 @@ function agentLines(state: PanelState, job: PanelJobView, width: number): PanelL
 
   lines.push({ text: "", style: "empty" });
   lines.push({
-    text: truncate("↑↓ agent · tab block · enter expand · p pause · x stop · esc back", width),
+    text: truncate("↑↓ agent · tab block · enter expand · r rerun · p/x/s · esc back", width),
     style: "hint",
   });
   return lines;
@@ -542,6 +549,9 @@ function statusWord(agent: PanelAgentView): string {
   if (agent.queued) return `${dot} Queued`;
   if (agent.running) return `${dot} Running`;
   if (agent.replayed) return `${dot} Replayed`;
+  // "Done · restarted" says two things at once: the answer is new, and it cost
+  // tokens a second time. A plain Done would hide the second charge.
+  if (agent.restarted) return agent.ok ? `${dot} Done · restarted` : `${dot} Failed · restarted`;
   return agent.ok ? `${dot} Done` : `${dot} Failed`;
 }
 
@@ -557,7 +567,9 @@ function detailLines(state: PanelState, agent: PanelAgentView, job: PanelJobView
   const lines: PanelLine[] = [];
   const cursor = state.selectedBlock ?? 0;
   const open = state.expanded ?? {};
-  const model = shortModel(agent.model) || "model not recorded";
+  // The size sits beside the name, as in Claude Code: it says at a glance whether
+  // this agent had room to read the file it was asked about.
+  const model = modelWithContext(shortModel(agent.model), agent.contextWindow) || "model not recorded";
   const tokens = `${formatTokens(agent.tokens)} tokens`;
   const tools = agent.toolCalls === undefined ? "" : `${agent.toolCalls} tool${agent.toolCalls === 1 ? "" : "s"}`;
   const facts = [tokens, tools, agent.running ? `idle ${formatDuration(idleFor(agent, state.now))}` : `took ${formatDuration(agent.durationMs)}`]
