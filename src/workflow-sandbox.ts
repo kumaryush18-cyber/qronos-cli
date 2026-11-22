@@ -41,9 +41,27 @@ export interface WorkflowSandboxHelpers {
   budget?: { maxAgents: number; used: () => number };
 }
 
+/** One stage a script says it will run, only ever used for display. */
+export interface WorkflowPhasePreview {
+  title: string;
+  /** How many agents the author expects to start in this phase. */
+  agents?: number;
+  /** A sample task, so the approval card can show what an agent will be asked. */
+  prompt?: string;
+}
+
 export interface WorkflowMeta {
   name?: string;
   description?: string;
+  /**
+   * The plan, written by the script itself:
+   *
+   *   export const meta = { name: "audit", phases: [{ title: "Analyze", agents: 5, prompt: "one file each" }] }
+   *
+   * It is read with a brace-balancing scan and a JSON parse, never by running the
+   * script, so a preview cannot execute anything.
+   */
+  phases?: WorkflowPhasePreview[];
 }
 
 /** Read `export const meta = {...}` without executing anything. */
@@ -81,15 +99,44 @@ export function parseWorkflowMeta(script: string): WorkflowMeta {
       .slice(start, end + 1)
       .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
       .replace(/'/g, '"')
-      .replace(/,\s*}/g, "}");
+      // A hand-written object usually has a trailing comma. JSON has none, and a
+      // preview must never fail just because the author wrote one.
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]");
     const parsed = JSON.parse(normalized) as Record<string, unknown>;
     return {
       name: typeof parsed.name === "string" ? parsed.name.slice(0, 80) : undefined,
       description: typeof parsed.description === "string" ? parsed.description.slice(0, 300) : undefined,
+      phases: normalizePhases(parsed.phases),
     };
   } catch {
     return {};
   }
+}
+
+/** Keep a phase list readable and bounded; anything odd is dropped, not trusted. */
+function normalizePhases(value: unknown): WorkflowPhasePreview[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: WorkflowPhasePreview[] = [];
+  for (const entry of value.slice(0, 12)) {
+    if (typeof entry === "string") {
+      const title = entry.trim();
+      if (title !== "") out.push({ title: title.slice(0, 60) });
+      continue;
+    }
+    if (entry === null || typeof entry !== "object") continue;
+    const raw = entry as Record<string, unknown>;
+    const title = [raw.title, raw.name, raw.phase].find((item) => typeof item === "string" && item.trim() !== "");
+    if (typeof title !== "string") continue;
+    const agents = Number(raw.agents ?? raw.count);
+    const prompt = [raw.prompt, raw.task, raw.example].find((item) => typeof item === "string" && item.trim() !== "");
+    out.push({
+      title: title.trim().slice(0, 60),
+      agents: Number.isFinite(agents) && agents > 0 ? Math.min(1000, Math.round(agents)) : undefined,
+      prompt: typeof prompt === "string" ? prompt.trim().slice(0, 160) : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 /**

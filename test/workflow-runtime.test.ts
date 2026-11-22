@@ -43,8 +43,9 @@ describe("config", () => {
     expect(workflowConfigFromEnv({ QRONOS_WORKFLOW_WALL_CLOCK_MS: "1800000" }).wallClockMs).toBe(1_800_000);
   });
 
-  test("the agent cap has a sane default", () => {
-    expect(DEFAULT_MAX_AGENTS).toBe(60);
+  test("the agent cap matches Claude Code's 1,000", () => {
+    expect(DEFAULT_MAX_AGENTS).toBe(1000);
+    expect(workflowConfigFromEnv({ QRONOS_WORKFLOW_MAX_AGENTS: "9999" }).maxAgents).toBe(2000);
   });
 
   test("concurrency is clamped", () => {

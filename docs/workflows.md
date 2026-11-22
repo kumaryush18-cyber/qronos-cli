@@ -133,6 +133,93 @@ what a later resume needs.
 Old journals are pruned: the newest 20 runs are always kept, anything older than
 7 days is removed, and the folder never grows past 200 files.
 
+## Before it runs: the approval card
+
+A workflow can spend a lot of tokens in a few seconds, so a run of three or more
+written agent calls asks first. The card shows the plan, the cost, and the three
+answers Claude Code offers:
+
+```
+╭──────────────────────────────────────────────────────────────────────╮
+│ Run a dynamic workflow?                                  map the tree│
+│  study the source tree by purpose using 5 parallel subagents          │
+│                                                                      │
+│  This will start subagents in 2 phases:                              │
+│  1. Analyze — 5 agents                                               │
+│     · "one file each"                                                │
+│  2. Review                                                           │
+│                                                                      │
+│  ! 5 agent calls written in the script. About 12,000 tokens last time.│
+│    Stop a run at any time with /workflows, or turn these             │
+│    questions off with QRONOS_WORKFLOW_APPROVE=0.                     │
+│                                                                      │
+│  ▸ 1. Yes, run it  (uses tokens)                                     │
+│    2. View raw script  (nothing runs)                                │
+│    3. No  (nothing runs)                                             │
+│                                                                      │
+│  enter choose · 1 2 3 pick · tab amend · ctrl+g edit in $EDITOR      │
+│  esc cancel · nothing runs unless you say yes                        │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+| Key | What it does |
+|---|---|
+| `1` `2` `3` | Pick an answer. `2` shows the script and changes nothing. |
+| `enter` | Confirm the highlighted answer. |
+| `↑` `↓` | Move the highlight. |
+| `tab` | Amend the description. Type a better one, `enter` keeps it and runs. |
+| `ctrl+g` | Open the script in `$VISUAL` / `$EDITOR`, then re-read it when you save. |
+| `esc` | Cancel. From the script view it goes back to the question. |
+
+Five rules the card keeps:
+
+1. **Reading the plan never runs the code.** The phases come from a brace scan of
+   `export const meta`, then a JSON parse. No `vm`, no evaluation.
+2. **`esc` and "No" cost nothing.** Nothing is launched, nothing is journalled.
+   The tool reports that the run was not started, so the model cannot pretend it
+   happened.
+3. **No terminal means no question.** In a test, a script or an E2E run the card
+   is skipped and the run goes ahead. A guard that blocks headless use is worse
+   than no guard.
+4. **A resume is not asked about twice.** `resumeFrom` replays a script the user
+   already approved.
+5. **The estimate is labelled as an estimate.** It counts `agent(` calls in the
+   source plus a factor for `parallel` and `pipeline`, so a loop is a lower
+   bound. The card says "written in the script", not "will spend".
+
+`QRONOS_WORKFLOW_APPROVE` decides when the card appears:
+
+| Value | Behaviour |
+|---|---|
+| *(unset)*, `1`, `ask`, `auto` | Ask from three written agent calls, or a declared plan of three, or two phases. |
+| `always`, `yes` | Ask for every run, even one agent. |
+| `0`, `off`, `never`, `no` | Never ask. |
+
+### Declaring the plan
+
+A script can describe itself, so the card can show real phases instead of a guess:
+
+```js
+export const meta = {
+  name: "audit routes",
+  description: "check every route for a missing session check",
+  phases: [
+    { title: "Understand", agents: 4, prompt: "one route file each" },
+    { title: "Review" },
+  ],
+}
+
+phase("Understand")
+const files = await parallel(ROUTES.map((route) => () => agent(`Read ${route}.`, { label: route })))
+phase("Review")
+return files.map((file) => file.text)
+```
+
+`phases` is for display only. A string entry is a title; an object may carry
+`title` (or `name` / `phase`), `agents` (or `count`) and `prompt` (or `task` /
+`example`). Up to twelve phases are kept; anything that is not a title is
+dropped rather than guessed.
+
 ## The live panel
 
 `Alt+W`, or `/workflows panel`, opens a floating panel in the middle of the
@@ -327,6 +414,7 @@ use it, so it can only be called when the model asks for it directly.
 | `src/workflow-clock.ts` | The pausable wall clock, and the frozen clock the script sees. |
 | `src/workflow-panel.ts` | The overlay: box, colour, shimmer, keys, and the ticker that stops. |
 | `src/workflow-panel-view.ts` | The panel's text, pure: header, phases, agent rows, agent view. |
+| `src/workflow-approval.ts` | The question before a run: plan preview, cost, three answers, `$EDITOR`. |
 
 Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
 `test/workflow-notice.test.ts`, `test/workflow-glyphs.test.ts`,
@@ -334,6 +422,6 @@ Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
 `test/workflow-background.test.ts`, `test/workflow-replay.test.ts`,
 `test/workflow-clock.test.ts`, `test/workflow-pause.test.ts`,
 `test/workflow-resume.test.ts`, `test/workflow-panel-view.test.ts`,
-`test/workflow-panel.test.ts`. Real-model E2E: `scripts/workflow-e2e.ts` and
+`test/workflow-panel.test.ts`, `test/workflow-approval.test.ts`. Real-model E2E: `scripts/workflow-e2e.ts` and
 `scripts/workflow-panel-e2e.ts` (`QRONOS_E2E_MODEL=claude-haiku-5.5`). They use a fake agent, so they spend no tokens
 and take no seconds.

@@ -20,6 +20,7 @@ import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, replayMar
 import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { openWorkflowPanel } from "./workflow-panel";
+import { approvalRequestFor, askWorkflowApproval } from "./workflow-approval";
 import { sharedSlotPool } from "./workflow-slots";
 import {
   workflowConfigFromEnv,
@@ -36,7 +37,7 @@ const DESCRIPTION = [
   "Run a small JavaScript workflow that fans work out to subagents and returns one result.",
   "Only the returned value reaches the conversation, so this is how you touch many files without flooding it.",
   "Inside the script: agent(prompt, { label, schema }), parallel([...]), pipeline(list, fn), phase(name), log(message).",
-  "No imports, no filesystem, no network. 10 minutes wall clock, 60 agents per run, 8 at a time.",
+  "No imports, no filesystem, no network. 10 minutes wall clock, 1000 agents per run, 16 at a time.",
 ].join(" ");
 
 const PARAMS = {
@@ -449,6 +450,34 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
 
           state.toolCtx = ctx;
 
+          // Ask before spending money. Claude Code does this for every dynamic
+          // workflow; we ask from three written agent calls upwards, so a tiny
+          // run is not interrupted. `QRONOS_WORKFLOW_APPROVE` changes it:
+          // `always`, `never`, or the default `ask`.
+          //
+          // A resume replays a script the user has already approved, so it is
+          // never asked about twice.
+          let approvedScript = script;
+          let approvedDescription: string | undefined;
+          if (resumeFrom === "") {
+            const request = approvalRequestFor(script, name !== "workflow" ? name : undefined);
+            const lastTokens = lastRun?.result.tokens?.total;
+            const outcome = await askWorkflowApproval(ctx, { ...request, lastTokens });
+            if (!outcome.approved) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: `${cross()} workflow ${request.name} was not started: the approval card was declined. Nothing ran and nothing was saved.`,
+                  },
+                ],
+                details: { ok: false, reason: "declined", name: request.name },
+              };
+            }
+            approvedScript = outcome.script;
+            approvedDescription = outcome.description;
+          }
+
           // A live line while work is happening: running, done and tokens.
           // Throttled, because a tick per agent event would fight the renderer.
           const publishStatus = (force = false) => {
@@ -494,7 +523,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
               },
               runAgent: (request, signal) => runAgentOnce(request, signal, ctx),
             });
-            const result = await runtime.run(script);
+            const result = await runtime.run(approvedScript);
             try {
               ctx.ui?.setStatus?.("qronos-workflow", undefined);
             } catch {
@@ -522,7 +551,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           // Background: Claude Code's shape. The tool returns at once, the run
           // continues, and the report arrives as a message on the next turn.
           managerFor().prune();
-          const job = managerFor().launch({ script, name, args: params?.args, resumeFrom: resumeFrom || undefined });
+          const job = managerFor().launch({ script: approvedScript, name, args: params?.args, resumeFrom: resumeFrom || undefined });
           publishStatus(true);
           const queued = [
             `${RUNNING} workflow ${job.name} launched as ${job.id}${

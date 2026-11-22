@@ -59,8 +59,8 @@ export interface WorkflowConfig {
   maxDepth: number;
 }
 
-export const DEFAULT_CONCURRENCY = 8;
-export const DEFAULT_MAX_AGENTS = 60;
+export const DEFAULT_CONCURRENCY = 16;
+export const DEFAULT_MAX_AGENTS = 1000;
 /** Ten minutes. A short cap turns a real audit into a failed audit. */
 export const DEFAULT_WALL_CLOCK_MS = 600_000;
 export const DEFAULT_MAX_LOG_LINES = 500;
@@ -76,7 +76,7 @@ export function workflowConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Wor
   };
   return {
     concurrency: int("QRONOS_WORKFLOW_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 32),
-    maxAgents: int("QRONOS_WORKFLOW_MAX_AGENTS", DEFAULT_MAX_AGENTS, 1, 500),
+    maxAgents: int("QRONOS_WORKFLOW_MAX_AGENTS", DEFAULT_MAX_AGENTS, 1, 2000),
     // Never below one minute: a workflow that cannot finish is not a workflow.
     wallClockMs: int("QRONOS_WORKFLOW_WALL_CLOCK_MS", DEFAULT_WALL_CLOCK_MS, 60_000, 3_600_000),
     maxLogLines: int("QRONOS_WORKFLOW_MAX_LOGS", DEFAULT_MAX_LOG_LINES, 10, 5000),

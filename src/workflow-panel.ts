@@ -234,7 +234,9 @@ export class WorkflowPanel {
    */
   private renderLine(line: PanelLine, width: number, phase: number): string {
     const text = line.text;
-    if (line.style === "phase-active" || line.style === "agent-running") {
+    // The title glows orange like the CLI header, and the working rows get the
+    // same band: one light, one meaning.
+    if (line.style === "title" || line.style === "phase-active" || line.style === "agent-running") {
       return truncateToWidth(this.shimmer(text, phase), width - 2, "…", false);
     }
     return truncateToWidth(this.colour(line.style, text), width - 2, "…", false);
@@ -267,7 +269,7 @@ export class WorkflowPanel {
     };
     switch (style) {
       case "title":
-        return paint("accent", ansi(PHASE_BLUE));
+        return ansi(PHASE_BLUE);
       case "job-selected":
         return ansi(PHASE_BLUE);
       case "phase":

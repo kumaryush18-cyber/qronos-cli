@@ -18,6 +18,7 @@ import { PROVIDER_PRESETS } from "../src/provider";
 import { createWorkflowToolExtension } from "../src/workflow-tool";
 import { workflowConfigFromEnv } from "../src/workflow-types";
 import { WorkflowPanel, visibleLength } from "../src/workflow-panel";
+import { approvalRequestFor, buildApprovalLines } from "../src/workflow-approval";
 
 const failures: string[] = [];
 function check(name: string, ok: boolean, detail = ""): void {
@@ -235,6 +236,82 @@ try {
   await wait(1_000);
   const stopped = await sendCommand(replayId);
   check("x stopped it", /cancelled|finished|failed|done/.test(stopped), stopped.slice(0, 160));
+
+
+  /* the approval card, through the real tool ------------------------------------ */
+  const plannedScript = `
+    export const meta = {
+      name: "card-demo",
+      description: "prove the card appears and is honoured",
+      phases: [{ title: "Say", agents: 3, prompt: "one file each" }],
+    }
+    const files = ["src/a.ts", "src/b.ts", "src/c.ts"];
+    const out = await parallel(files.map((file) => () => agent("Say the file name only: " + file, { label: file })));
+    return out.map((r) => r.text).join(" | ");
+  `;
+
+  // What the card would say, without a terminal: the plan and the cost.
+  const cardRequest = approvalRequestFor(plannedScript, "card-demo");
+  const card = buildApprovalLines({ request: cardRequest, selected: 0, mode: "ask", width: 74, now: 0 })
+    .map((line) => line.text)
+    .join("\n");
+  console.log(card);
+  check("the card reads the declared plan", card.includes("card-demo") && card.includes("Say"), card.split("\n")[0] ?? "");
+  check("the card says how many agents are written", /3 agent calls/.test(card), card.slice(0, 160));
+  check("the card offers the three answers", ["Yes, run it", "View raw script", "No"].every((word) => card.includes(word)), "missing an option");
+
+  // Now the real tool, with a terminal that answers "No".
+  let declinedCard = false;
+  const declineCtx = {
+    ...(ctx as Record<string, unknown>),
+    ui: {
+      setStatus: () => {},
+      notify: () => {},
+      custom: async (build: any) => {
+        const prompt = build({ requestRender: () => {} }, { fg: (_slot: string, text: string) => text }, {}, () => {});
+        declinedCard = true;
+        prompt.handleInput("3");
+      },
+    },
+  } as never;
+  const declined = await workflowTool.execute(
+    "panel-e2e",
+    { script: plannedScript, name: "card-demo", background: false },
+    new AbortController().signal,
+    () => {},
+    declineCtx,
+  );
+  check("the tool asked before running", declinedCard, "no card was built");
+  check("a declined run does not start", declined.details.ok === false && declined.details.reason === "declined", JSON.stringify(declined.details));
+  check("the message says nothing ran", /not started/.test(declined.content[0].text), declined.content[0].text.slice(0, 120));
+
+  // And once more, with a terminal that says yes, so the card cannot block a run.
+  deliveries.length = 0;
+  let acceptedCard = "";
+  const acceptCtx = {
+    ...(ctx as Record<string, unknown>),
+    ui: {
+      setStatus: () => {},
+      notify: () => {},
+      custom: async (build: any) => {
+        const prompt = build({ requestRender: () => {} }, { fg: (_slot: string, text: string) => text }, {}, () => {});
+        acceptedCard = prompt.render(74).join("\n");
+        prompt.handleInput("\r");
+      },
+    },
+  } as never;
+  const accepted = await workflowTool.execute(
+    "panel-e2e",
+    { script: plannedScript, name: "card-demo-yes" },
+    new AbortController().signal,
+    () => {},
+    acceptCtx,
+  );
+  check("a yes starts the run", String(accepted.details.job ?? "").startsWith("wf_"), String(accepted.details.job));
+  check("the card that was shown glowed", acceptedCard.includes("\u001b["), "no colour codes");
+  const acceptDeadline = Date.now() + 180_000;
+  while (deliveries.length === 0 && Date.now() < acceptDeadline) await wait(500);
+  check("the accepted run finished", deliveries.length === 1, `${deliveries.length} deliveries`);
 
   /* closing is safe */
   panel?.handleInput("\u001b");

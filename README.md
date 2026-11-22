@@ -82,12 +82,14 @@ Storing it inline is an explicit opt-in.
   script that fans work out to subagents; only the final value comes back to the chat, so
   a big audit does not flood the conversation. `agent`, `parallel`, `pipeline`, `phase` and
   `log` are the whole API; the script has no filesystem, no network and no `process`, and a
-  run is capped at 10 minutes and 60 agents. `/workflows` shows the last run: every agent
+  run is capped at 10 minutes and 1000 agents (16 at once). `/workflows` shows the last run: every agent
   sorted by cost, a bright green tick or a dark red cross, tokens per agent and per phase,
   and a live line while it runs.
   It runs in the background, writes a redacted journal of every agent, and delivers its
   report on a later turn; `/workflows` lists what is running, and a run can be paused,
-  resumed, stopped or replayed from its journal. `Alt+W` (or `/workflows panel`) opens a live
+  resumed, stopped or replayed from its journal. A run of three or more written agent calls asks
+  first: a card shows the phases, the cost, and `1. Yes` / `2. View raw script` / `3. No`, with
+  `ctrl+g` to edit the script in `$EDITOR`. `Alt+W` (or `/workflows panel`) opens a live
   panel: phase bars, one row per agent, the 3 s shimmer on whatever is working now, and
   `space` to pause, `x` to stop.
   See [docs/workflows.md](docs/workflows.md).

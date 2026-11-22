@@ -42,6 +42,9 @@ function gatedRunner() {
   };
 }
 
+/** Colour codes the shimmer adds, so a test can read the words. */
+const plain = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, "");
+
 /** A theme that adds nothing, so the assertions read plain text. */
 const plainTheme = { fg: (_slot: string, text: string) => text } as never;
 
@@ -79,7 +82,8 @@ describe("the workflow panel", () => {
     const lines = panel.render(74);
     expect(lines[0]!.startsWith("╭")).toBe(true);
     expect(lines.at(-1)!.startsWith("╰")).toBe(true);
-    expect(lines.join("\n")).toContain("demo");
+    // The title glows, so the words only appear once the colour codes are gone.
+    expect(plain(lines.join("\n"))).toContain("demo");
     panel.dispose();
     manager.cancel(manager.list()[0]!.id);
   });
@@ -87,7 +91,7 @@ describe("the workflow panel", () => {
   test("with nothing run yet it explains how to start one", () => {
     const manager = new WorkflowJobManager({ runAgent: gatedRunner().runner, config: config(), agentDir: tempDir() });
     const { panel } = panelFor(manager);
-    const text = panel.render(74).join("\n");
+    const text = plain(panel.render(74).join("\n"));
     expect(text).toContain("Nothing has run in this session yet.");
     expect(text).toContain("ultracode");
     panel.dispose();

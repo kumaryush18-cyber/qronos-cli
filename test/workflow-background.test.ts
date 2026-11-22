@@ -363,7 +363,8 @@ describe("the panel entry points", () => {
     const panel = build({ requestRender: () => {} }, { fg: (_slot: string, text: string) => text }, {}, () => {});
     const lines = panel.render(74);
     expect(lines.length).toBeGreaterThan(2);
-    expect(lines.join("\n")).toContain("Workflows");
+    // The title glows orange, so read it without the colour codes.
+    expect(lines.join("\n").replace(/\u001b\[[0-9;]*m/g, "")).toContain("Workflows");
     panel.dispose();
   });
 });

@@ -18,8 +18,8 @@ describe("the ultracode notice", () => {
 
   test("states the real limits", () => {
     expect(ULTRACODE_NOTICE).toContain("10 minutes");
-    expect(ULTRACODE_NOTICE).toContain("60 agents");
-    expect(ULTRACODE_NOTICE).toContain("8 at a time");
+    expect(ULTRACODE_NOTICE).toContain("1000 agents");
+    expect(ULTRACODE_NOTICE).toContain("16 at a time");
   });
 
   test("forbids imports and the filesystem", () => {

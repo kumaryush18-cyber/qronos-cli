@@ -32,6 +32,18 @@ A run can be paused and resumed, by the user or by you:
 - \`resumeFrom: "<id>"\` on the tool does the same from inside a turn.
 - \`/workflows saved\` lists the runs on disk, from this session or an earlier one.
 
+Declare the plan at the top, because the user is shown it before anything runs:
+
+\`export const meta = { name: "audit routes", description: "one line, what and why",
+phases: [{ title: "Understand", agents: 4, prompt: "one file each" }, { title: "Review" }] }\`
+
+A run with three or more written agent calls, or a plan of that size, asks the
+user first: a card shows the name, the phases, an estimate and the choice to run,
+read the script, or stop. That is Claude Code's behaviour and it is on purpose.
+If the user declines, the tool says the run was not started; say so plainly and
+do not try to sneak the same work through another call. The user can turn the
+question off with \`QRONOS_WORKFLOW_APPROVE=0\`.
+
 Inside the script you have exactly five helpers:
 
 - \`agent(prompt, { label?, schema?, model? })\` — one subagent. Resolves to
@@ -53,7 +65,7 @@ start instead of guessing.
 
 Rules of the runtime (do not fight them):
 - Real JavaScript. No imports, no require, no process, no filesystem, no network.
-- 10 minutes wall clock, 60 agents per run, 8 at a time. The wall clock pauses
+- 10 minutes wall clock, 1000 agents per run, 16 at a time. The wall clock pauses
   with the run, so waiting for a person costs no budget.
 - \`Date.now()\` is frozen at the run start and \`Math.random()\` is seeded, so a
   resumed run makes the same decisions and its saved answers still fit.

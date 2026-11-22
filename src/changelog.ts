@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.13",
+    highlights: [
+      "Workflows ask before they spend. A run of three or more written agent calls now shows a card first: the name, the description, the phases with their agent counts and a sample task, an estimate of the cost, and the three answers Claude Code offers — 1. Yes, run it, 2. View raw script, 3. No.",
+      "The card is a real card, and its heading glows with the same 3 s pale-orange band as the CLI header. Keys: 1 2 3 to pick, enter to confirm, tab to amend the description, ctrl+g to open the script in $VISUAL/$EDITOR and re-read it on save, esc to cancel.",
+      "Saying No costs nothing: nothing launches, nothing is written to the journal, and the tool reports that the run was not started, so the model cannot pretend otherwise. A resume is never asked about twice.",
+      "No terminal means no question. In a test, a script or an E2E run the card is skipped and the run goes ahead. A guard that blocks headless use would be worse than no guard.",
+      "Scripts can declare their own plan now: export const meta = { name, description, phases: [{ title, agents, prompt }] }. It is read with a brace scan and a JSON parse, never by running the code, so a preview cannot execute anything.",
+      "Caps raised to Claude Code's numbers: 16 agents at once instead of 8, and 1000 agents per run instead of 60 (the environment variable still clamps to 2000).",
+      "QRONOS_WORKFLOW_APPROVE decides when the card appears: unset/ask (the default), always, or 0/off.",
+      "Proved on claude-haiku-5.5: the card read a real script's plan, a No stopped it with ok:false and nothing on disk, a Yes launched the run and the report arrived, and the whole workflow E2E still passes (30 checks).",
+    ],
+  },
+  {
     version: "1.0.12",
     highlights: [
       "Workflows have a live panel now: Alt+W, or /workflows panel, opens a floating view in the middle of the screen, the same shape as the Agent Hub. Header with running, done, tokens and time; one bar per phase; one row per agent; the footer says which run you are looking at and whether its journal is on disk.",
