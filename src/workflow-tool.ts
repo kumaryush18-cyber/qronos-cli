@@ -34,6 +34,15 @@ import { openWorkflowPanel } from "./workflow-panel";
 import { saveWorkflowScript } from "./workflow-save";
 import { listSavedScripts, readSavedScript, resolveSavedScript, savedScriptLine, scriptDirFor, scriptProblem, shortPath } from "./workflow-library";
 import { askConfirm } from "./workflow-confirm";
+import {
+  agentsOfPhase,
+  phaseRerunLines,
+  phaseRerunNotice,
+  phaseRerunRefusal,
+  phaseRerunTitle,
+  rerunPhase,
+  type PhaseRerunOutcome,
+} from "./workflow-phase-rerun";
 import { editTextInEditor } from "./editor-edit";
 import { writeFileSync } from "node:fs";
 import { resultTableSection } from "./workflow-table";
@@ -844,6 +853,25 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             return outcome.ok ? { ok: true, edited: answer.prompt !== undefined } : { ok: false, error: outcome.error };
           };
 
+          // A whole phase, one agent at a time, behind one card. The card comes
+          // first because this spends money once per agent, and the number of
+          // agents is the number a person needs before saying yes.
+          const rerunPhaseOne = async (jobId: string, phase: string): Promise<PhaseRerunOutcome> => {
+            if (!manager) return { ok: false, error: "no workflow manager yet" };
+            const job = manager.get(jobId);
+            const problem = phaseRerunRefusal(job, phase);
+            if (problem || !job) return { ok: false, error: problem ?? "no such run" };
+            const agents = agentsOfPhase(job, phase);
+            const yes = await askConfirm(ctx as never, {
+              title: phaseRerunTitle(phase),
+              lines: phaseRerunLines(job, phase),
+              yes: `Yes, run ${agents.length} agent${agents.length === 1 ? "" : "s"} again`,
+              no: "No, leave them",
+            });
+            if (!yes) return { ok: false, error: "not run again: you said no" };
+            return rerunPhase(job, phase, (agentId) => manager.restartAgent(jobId, agentId));
+          };
+
           // Saving a script is one function for the `s` key and the command: two
           // ways to do the same thing must not drift.
           const saveScript = (jobId: string): string | undefined => {
@@ -862,6 +890,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             const shown = await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never, {
               saveScript,
               restartAgent: restartOne,
+              rerunPhase: rerunPhaseOne,
               stopAgent: (jobId: string, agentId: string) => managerFor().stopAgent(jobId, agentId),
             });
             // Only a panel that really opened can be dismissed. In a host with
@@ -1090,6 +1119,31 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             });
             lines.push("", `resume one with /workflows resume <id>`);
             ctx.ui.notify(lines.join("\n"), "info");
+            return;
+          }
+
+          // `/workflows rerun <id> <phase>`: run every agent of a phase again.
+          if (words[0] === "rerun") {
+            if (!manager) {
+              ctx.ui.notify(
+                words[1]
+                  ? `No workflow with id ${words[1]}. Try /workflows for the list.`
+                  : "Name a run: /workflows rerun <id> <phase>",
+                "warning",
+              );
+              return;
+            }
+            const job = words[1] ? manager.get(words[1]) : undefined;
+            if (!job) {
+              ctx.ui.notify(
+                words[1] ? `No workflow with id ${words[1]}. Try /workflows for the list.` : "Name a run: /workflows rerun <id> <phase>",
+                "warning",
+              );
+              return;
+            }
+            // A phase name can have spaces, so the rest of the line is the name.
+            const outcome = await rerunPhaseOne(job.id, words.slice(2).join(" "));
+            ctx.ui.notify(phaseRerunNotice(outcome), outcome.ok ? "info" : "warning");
             return;
           }
 

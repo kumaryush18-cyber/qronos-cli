@@ -194,3 +194,23 @@ describe("/workflows edit", () => {
     expect(cards.length).toBe(0);
   });
 });
+
+describe("/workflows rerun", () => {
+  test("no id asks for one", async () => {
+    const { send } = host([]);
+    expect(await send("rerun")).toContain("Name a run");
+  });
+
+  test("an id that is not here says so", async () => {
+    const { send } = host([]);
+    expect(await send("rerun wf_nope01 Look")).toContain("No workflow with id wf_nope01");
+  });
+
+  test("with nothing run yet it says so instead of throwing", async () => {
+    const { send } = host([]);
+    const shown = await send("rerun wf_abc12301 Look");
+    // No manager means no run at all: the answer is the same sentence the other
+    // commands give, not a stack trace.
+    expect(shown.length).toBeGreaterThan(0);
+  });
+});

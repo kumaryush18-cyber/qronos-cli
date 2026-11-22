@@ -467,3 +467,78 @@ describe("the workflow panel", () => {
     expect(plain(panel.render(74).join("\n"))).toContain("that agent is not running any more");
     panel.dispose();
   });
+
+  test("a runs the whole phase again, after the tool has asked", async () => {
+    const quick: WorkflowAgentRunner = async (request) => ({
+      ok: true,
+      text: `answer: ${request.prompt}`,
+      usage: { input: 10, output: 5, total: 15 },
+    });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "phase('Look'); await agent('one'); await agent('two'); return 1;" });
+    await until(() => manager.get(job.id)?.done === 2, "both agents to finish");
+    const asked: string[] = [];
+    const { panel } = panelFor(manager, {
+      rerunPhase: async (jobId: string, phase: string) => {
+        asked.push(`${jobId} ${phase}`);
+        return { ok: true, phase, ran: 2, total: 2, skipped: [] };
+      },
+    });
+    panel.handleInput("a");
+    await until(() => plain(panel.render(74).join("\n")).includes("tokens went up"), "the notice to appear");
+    expect(asked).toEqual([`${job.id} Look`]);
+    expect(plain(panel.render(74).join("\n"))).toContain("ran 2 of 2 again");
+    panel.dispose();
+  });
+
+  test("a on a live run refuses before any card is asked for", async () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config() });
+    const job = manager.launch({ script: "phase('Look'); await agent('one'); return 1;" });
+    await until(() => gated.waiting > 0, "the agent to start");
+    let asked = 0;
+    const { panel } = panelFor(manager, {
+      rerunPhase: async () => {
+        asked += 1;
+        return { ok: true, phase: "Look", ran: 1, total: 1, skipped: [] };
+      },
+    });
+    panel.handleInput("a");
+    expect(asked).toBe(0);
+    expect(plain(panel.render(74).join("\n"))).toContain("stop the run first");
+    panel.dispose();
+    manager.cancel(job.id);
+  });
+
+  test("a reruns the phase and touches no other key's work", async () => {
+    // Three keys, three sizes of decision: `x` stops the run, `k` stops one agent,
+    // `a` runs a phase again. If one of them answered for another, the bill would
+    // pay for something nobody asked for.
+    const quick: WorkflowAgentRunner = async (request) => ({
+      ok: true,
+      text: `answer: ${request.prompt}`,
+      usage: { input: 10, output: 5, total: 15 },
+    });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "phase('Look'); await agent('one'); return 1;" });
+    await until(() => manager.get(job.id)?.done === 1, "the agent to finish");
+    const calls: string[] = [];
+    const { panel } = panelFor(manager, {
+      rerunPhase: async (jobId: string, phase: string) => {
+        calls.push(`phase ${phase}`);
+        return { ok: true, phase, ran: 1, total: 1, skipped: [] };
+      },
+      restartAgent: async (jobId: string, agentId: string) => {
+        calls.push(`agent ${agentId}`);
+        return { ok: true };
+      },
+      stopAgent: () => {
+        calls.push("stop");
+        return { ok: true };
+      },
+    });
+    panel.handleInput("a");
+    await until(() => calls.length > 0, "the phase rerun to be asked for");
+    expect(calls).toEqual(["phase Look"]);
+    panel.dispose();
+  });

@@ -18,7 +18,7 @@
 //                             │ ↻ ts-support     · queued
 //                             │ ↻ rust-shell     · queued
 //
-//   ↑/↓ phase · p pause · x stop · s save · enter view · esc close
+//   ↑/↓ phase · p pause · x stop · s save · a rerun · enter view · esc close
 import { formatTokens, type WorkflowAgentActivity, type WorkflowUsage } from "./workflow-types";
 import type { WorkflowJob } from "./workflow-jobs";
 import { formatDuration } from "./workflow-glyphs";
@@ -442,7 +442,7 @@ function listLines(state: PanelState): PanelLine[] {
   lines.push({ text: "", style: "empty" });
   lines.push({
     text: truncate(
-      `${job.state === "running" ? "p pause" : job.state === "paused" ? "p resume" : "p retry"} · x stop · s save · enter view · ↑↓ phase · esc close`,
+      `${job.state === "running" ? "p pause" : job.state === "paused" ? "p resume" : "p retry"} · x stop · s save · a rerun · enter view · ↑↓ phase · esc close`,
       width,
     ),
     style: "hint",

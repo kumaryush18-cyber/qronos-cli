@@ -29,6 +29,7 @@ import {
   type PanelMode,
 } from "./workflow-panel-view";
 import { formatTokens } from "./workflow-types";
+import { phaseRerunNotice, type PhaseRerunOutcome } from "./workflow-phase-rerun";
 import { AMBER, DARK_RED, PHASE_BLUE, RUNNING, BRIGHT_GREEN } from "./workflow-glyphs";
 import { bandMixAt, glowChar, shimmerPhase, BRAND_ORANGE, SHIMMER_BAND } from "./shimmer";
 import { foregroundAnsi, getTerminalColorMode, rgbColor } from "@earendil-works/pi-tui";
@@ -63,6 +64,13 @@ export interface WorkflowPanelOptions {
    * must keep working, and a key that does nothing is better than a crash.
    */
   stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
+  /**
+   * Run every agent of a phase again, after its own confirm card.
+   *
+   * The panel asks; the tool decides and asks the human. Keeping the card out of
+   * the panel means one card for the key and the command, not two that drift.
+   */
+  rerunPhase?: (jobId: string, phase: string) => Promise<PhaseRerunOutcome>;
 }
 
 /** A job the panel can show: the newest running one, else the newest of all. */
@@ -85,6 +93,7 @@ export class WorkflowPanel {
   private readonly saveScript?: (jobId: string) => string | undefined;
   private readonly restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
   private readonly stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
+  private readonly rerunPhase?: (jobId: string, phase: string) => Promise<PhaseRerunOutcome>;
   /** The last thing the panel said, shown in the footer. */
   private notice?: string;
 
@@ -114,6 +123,7 @@ export class WorkflowPanel {
     this.saveScript = options.saveScript;
     this.restartAgent = options.restartAgent;
     this.stopAgent = options.stopAgent;
+    this.rerunPhase = options.rerunPhase;
     this.startTicker();
   }
 
@@ -213,6 +223,11 @@ export class WorkflowPanel {
         this.requestRender();
         return;
       }
+      if (data === "a" || data === "A") {
+        void this.rerunSelectedPhase(job);
+        return;
+      }
+
       if (data === "k" || data === "K") {
         // In the agent view `k` is about the agent you are looking at, not the
         // run: `x` is still the whole run. Two sizes of the same decision, each
@@ -315,6 +330,11 @@ export class WorkflowPanel {
       this.requestRender();
       return;
     }
+      if (data === "a" || data === "A") {
+        void this.rerunSelectedPhase(job);
+        return;
+      }
+
     if (data === "s" || data === "S") {
       if (!job || !this.saveScript) return;
       const path = this.saveScript(job.id);
@@ -334,6 +354,29 @@ export class WorkflowPanel {
       }
       this.requestRender();
     }
+  }
+
+  /**
+   * Run every agent of the phase under the cursor again.
+   *
+   * The same phase is used from the agent view, because an agent belongs to a
+   * phase: the screen you are on decides what "this" means, as with `r` and `k`.
+   * A live run is refused before any card appears, so nobody is asked to pay for
+   * something that cannot start.
+   */
+  private async rerunSelectedPhase(job: PanelJobView | undefined): Promise<void> {
+    if (!job || !this.rerunPhase) return;
+    const phase = job.phases[this.selectedPhase]?.name ?? "";
+    if (job.state === "running" || job.state === "paused" || job.state === "queued") {
+      this.notice = "stop the run first: two agents must not spend at once";
+      this.requestRender();
+      return;
+    }
+    this.notice = `asking about the phase "${phase}"…`;
+    this.requestRender();
+    const outcome = await this.rerunPhase(job.id, phase);
+    this.notice = phaseRerunNotice(outcome);
+    this.requestRender();
   }
 
   /** One frame of redraw per tick, and only while a run is live. */
@@ -484,6 +527,7 @@ export async function openWorkflowPanel(
     saveScript?: (jobId: string) => string | undefined;
     restartAgent?: (jobId: string, agentId: string) => Promise<{ ok: boolean; error?: string; edited?: boolean }>;
     stopAgent?: (jobId: string, agentId: string) => { ok: boolean; error?: string };
+    rerunPhase?: (jobId: string, phase: string) => Promise<PhaseRerunOutcome>;
   } = {},
 ): Promise<boolean> {
   const width = options.width ?? PANEL_WIDTH;
@@ -501,6 +545,7 @@ export async function openWorkflowPanel(
         saveScript: options.saveScript,
         restartAgent: options.restartAgent,
         stopAgent: options.stopAgent,
+        rerunPhase: options.rerunPhase,
       }),
     { overlay: true, overlayOptions: { anchor: "center", width, maxHeight: PANEL_HEIGHT } },
   );

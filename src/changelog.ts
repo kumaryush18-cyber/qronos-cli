@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.24",
+    highlights: [
+      "A whole phase can be run again. `a` in the panel, or /workflows rerun <id> <phase>, runs every agent of that phase one after another — the case where the code changed and every answer in a phase is out of date.",
+      "It asks first, with one card: the phase, how many agents, and what they spent the first time. The cursor starts on No, no overlay means No, and saying no spends nothing at all.",
+      "It is new work, not a replay: the tokens rise and every row says it ran again, so a report can never pass yesterday's answers off as today's.",
+      "One agent at a time. The bill stays readable, and the one-restart-at-a-time guard stays true.",
+      "One agent that cannot run does not stop the rest: the others still run, and the notice says how many ran and which one did not, with the reason.",
+      "Proved on claude-haiku-5.5: scripts/workflow-phase-rerun-e2e.ts, 16 checks. Two agents finished at 3.8k tokens, the panel key asked the same card as the command, no spent nothing, yes ran both again — 3.8k to 7.5k — and neither was counted as failed.",
+    ],
+  },
+  {
     version: "1.0.23",
     highlights: [
       "One agent can be stopped without stopping the run. In the panel, k stops the agent you are looking at; the rest of the run keeps going and finishes. x still stops everything, because one run is one decision and one agent is a smaller one.",

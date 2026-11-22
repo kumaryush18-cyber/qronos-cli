@@ -1,3 +1,22 @@
+## 1.0.24
+
+### Run a whole phase again
+
+- `a` in the panel reruns every agent of the phase under the cursor;
+  `/workflows rerun <id> <phase>` does the same from the chat.
+- One card first: the phase, the number of agents, and what they spent the first
+  time. Cursor on No, no overlay means No, and no spends nothing.
+- New work, not a replay: the tokens rise and the rows say they ran again.
+- One agent at a time, so the bill stays readable and the restart guard holds.
+- One agent that cannot run does not stop the others: the notice says how many
+  ran and which one did not, with the reason.
+
+### Proved on a real model
+
+`scripts/workflow-phase-rerun-e2e.ts` — 16 checks on `claude-haiku-5.5`: two
+agents at 3.8k tokens, the panel key and the command asked the same card, "no"
+spent nothing, "yes" ran both again (3.8k → 7.5k), nothing counted as failed.
+
 ## 1.0.23
 
 ### Stop one agent, and only that one

@@ -272,6 +272,8 @@ describe("the two columns", () => {
     expect(lines).toContain("p pause");
     expect(lines).toContain("x stop");
     expect(lines).toContain("s save");
+    // `a` reruns a whole phase, which is the key that saves the most hand work.
+    expect(lines).toContain("a rerun");
     expect(lines).toContain("enter view");
     expect(lines).toContain("esc close");
   });
