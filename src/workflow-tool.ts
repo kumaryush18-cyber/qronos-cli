@@ -359,7 +359,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             onEvent: (event) => {
               if (!event.tool) return;
               try {
-                request.onActivity?.({ tool: event.tool, turns: event.turns });
+                request.onActivity?.({ tool: event.tool, turns: event.turns, detail: event.args });
               } catch {
                 // display only
               }

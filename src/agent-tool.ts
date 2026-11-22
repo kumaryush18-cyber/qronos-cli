@@ -204,6 +204,14 @@ export interface StructuredResult {
 export interface SubagentProgressEvent {
   turns: number;
   tool?: string;
+  /**
+   * The tool's arguments, already compacted: `path: src/a.ts, offset: 10`.
+   *
+   * The panel's Activity block is a list of what the agent actually did, and the
+   * name of a tool alone (`Bash`) says almost nothing. Redaction happens where
+   * it is stored, not here.
+   */
+  args?: string;
   waitingForApproval?: boolean;
   /** Set while a failed request is waiting to be sent again. */
   retry?: RetryInfo;
@@ -519,7 +527,7 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
       // Execute tool via ExtensionToolContext
       try {
         const outcome = await ctx.executeTool(toolName, call.arguments);
-        params.onEvent?.({ turns, tool: toolName });
+        params.onEvent?.({ turns, tool: toolName, args: formatArgs(call.arguments) });
         const toolResult = outcome.result;
 
         if (toolName === "exit_plan_mode" && (toolResult?.details as { ok?: boolean } | undefined)?.ok) {

@@ -311,7 +311,7 @@ export class WorkflowRuntime {
       phase: this.resolveAgentPhase(options.phase),
       // Every tool the runner finishes lands here: the count keeps rising, only
       // the kept rows are capped, so the panel can honestly say "3 of 41".
-      onActivity: ({ tool, turns }) => this.noteActivity(id, tool, turns),
+      onActivity: ({ tool, turns, detail }) => this.noteActivity(id, tool, turns, detail),
     };
     const fingerprint = fingerprintOf({ prompt: text, agent: request.agentType, model: request.model });
 
@@ -412,12 +412,20 @@ export class WorkflowRuntime {
    * reported, because a panel that says "40 of 200" for the rest of a run is
    * worse than one that keeps up: the event is a map update, not a disk write.
    */
-  private noteActivity(id: string, tool: string, turns: number): void {
+  private noteActivity(id: string, tool: string, turns: number, detail?: string): void {
     const name = cleanText(String(tool ?? ""), 40).trim();
     if (name === "") return;
     const live = this.shared.activity.get(id) ?? { rows: [], calls: 0 };
     live.calls += 1;
-    live.rows.push({ tool: name, turns: Number.isFinite(turns) ? turns : 0, at: this.now() });
+    // Arguments can carry a path, a command, or a key someone pasted. Redacted
+    // first, then cut: a cut cannot leave half a secret behind if it comes second.
+    const shown = cleanText(String(detail ?? ""), 80).replace(/\s+/g, " ").trim();
+    live.rows.push({
+      tool: name,
+      turns: Number.isFinite(turns) ? turns : 0,
+      at: this.now(),
+      detail: shown === "" ? undefined : shown,
+    });
     if (live.rows.length > MAX_ACTIVITY_ROWS) live.rows.splice(0, live.rows.length - MAX_ACTIVITY_ROWS);
     this.shared.activity.set(id, live);
     this.emit({
@@ -425,6 +433,7 @@ export class WorkflowRuntime {
       at: this.now(),
       id,
       tool: name,
+      detail: live.rows.at(-1)?.detail,
       turns,
       count: live.calls,
       depth: this.depth,

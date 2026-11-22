@@ -17,6 +17,7 @@ import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { WorkflowJobManager } from "./workflow-jobs";
 import {
   buildPanelLines,
+  DETAIL_BLOCKS,
   moveIndex,
   toPanelJob,
   withAnswers,
@@ -73,6 +74,10 @@ export class WorkflowPanel {
   selectedAgent = 0;
   /** Which phase is under the cursor; the right column follows it. */
   selectedPhase = 0;
+  /** Which block of the detail view has the cursor: prompt, activity, outcome. */
+  selectedBlock = 0;
+  /** Blocks the user opened with `enter`. */
+  expanded: { prompt?: boolean; activity?: boolean; outcome?: boolean } = {};
   /** Which job to look at, by id, so a list that reorders cannot swap rows. */
   jobId?: string;
   mode: PanelMode = "list";
@@ -131,6 +136,8 @@ export class WorkflowPanel {
       job,
       selectedPhase: this.selectedPhase,
       selectedAgent: this.selectedAgent,
+      selectedBlock: this.selectedBlock,
+      expanded: this.expanded,
       mode: this.mode,
       width: panelWidth,
       now: this.now(),
@@ -151,13 +158,46 @@ export class WorkflowPanel {
         this.requestRender();
         return;
       }
-      if (matchesKey(data, "up")) {
-        this.selectedAgent = moveIndex(this.selectedAgent, job?.agents.length ?? 0, -1);
+      if (matchesKey(data, "up") || matchesKey(data, "down")) {
+        // The list on the left is the agents of one phase, so the arrows walk
+        // that list; the phases are one `esc` away.
+        const delta = matchesKey(data, "up") ? -1 : 1;
+        this.selectedAgent = moveIndex(this.selectedAgent, agentsInPhase(job, this.selectedPhase).length, delta);
         this.requestRender();
         return;
       }
-      if (matchesKey(data, "down")) {
-        this.selectedAgent = moveIndex(this.selectedAgent, job?.agents.length ?? 0, 1);
+      if (matchesKey(data, "tab")) {
+        // Tab moves the cursor between Prompt, Activity and Outcome, so `enter`
+        // knows which block it is opening.
+        this.selectedBlock = (this.selectedBlock + 1) % DETAIL_BLOCKS.length;
+        this.requestRender();
+        return;
+      }
+      if (matchesKey(data, "return") || data === " ") {
+        const block = DETAIL_BLOCKS[this.selectedBlock];
+        if (block) this.expanded = { ...this.expanded, [block]: !this.expanded[block] };
+        this.requestRender();
+        return;
+      }
+      if (data === "p" || data === "P") {
+        if (!job) return;
+        if (job.state === "running") this.manager.pause(job.id);
+        else if (job.state === "paused") this.manager.resume(job.id);
+        this.startTicker();
+        this.requestRender();
+        return;
+      }
+      if (data === "x" || data === "X") {
+        if (job && (job.state === "running" || job.state === "paused" || job.state === "queued")) {
+          this.manager.cancel(job.id);
+        }
+        this.requestRender();
+        return;
+      }
+      if (data === "s" || data === "S") {
+        if (!job || !this.saveScript) return;
+        const path = this.saveScript(job.id);
+        this.notice = path ? `saved to ${path}` : "nothing to save yet";
         this.requestRender();
         return;
       }
@@ -200,6 +240,10 @@ export class WorkflowPanel {
     if (matchesKey(data, "return")) {
       if (job && job.agents.length > 0) {
         this.mode = "agent";
+        // Open on the first block, closed: a long prompt would otherwise push
+        // the whole panel off the screen the moment you press enter.
+        this.selectedBlock = 0;
+        this.expanded = {};
         this.requestRender();
       }
       return;

@@ -148,6 +148,8 @@ async function sendCommand(args: string): Promise<string> {
 }
 /** The panel colours its lines, so assertions read them without escape codes. */
 const plain = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, "");
+/** A theme that adds nothing, so a check can read plain words. */
+const plainTheme = { fg: (_slot: string, text: string) => text } as never;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 try {
@@ -221,10 +223,23 @@ try {
   check("the panel shows a tick for the finished agents", done.includes("✓"), done.slice(0, 200));
   check("the panel kept drawing to the end", (panel?.render(74) ?? []).length > 4, "no lines");
 
-  /* one agent's own view */
+  /* one agent's own view: the picture on screenshot 18 */
   panel?.handleInput("\r");
   const one = plain((panel?.render(74) ?? []).join("\n"));
-  check("enter opens one agent", one.includes("phase") || one.includes("cost"), one.slice(0, 120));
+  check("enter opens one agent", one.includes("Prompt") && one.includes("Activity") && one.includes("Outcome"), one.slice(0, 160));
+  check("the detail view keeps the agent list on the left", one.includes("│"), one.split("\n")[1] ?? "");
+  check("the detail view names the model and the bill", /tokens · /.test(one), one.split("\n")[2] ?? "");
+  check("the detail view says how long the agent has been quiet", /idle \d+s|took \d+s/.test(one), one.split("\n")[2] ?? "");
+  const oneWidths = new Set((panel?.render(74) ?? []).map((line) => visibleLength(plain(line))));
+  check("every detail line is the same width", oneWidths.size === 1, [...oneWidths].join(","));
+
+  panel?.handleInput("\t");
+  check("tab moves the cursor to the next block", panel?.selectedBlock === 1, String(panel?.selectedBlock));
+  panel?.handleInput("\r");
+  check("enter opens the block under the cursor", panel?.expanded?.activity === true, JSON.stringify(panel?.expanded ?? {}));
+  panel?.handleInput("\r");
+  check("enter closes it again", panel?.expanded?.activity === false, JSON.stringify(panel?.expanded ?? {}));
+
   panel?.handleInput("\u001b");
   check("escape goes back to the list", (panel?.mode ?? "list") === "list", String(panel?.mode));
 
@@ -360,6 +375,50 @@ return out.map((r) => r.text).join(" | ");`,
     (record?.activity ?? []).some((row) => row.tool === "read" || row.tool === "ls"),
     (record?.activity ?? []).map((row) => row.tool).join(","),
   );
+
+  /* --- the detail view over a live agent that really called a tool -------- */
+  await run({
+    name: "detail-live",
+    script: `const r = await agent("Use the read tool on src/sum.ts and answer with the function name only.", { label: "sum" });
+return r.text;`,
+  });
+  await panelShortcut?.({
+    ui: {
+      notify: (text: string) => notices.push(text),
+      custom: async (build: any, options: any) => {
+        overlays.push(options);
+        panel = build({ requestRender: () => {} }, plainTheme, {}, () => {});
+        return undefined;
+      },
+    },
+  } as never);
+  /** Read the detail screen as plain text. */
+  const detailText = () => plain((panel?.render(74) ?? []).join("\n"));
+  // With several runs in the session the panel opens on the list; `enter`
+  // picks the newest run and a second `enter` opens its first agent.
+  // Wait for the plan to land before opening an agent: a run that has started
+  // but recorded no agents has nothing to show, and `enter` does nothing.
+  const agentDeadline = Date.now() + 60_000;
+  while ((panel?.job()?.agents.length ?? 0) === 0 && Date.now() < agentDeadline) await wait(250);
+  for (let press = 0; press < 2 && !detailText().includes("tab block"); press += 1) {
+    panel?.handleInput("\r");
+  }
+  check("the detail view was reached", detailText().includes("tab block"), detailText().split("\n")[0] ?? "");
+  const detailDeadline = Date.now() + 60_000;
+  while (!/(read|ls)\(/.test(detailText()) && Date.now() < detailDeadline) await wait(500);
+
+  const detail = detailText();
+  console.log(detail);
+  check("the detail view opens on a real agent", detail.includes("Prompt") && detail.includes("Outcome"), detail.slice(0, 160));
+  check("the real agent's task is in the panel", /src\/sum\.ts/.test(detail), detail.slice(0, 200));
+  check("a real tool row names its argument", /(read|ls)\(/.test(detail), detail.slice(0, 400));
+  check("the detail view names the model and the bill", /tokens · /.test(detail), detail.split("\n")[2] ?? "");
+  const detailWidths = new Set((panel?.render(74) ?? []).map((line) => visibleLength(plain(line))));
+  check("every detail line is the same width", detailWidths.size === 1, [...detailWidths].join(","));
+  panel?.handleInput("\u001b");
+  check("escape leaves the detail, not the run", panel?.mode === "list", String(panel?.mode));
+  panel?.handleInput("x");
+  panel?.dispose();
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

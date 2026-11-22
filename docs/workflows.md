@@ -278,7 +278,9 @@ What the panel knows about one agent:
 - **The task it was given.** Redacted and capped at 1 200 characters, kept from
   the moment the agent starts, so a live agent can show what it was asked.
 - **Its tool calls.** The count always rises; the kept rows stop at the last
-  eight, which is what a person actually reads.
+  eight, which is what a person actually reads. Each row carries the tool name
+  and the first line of its arguments, redacted first and then cut at 80
+  characters, so a cut can never leave half a secret behind.
 - **Its model**, when the script routed it to one.
 
 Activity is display-only and is never written to the journal: a journal that
@@ -292,16 +294,72 @@ Keys:
 | `p` | Pause a running run, or resume a paused one. Nothing is replayed by a live resume. `space` does the same. |
 | `x` | Stop the run. Agents in flight are cancelled. |
 | `s` | Save the script to `<project>/.qronos/workflows/<name>.js`, so a good run can be used again tomorrow. An existing file is never overwritten: the new one gets `-2`, `-3`. |
-| `enter` | Open one agent: its phase, cost, time, model, error and answer. |
-| `↑` `↓` | Move between phases; the right column follows. |
+| `enter` | Open one agent: its task, its tool calls and its outcome. Inside that screen, `enter` opens or closes the block under the cursor. |
+| `↑` `↓` | Move between phases; the right column follows. Inside one agent, move between the agents of its phase. |
 | `←` `→` | Move between the agents of the phase. |
-| `tab` | Move to the next run, when there is more than one. |
+| `tab` | Move to the next run, when there is more than one. Inside one agent, move the cursor between Prompt, Activity and Outcome. |
 | `r` | Replay a finished run from its journal, without leaving the panel. |
 | `esc` | Back out of an agent, or close the panel. |
 
 Every key is also a command, because a floating panel must never be the only way
 to do something: `p` is `/workflows pause`, `x` is `/workflows stop`, `s` is
 `/workflows save`, and `r` is `/workflows resume` on a saved run.
+
+### One agent, in full
+
+`enter` on an agent opens its own screen. The left column stays, because after
+reading a long task you still want to know which agent you are reading about;
+the right column is that agent's story, in three blocks.
+
+```
+╭──────────────────────────────────────────────────────────────────────╮
+│Agents · Analyze             coding-agent                  ● Running  │
+│▸ ● coding-agent            │ ernie-5.5-flash-preview                  │
+│  ✗ ai-and-tui              │ 0 tokens · 6 tools · idle 1m 01s          │
+│                             │                                          │
+│                             │ ▸ Prompt · 7 lines · ↵ expand            │
+│                             │   Area: TypeScript coding agent core.     │
+│                             │   Read package.json and skim the files.  │
+│                             │   … 5 more lines                         │
+│                             │                                          │
+│                             │   Activity · last 3 of 6 · ↵ expand      │
+│                             │   Bash(cd src && wc -l index.ts)         │
+│                             │   read(path: package.json)               │
+│                             │   grep(pattern: tool) · now              │
+│                             │                                          │
+│                             │   Outcome                                │
+│                             │   Still running…                         │
+│                                                                      │
+│↑↓ agent · tab block · enter expand · p pause · x stop · esc back      │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+- **The header** is the agent's name and what it is doing: `● Running`,
+  `✓ Done`, `✗ Failed` or `↺ Replayed`. The glyph is the same one the list uses,
+  so the two screens never disagree.
+- **The facts line** is the bill and the clock: tokens, how many tool calls, and
+  either `idle 1m 01s` for an agent that is still working or `took 29s` for one
+  that is finished. Idle counts from the last tool call, which is the question
+  you actually have when an agent looks stuck.
+- **Prompt** is what the agent was asked, two lines at a time. The heading says
+  how many lines it really is, and `… 5 more lines` says how much is folded
+  away. A prompt that was never kept says `not kept` instead of pretending.
+- **Activity** is the last three tool calls with the first line of their
+  arguments, so a row reads `read(path: package.json)` and not just `read`. The
+  heading says `last 3 of 6`, so a cut list is never mistaken for the whole list.
+  The newest call of a working agent carries `· now`.
+- **Outcome** is `Still running…`, the error, or the answer. An answer that the
+  session did not keep says so; it is not left blank.
+
+`tab` moves the cursor between the three blocks and `enter` opens the one under
+it. Blocks are closed when you arrive, because a long task would otherwise push
+the keys off the screen the moment you press `enter`. `p`, `x` and `r` still
+work here: it is the same run, and a screen that hides the controls of the run
+you are watching is a dead end.
+
+The arrows move between the agents of the phase, and `esc` goes back to the
+phases. Queued agents are not in this list, because there is nothing to show
+for one yet.
 
 Four rules the panel keeps:
 

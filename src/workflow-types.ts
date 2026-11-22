@@ -40,7 +40,7 @@ export interface WorkflowAgentRequest {
    * Optional, because a fake runner in a test has no tools. It must never throw
    * into the agent: a display hook cannot be allowed to break a run.
    */
-  onActivity?: (activity: { tool: string; turns: number }) => void;
+  onActivity?: (activity: { tool: string; turns: number; detail?: string }) => void;
 }
 
 /** What one `agent()` call gives back. It never throws: a script keeps going. */
@@ -137,6 +137,8 @@ export type WorkflowEvent =
       id: string;
       /** Tool that just finished. */
       tool: string;
+      /** Its arguments, redacted and capped, for the Activity block. */
+      detail?: string;
       turns: number;
       /**
        * Every tool call this agent has made so far.
@@ -190,6 +192,8 @@ export type WorkflowEvent =
 export interface WorkflowAgentActivity {
   /** Tool name as the runner reports it: `Bash`, `read`, `grep`. */
   tool: string;
+  /** Its arguments, compacted, redacted and capped. Empty when there are none. */
+  detail?: string;
   /** Which model turn the call belonged to. */
   turns: number;
   /** When the run's clock said it finished. */

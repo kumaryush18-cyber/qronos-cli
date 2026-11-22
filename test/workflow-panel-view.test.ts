@@ -325,33 +325,170 @@ const finishedJob = () =>
   );
 
 describe("the agent view", () => {
-  test("shows the facts of one agent", () => {
-    // Failures sort first, so index 1 is the one that finished well.
-    const built = finishedJob();
-    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 1 })));
-    expect(lines).toContain("coding-agent");
-    expect(lines).toContain("4.3k tokens");
+  /** A finished agent with a prompt, tool calls and an answer. */
+  const detailed = () =>
+    toPanelJob(
+      job({
+        state: "done",
+        finishedAt: 61_000,
+        running: 0,
+        planned: [],
+        phases: ["Analyze"],
+        live: new Map(),
+        agents: [
+          {
+            id: "#7",
+            label: "coding-agent",
+            ok: true,
+            durationMs: 29_000,
+            depth: 1,
+            phase: "Analyze",
+            model: "deepseek/deepseek-v4-flash",
+            usage: { input: 4_000, output: 300, total: 4_300 },
+            prompt: [
+              "Area: TypeScript coding agent core.",
+              "Read package.json and skim the main files.",
+              "Group by PURPOSE: agent loop, tools, providers, UI.",
+              "Say which package is the biggest.",
+            ].join("\n"),
+            activity: [
+              { tool: "Bash", detail: "cd src && wc -l index.ts", turns: 1, at: 1 },
+              { tool: "read", detail: "path: package.json", turns: 2, at: 2 },
+              { tool: "grep", detail: "pattern: tool", turns: 3, at: 3 },
+              { tool: "ls", detail: "path: src", turns: 4, at: 4 },
+            ],
+            toolCalls: 6,
+          },
+        ],
+      }),
+      61_000,
+    );
+
+  const shown = (overrides: Partial<PanelState> = {}) =>
+    text(buildPanelLines(state({ job: detailed(), mode: "agent", selectedAgent: 0, ...overrides })));
+
+  test("it keeps a list of agents on the left and the chosen one on the right", () => {
+    const lines = buildPanelLines(state({ job: detailed(), mode: "agent", selectedAgent: 0 }));
+    expect(lines[0]!.text).toContain("Agents · Analyze");
+    expect(lines[0]!.text).toContain("coding-agent");
+    // The divider means two columns, not one long page.
+    expect(lines.some((line) => line.text.includes("│"))).toBe(true);
+  });
+
+  test("the status line names the model, the tokens, the tools and the time", () => {
+    const lines = shown();
     expect(lines).toContain("deepseek-v4-flash");
-    expect(lines).toContain("top level");
+    expect(lines).toContain("4.3k tokens · 6 tools · took 29s");
   });
 
-  test("an answer is shown when the session kept one", () => {
-    // Index 1 is the one that finished well; `#0` is its id.
-    const built = withAnswers(finishedJob(), { "#0": "line one line two" });
-    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 1 })));
-    expect(lines).toContain("answer");
-    expect(lines).toContain("line one line two");
+  test("a running agent says idle instead of took", () => {
+    const built = view();
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 0 })));
+    expect(lines).toMatch(/idle \d+s/);
   });
 
-  test("an error is shown and wrapped", () => {
+  test("the three blocks are Prompt, Activity and Outcome", () => {
+    const lines = shown();
+    // The count is display lines, which is what `enter` will reveal.
+    expect(lines).toMatch(/Prompt · \d+ lines · ↵ expand/);
+    expect(lines).toContain("Activity · last 3 of 6 · ↵ expand");
+    expect(lines).toContain("Outcome");
+  });
+
+  test("a closed prompt shows two lines and says how many are hidden", () => {
+    const lines = shown();
+    expect(lines).toMatch(/Area: TypeScript coding agent core\./);
+    expect(lines).toMatch(/… \d+ more lines/);
+  });
+
+  test("an open prompt shows more lines", () => {
+    const lines = shown({ expanded: { prompt: true } });
+    expect(lines).toContain("↵ collapse");
+    expect(lines).toMatch(/is the biggest\./);
+  });
+
+  test("a closed activity shows the last three calls with their arguments", () => {
+    const lines = shown();
+    expect(lines).toMatch(/read\(path: package\.json\)/);
+    expect(lines).toMatch(/grep\(pattern: tool\)/);
+    expect(lines).toMatch(/ls\(path: src\)/);
+    // The oldest call is the one that falls out of the window.
+    expect(lines).not.toMatch(/Bash\(cd src/);
+  });
+
+  test("an open activity shows the row it was hiding", () => {
+    expect(shown({ expanded: { activity: true } })).toMatch(/Bash\(cd src && wc -l index\.ts\)/);
+  });
+
+  test("the cursor sits on the block you picked", () => {
+    expect(shown({ selectedBlock: 0 })).toContain("▸ Prompt");
+    expect(shown({ selectedBlock: 1 })).toContain("▸ Activity");
+    expect(shown({ selectedBlock: 2 })).toContain("▸ Outcome");
+    expect(shown({ selectedBlock: 1 })).not.toContain("▸ Prompt");
+  });
+
+  test("an agent with no tool calls says so rather than showing an empty block", () => {
+    const built = toPanelJob(
+      job({
+        state: "done",
+        running: 0,
+        planned: [],
+        live: new Map(),
+        agents: [{ id: "#8", label: "quiet", ok: true, durationMs: 1_000, depth: 1, phase: "Analyze" }],
+      }),
+      61_000,
+    );
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent" })));
+    expect(lines).toContain("Activity · no tool calls");
+    expect(lines).toContain("Prompt · not kept");
+  });
+
+  test("a running agent's outcome says Still running", () => {
+    expect(text(buildPanelLines(state({ mode: "agent" })))).toContain("Still running…");
+  });
+
+  test("the latest tool call of a running agent is marked as happening now", () => {
+    expect(text(buildPanelLines(state({ mode: "agent" })))).toContain("· now");
+  });
+
+  test("a finished agent shows its answer under Outcome", () => {
+    const built = withAnswers(detailed(), { "#7": "The coding-agent package is the biggest." });
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent" })));
+    expect(lines).toMatch(/The coding-agent package is the/);
+  });
+
+  test("an error is shown under Outcome", () => {
     const built = finishedJob();
     const lines = text(buildPanelLines(state({ job: built, mode: "agent", selectedAgent: 0 })));
-    expect(lines).toContain("error");
     expect(lines).toContain("no answer");
   });
 
-  test("escape hint goes back", () => {
-    expect(text(buildPanelLines(state({ mode: "agent" })))).toContain("esc back");
+  test("a long answer is cut and offers to open", () => {
+    const built = withAnswers(detailed(), { "#7": `${"word ".repeat(120)}` });
+    const lines = text(buildPanelLines(state({ job: built, mode: "agent" })));
+    expect(lines).toContain("more lines · enter expand");
+  });
+
+  test("the footer lists the keys of the detail view", () => {
+    const lines = shown();
+    expect(lines).toContain("↑↓ agent");
+    expect(lines).toContain("tab block");
+    expect(lines).toContain("enter expand");
+    expect(lines).toContain("esc back");
+  });
+
+  test("queued agents are not in the detail list", () => {
+    // An arrow key that lands on "waiting" and shows an empty screen is a trap.
+    const lines = text(buildPanelLines(state({ mode: "agent" })));
+    expect(lines).not.toContain("↻ waiting");
+  });
+
+  test("every detail line fits the panel width", () => {
+    for (const width of [40, 60, 74, 120]) {
+      for (const line of buildPanelLines(state({ job: detailed(), mode: "agent", width }))) {
+        expect(line.text.length).toBeLessThanOrEqual(width - 2);
+      }
+    }
   });
 });
 

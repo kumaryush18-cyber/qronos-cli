@@ -163,6 +163,78 @@ describe("the workflow panel", () => {
     panel.dispose();
   });
 
+  test("tab walks the blocks of the detail view and enter opens the one under the cursor", async () => {
+    const quick: WorkflowAgentRunner = async (request) => ({
+      ok: true,
+      text: "the answer",
+      usage: { input: 10, output: 5, total: 15 },
+    });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('one long task'); return 1;" });
+    await until(() => manager.get(job.id)?.done === 1, "the agent to finish");
+
+    const { panel } = panelFor(manager);
+    panel.handleInput("\r");
+    expect(panel.mode).toBe("agent");
+    // Entering the detail starts at the top block, closed.
+    expect(panel.selectedBlock).toBe(0);
+    expect(panel.expanded).toEqual({});
+
+    panel.handleInput("\t");
+    expect(panel.selectedBlock).toBe(1);
+    panel.handleInput("\r");
+    expect(panel.expanded).toEqual({ activity: true });
+    // The same key closes it again, so nothing is one-way.
+    panel.handleInput("\r");
+    expect(panel.expanded).toEqual({ activity: false });
+
+    panel.handleInput("\t");
+    panel.handleInput("\t");
+    expect(panel.selectedBlock).toBe(0);
+    panel.dispose();
+  });
+
+  test("in the detail view the arrows walk the agents of the phase, not the phases", async () => {
+    const quick: WorkflowAgentRunner = async (request) => ({
+      ok: true,
+      text: "the answer",
+      usage: { input: 10, output: 5, total: 15 },
+    });
+    const manager = new WorkflowJobManager({ runAgent: quick, config: config(), agentDir: tempDir() });
+    const job = manager.launch({
+      script: "await agent('first')\nawait agent('second')\nreturn 1;",
+    });
+    await until(() => manager.get(job.id)?.done === 2, "both agents to finish");
+
+    const { panel } = panelFor(manager);
+    panel.handleInput("\r");
+    expect(panel.mode).toBe("agent");
+    const before = panel.selectedAgent;
+    panel.handleInput("\u001b[B");
+    expect(panel.selectedAgent).not.toBe(before);
+    // The phase did not move: the detail view owns the arrows now.
+    expect(panel.selectedPhase).toBe(0);
+    panel.dispose();
+  });
+
+  test("the detail view keeps p and x working, because it is the same run", async () => {
+    const gated = gatedRunner();
+    const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });
+    const job = manager.launch({ script: "await agent('one'); return 1;" });
+    await until(() => gated.waiting >= 1, "the agent to start");
+
+    const { panel } = panelFor(manager);
+    panel.handleInput("\r");
+    expect(panel.mode).toBe("agent");
+    panel.handleInput("p");
+    await until(() => manager.get(job.id)?.state === "paused", "the run to pause");
+    panel.handleInput("p");
+    await until(() => manager.get(job.id)?.state === "running", "the run to resume");
+    panel.handleInput("x");
+    await until(() => manager.get(job.id)?.state !== "running", "the run to stop");
+    panel.dispose();
+  });
+
   test("the arrows walk the phases, and the right column follows", async () => {
     const gated = gatedRunner();
     const manager = new WorkflowJobManager({ runAgent: gated.runner, config: config(), agentDir: tempDir() });

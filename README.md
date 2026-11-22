@@ -93,6 +93,8 @@ Storing it inline is an explicit opt-in.
   panel in two columns: the phases on the left, the agents of the phase you point at on the
   right, with the model, tokens and time of each one, the 3 s shimmer on whatever is working
   now, and `p` to pause, `x` to stop, `s` to save the script into `.qronos/workflows/`.
+  `enter` opens one agent: what it was asked, the last tool calls with their arguments
+  (`read(path: package.json)`), how long it has been idle, and its answer or error.
   See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.

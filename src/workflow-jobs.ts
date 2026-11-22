@@ -433,7 +433,7 @@ export class WorkflowJobManager {
         const live = job.live.get(event.id);
         if (!live) break;
         live.toolCalls = Math.max(live.toolCalls + 1, event.count);
-        live.activity.push({ tool: event.tool, turns: event.turns, at: event.at });
+        live.activity.push({ tool: event.tool, detail: event.detail, turns: event.turns, at: event.at });
         if (live.activity.length > MAX_ACTIVITY_ROWS) {
           live.activity.splice(0, live.activity.length - MAX_ACTIVITY_ROWS);
         }

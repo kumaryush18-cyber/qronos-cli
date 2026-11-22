@@ -121,7 +121,21 @@ export interface PanelState {
   height?: number;
   /** Frame counter, so the shimmer can move without the view knowing about time. */
   phase?: number;
+  /** Which block the cursor is on in the detail view: 0 prompt, 1 activity, 2 outcome. */
+  selectedBlock?: number;
+  /** Blocks the user opened with `enter`. Closed by default: a prompt is long. */
+  expanded?: { prompt?: boolean; activity?: boolean; outcome?: boolean };
 }
+
+/** The blocks of the detail view, in the order they appear. */
+export const DETAIL_BLOCKS = ["prompt", "activity", "outcome"] as const;
+
+/** How much of a prompt or an answer is shown before `enter` is pressed. */
+const PREVIEW_LINES = 2;
+/** How many activity rows show while the block is closed. */
+const PREVIEW_ACTIVITY = 3;
+/** Ceiling once a block is open, so one long prompt cannot push the keys away. */
+const EXPANDED_LINES = 12;
 
 /** How many agent rows the right column shows before it says how many are hidden. */
 const MAX_AGENT_ROWS = 14;
@@ -461,43 +475,188 @@ function sortForPanel(agents: PanelAgentView[]): PanelAgentView[] {
   });
 }
 
+/**
+ * One agent, in full: the list of agents on the left, its story on the right.
+ *
+ * The left column stays, because orientation matters: after reading a long
+ * prompt you still want to know which agent you are reading about and what the
+ * others are doing. Closing the detail returns to the phases, never to nothing.
+ */
 function agentLines(state: PanelState, job: PanelJobView, width: number): PanelLine[] {
-  const sorted = sortForPanel(job.agents.filter((agent) => !agent.queued));
-  const agent = sorted[Math.min(state.selectedAgent, Math.max(0, sorted.length - 1))];
+  const phase = job.phases[Math.min(state.selectedPhase, Math.max(0, job.phases.length - 1))];
+  // Queued agents have nothing to show yet, so the detail list leaves them out:
+  // an arrow key that lands on "waiting" and shows an empty screen is a trap.
+  const list = (phase ? agentsIn(job, phase.name) : sortForPanel(job.agents)).filter((agent) => !agent.queued);
+  const index = Math.min(state.selectedAgent, Math.max(0, list.length - 1));
+  const agent = list[index];
   if (!agent) return emptyLines(state);
-  const status = agent.replayed ? "replayed" : agent.running ? "running" : agent.ok ? "done" : "failed";
-  const lines: PanelLine[] = [
-    { text: row(truncate(agent.label, Math.max(10, width - status.length - 2)), status, width), style: "title" },
-    { text: `${job.name} · ${shortId(job.id)}${agent.phase ? ` · ${agent.phase}` : ""}`, style: "detail" },
-    { text: "", style: "empty" },
-  ];
-  const facts = [
-    ["cost", `${formatTokens(agent.tokens)} tokens`],
-    ["time", agent.replayed ? "replayed from the journal" : formatDuration(agent.durationMs)],
-    ["model", shortModel(agent.model) || "(the run's model)"],
-    ["depth", agent.depth > 1 ? `nested, level ${agent.depth}` : "top level"],
-  ];
-  for (const [key, value] of facts) {
-    lines.push({ text: `  ${key.padEnd(6)} ${truncate(value, width - 10)}`, style: "detail" });
+
+  const { left, right: rightWidth } = columnWidths(state.width);
+  const detail = detailLines(state, agent, job, rightWidth);
+  const rows = Math.max(list.length, detail.length);
+
+  const lines: PanelLine[] = [];
+  lines.push({
+    text: row(
+      truncate(phase ? `Agents · ${phase.name}` : "Agents", left),
+      row(truncate(agent.label, Math.max(8, rightWidth - 12)), statusWord(agent), rightWidth),
+      width,
+    ),
+    style: "column-head",
+  });
+
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    const entry = list[rowIndex];
+    const chosen = rowIndex === index;
+    const leftCell = entry ? `${chosen ? "▸" : " "} ${agentMark(entry)} ${truncate(entry.label, Math.max(6, left - 5))}` : "";
+    const right = detail[rowIndex];
+    lines.push({
+      text: `${leftCell.padEnd(left)}│ ${right ? right.text : ""}`,
+      // The chosen agent's name is the one thing that must be obvious.
+      style: right ? right.style : chosen ? "phase-selected" : "detail",
+    });
   }
-  if (agent.error) {
-    lines.push({ text: "", style: "empty" });
-    lines.push({ text: "  error", style: "title" });
-    for (const line of wrap(agent.error, width - 4)) lines.push({ text: `  ${line}`, style: "agent-bad" });
-  }
-  const answer = answerFor(job, agent.id);
-  if (answer) {
-    lines.push({ text: "", style: "empty" });
-    lines.push({ text: "  answer", style: "title" });
-    for (const line of wrap(answer, width - 4).slice(0, 10)) lines.push({ text: `  ${line}`, style: "detail" });
-  }
-  if (job.scriptHint) {
-    lines.push({ text: "", style: "empty" });
-    lines.push({ text: `  script ${job.scriptHint}`, style: "hint" });
+
+  const hidden = list.length - Math.min(list.length, rows);
+  if (hidden > 0) lines.push({ text: `  … ${hidden} more agents in ${phase?.name ?? "this run"}`, style: "detail" });
+
+  lines.push({ text: "", style: "empty" });
+  lines.push({
+    text: truncate("↑↓ agent · tab block · enter expand · p pause · x stop · esc back", width),
+    style: "hint",
+  });
+  return lines;
+}
+
+/** The mark that says what an agent is doing, in one cell. */
+function agentMark(agent: PanelAgentView): string {
+  if (agent.queued) return "↻";
+  if (agent.running) return "●";
+  if (agent.replayed) return "↺";
+  return agent.ok ? "✓" : "✗";
+}
+
+/** The word next to the status dot: what Claude Code prints after `●`. */
+function statusWord(agent: PanelAgentView): string {
+  const dot = agentMark(agent);
+  if (agent.queued) return `${dot} Queued`;
+  if (agent.running) return `${dot} Running`;
+  if (agent.replayed) return `${dot} Replayed`;
+  return agent.ok ? `${dot} Done` : `${dot} Failed`;
+}
+
+/** How long the agent has been quiet, counted from its last tool call. */
+function idleFor(agent: PanelAgentView, now: number): number {
+  const last = agent.activity?.at(-1)?.at;
+  const startedAt = now - agent.durationMs;
+  return Math.min(86_400_000, Math.max(0, now - (last ?? startedAt)));
+}
+
+/** The right-hand column of the detail view, as plain rows. */
+function detailLines(state: PanelState, agent: PanelAgentView, job: PanelJobView, width: number): PanelLine[] {
+  const lines: PanelLine[] = [];
+  const cursor = state.selectedBlock ?? 0;
+  const open = state.expanded ?? {};
+  const model = shortModel(agent.model) || "model not recorded";
+  const tokens = `${formatTokens(agent.tokens)} tokens`;
+  const tools = agent.toolCalls === undefined ? "" : `${agent.toolCalls} tool${agent.toolCalls === 1 ? "" : "s"}`;
+  const facts = [tokens, tools, agent.running ? `idle ${formatDuration(idleFor(agent, state.now))}` : `took ${formatDuration(agent.durationMs)}`]
+    .filter(Boolean)
+    .join(" · ");
+  lines.push({ text: truncate(model, width), style: "detail" });
+  lines.push({ text: truncate(facts, width), style: "detail" });
+  if (agent.depth > 1) lines.push({ text: `nested, level ${agent.depth}`, style: "detail" });
+  lines.push({ text: "", style: "empty" });
+
+  // --- Prompt ---------------------------------------------------------------
+  const prompt = agent.prompt ?? "";
+  const promptLines = prompt === "" ? [] : wrap(prompt, width - 2);
+  lines.push({
+    text: blockHead(
+      "Prompt",
+      promptLines.length === 0 ? "not kept" : `${promptLines.length} line${promptLines.length === 1 ? "" : "s"}`,
+      cursor === 0,
+      open.prompt === true,
+      promptLines.length > PREVIEW_LINES,
+    ),
+    style: cursor === 0 ? "phase-selected" : "detail",
+  });
+  const shownPrompt = open.prompt ? promptLines.slice(0, EXPANDED_LINES) : promptLines.slice(0, PREVIEW_LINES);
+  for (const line of shownPrompt) lines.push({ text: `  ${line}`, style: "detail" });
+  const hiddenPrompt = promptLines.length - shownPrompt.length;
+  if (hiddenPrompt > 0) lines.push({ text: `  … ${hiddenPrompt} more line${hiddenPrompt === 1 ? "" : "s"}`, style: "hint" });
+  lines.push({ text: "", style: "empty" });
+
+  // --- Activity -------------------------------------------------------------
+  const activity = agent.activity ?? [];
+  const total = agent.toolCalls ?? activity.length;
+  const activityDetail =
+    total === 0
+      ? "no tool calls"
+      : `last ${Math.min(activity.length, PREVIEW_ACTIVITY)} of ${total}`;
+  lines.push({
+    text: blockHead("Activity", activityDetail, cursor === 1, open.activity === true, activity.length > PREVIEW_ACTIVITY),
+    style: cursor === 1 ? "phase-selected" : "detail",
+  });
+  const shownActivity = open.activity ? activity.slice(-EXPANDED_LINES) : activity.slice(-PREVIEW_ACTIVITY);
+  for (const [position, rowActivity] of shownActivity.entries()) {
+    const isLast = position === shownActivity.length - 1;
+    const call = `${rowActivity.tool}${rowActivity.detail ? `(${rowActivity.detail})` : ""}`;
+    // The newest call is the one a person is waiting on; while it is the last
+    // thing the agent did and the agent is still running, it is what it is doing.
+    const marker = agent.running && isLast ? " · now" : "";
+    lines.push({ text: truncate(`  ${call}${marker}`, width), style: agent.running && isLast ? "agent-running" : "detail" });
   }
   lines.push({ text: "", style: "empty" });
-  lines.push({ text: "↑↓ agent · esc back", style: "hint" });
+
+  // --- Outcome --------------------------------------------------------------
+  const answer = answerFor(job, agent.id);
+  const outcomeLines = agent.running
+    ? 1
+    : agent.error
+      ? wrap(agent.error, width - 2).length
+      : answer
+        ? wrap(answer, width - 2).length
+        : 1;
+  lines.push({
+    text: blockHead("Outcome", "", cursor === 2, open.outcome === true, outcomeLines > PREVIEW_LINES),
+    style: cursor === 2 ? "phase-selected" : "detail",
+  });
+  if (agent.running) {
+    lines.push({ text: "  Still running…", style: "agent-running" });
+  } else if (agent.error) {
+    for (const line of bodyLines(agent.error, open.outcome === true)) {
+      lines.push({ text: `  ${line}`, style: "agent-bad" });
+    }
+  } else if (answer) {
+    for (const line of bodyLines(answer, open.outcome === true)) {
+      lines.push({ text: `  ${line}`, style: "detail" });
+    }
+  } else {
+    lines.push({ text: "  (the answer was not kept for this run)", style: "hint" });
+  }
   return lines;
+
+  /** Two lines of a block, or twelve when it is open, each cut to the column. */
+  function bodyLines(text: string, open: boolean): string[] {
+    const wrapped = wrap(text, width - 2);
+    const shown = wrapped.slice(0, open ? EXPANDED_LINES : PREVIEW_LINES);
+    const more = wrapped.length - shown.length;
+    if (more > 0) shown.push(`… ${more} more line${more === 1 ? "" : "s"}${open ? "" : " · enter expand"}`);
+    return shown;
+  }
+}
+
+/**
+ * `▸ Prompt · 7 lines · ↵ expand`, with the cursor mark when it is selected.
+ *
+ * `expandable` is what makes the hint honest: a one-line prompt has nothing to
+ * open, so it does not offer to open it.
+ */
+function blockHead(label: string, detail: string, selected: boolean, open: boolean, expandable: boolean): string {
+  const middle = detail === "" ? "" : ` · ${detail}`;
+  const hint = expandable ? ` · ↵ ${open ? "collapse" : "expand"}` : "";
+  return `${selected ? "▸" : " "} ${label}${middle}${hint}`;
 }
 
 /** The answer text for an agent, kept on the view for the detail screen. */

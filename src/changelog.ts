@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.17",
+    highlights: [
+      "enter in the workflow panel now opens one agent properly: a list of the agents on the left, and that agent's whole story on the right, in the same shape Claude Code uses.",
+      "Three blocks, each with a cursor you can reach: Prompt (what the agent was asked), Activity (the last tool calls) and Outcome (Still running…, the error, or the answer). tab moves between them, enter opens or closes one.",
+      "A tool row now carries the first line of its arguments, so it reads read(path: package.json) and not just read. The arguments are redacted first and cut at 80 characters after, so a cut can never leave half a secret behind.",
+      "The facts line answers the question you actually have when an agent looks stuck: 0 tokens · 6 tools · idle 1m 01s. Idle counts from the last tool call, and the newest call of a working agent is marked · now.",
+      "Blocks are closed when you arrive, because a 7-line task would otherwise push the keys off the screen the moment you press enter. … 5 more lines says how much is folded away.",
+      "The arrows walk the agents of the phase inside this screen, and esc goes back to the phases. p, x and r keep working: it is the same run, and a screen that hides the controls of the run you are watching is a dead end.",
+      "Queued agents are left out of this list: an arrow key that lands on waiting and shows an empty screen is a trap.",
+      "Proved on claude-haiku-5.5 with a real agent: the detail view opened, the prompt and the activity expanded, the tool row named the tool and its argument, and the outcome arrived (41 checks).",
+    ],
+  },
+  {
     version: "1.0.16",
     highlights: [
       "A script can now name the phase of one agent: agent(prompt, { label, phase: 'Analyze', schema }). phase() still names everything after it, which is right for a straight script; a parallel map needs a name per item, and this is it.",
