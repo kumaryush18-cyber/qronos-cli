@@ -18,6 +18,7 @@ import { PROVIDER_PRESETS } from "../src/provider";
 import { createWorkflowToolExtension, renderWorkflowReport, getLastWorkflowRun } from "../src/workflow-tool";
 import { journalDir } from "../src/workflow-journal";
 import { workflowConfigFromEnv } from "../src/workflow-types";
+import { WorkflowPanel, visibleLength } from "../src/workflow-panel";
 
 const failures: string[] = [];
 function check(name: string, ok: boolean, detail = ""): void {
@@ -137,6 +138,8 @@ const tools: Array<Record<string, any>> = [];
 const deliveries: Array<{ content: string; customType: string }> = [];
 const notices: string[] = [];
 let commandHandler: ((args: string, ctx: unknown) => Promise<void>) | undefined;
+let panelShortcut: ((ctx: unknown) => Promise<void>) | undefined;
+const overlays: Array<Record<string, any>> = [];
 createWorkflowToolExtension({
   config: { ...workflowConfigFromEnv({}), wallClockMs: 600_000, concurrency: 4, maxAgents: 12 },
   agentDir,
@@ -147,7 +150,9 @@ createWorkflowToolExtension({
   registerCommand: (name: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
     if (name === "workflows") commandHandler = spec.handler;
   },
-  registerShortcut: () => {},
+  registerShortcut: (key: string, spec: { handler: (ctx: unknown) => Promise<void> }) => {
+    if (key === "alt+w") panelShortcut = spec.handler;
+  },
   sendMessage: (message: Record<string, any>) =>
     deliveries.push({ content: String(message.content), customType: String(message.customType) }),
   on: () => {},
@@ -389,7 +394,73 @@ try {
   check("at least one agent came from the journal", replayedCount >= 1, `${replayedCount} replayed`);
   check("the replayed run reached a result", replayReport.includes("workflow restart-me"), replayReport.split("\n")[0] ?? "");
 
-  /* 9. what is on disk ---------------------------------------------------------- */
+  /* 9. the live panel, opened the way a person opens it ------------------------- */
+  const panelRenders: number[] = [];
+  let panelComponent: WorkflowPanel | undefined;
+  const panelCtx = {
+    ui: {
+      notify: (text: string) => notices.push(text),
+      custom: async (build: any, options: any) => {
+        overlays.push(options);
+        panelComponent = build(
+          { requestRender: () => panelRenders.push(Date.now()) },
+          { fg: (_slot: string, text: string) => text },
+          {},
+          () => {},
+        );
+        return undefined;
+      },
+    },
+  } as never;
+
+  deliveries.length = 0;
+  const panelRun = await run({
+    script: `
+      const files = ["src/a.ts", "src/b.ts", "src/c.ts"];
+      const out = await parallel(files.map((file) => () => agent("Say the file name only: " + file, { label: file })));
+      return out.map((r) => r.text).join(" | ");
+    `,
+    name: "panel-demo",
+  });
+  const panelJobId = String(panelRun.details.job ?? "");
+  check("the panel run started in the background", deliveries.length === 0, "delivered too early");
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  await panelShortcut?.(panelCtx);
+  check("Alt+W opened the panel as an overlay", overlays.length === 1, `${overlays.length} overlays`);
+  check("the overlay is centred", overlays.at(-1)?.overlayOptions?.anchor === "center", JSON.stringify(overlays.at(-1)?.overlayOptions ?? {}));
+
+  // The panel colours its lines, so assertions read them without escape codes.
+  const plain = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, "");
+  const liveLines = panelComponent?.render(74) ?? [];
+  const liveText = plain(liveLines.join("\n"));
+  check("the panel shows the running workflow", liveText.includes("panel-demo"), liveText.split("\n")[1] ?? "");
+  check("the panel marks work in progress", /[✻↺✓] /.test(liveText), liveText.slice(0, 120));
+  check(
+    "every panel line is the same width",
+    new Set(liveLines.map((line) => visibleLength(line))).size === 1,
+    `${new Set(liveLines.map((line) => visibleLength(line))).size} widths`,
+  );
+  // One tick is 120 ms; wait for a couple instead of hoping.
+  const frameDeadline = Date.now() + 3_000;
+  while (panelRenders.length < 2 && Date.now() < frameDeadline) await new Promise((resolve) => setTimeout(resolve, 50));
+  check("the panel redraws on its own while the run is live", panelRenders.length >= 2, `${panelRenders.length} frames`);
+
+  panelComponent?.handleInput(" ");
+  const pausedText = (await sendCommand(panelJobId)).join(" ");
+  check("space pauses the run from inside the panel", pausedText.includes("paused"), pausedText.slice(0, 200));
+  panelComponent?.handleInput(" ");
+  const resumedText = (await sendCommand(panelJobId)).join(" ");
+  check("space again lets it run", resumedText.includes("running"), resumedText.slice(0, 200));
+
+  const panelDeadline = Date.now() + 180_000;
+  while (deliveries.length === 0 && Date.now() < panelDeadline) await new Promise((resolve) => setTimeout(resolve, 500));
+  const finishedText = plain((panelComponent?.render(74) ?? []).join("\n"));
+  check("the panel shows the finished run", /finished|done/.test(finishedText), finishedText.slice(0, 200));
+  check("the panel still draws after the run ends", (panelComponent?.render(74) ?? []).length > 4, "no lines");
+  panelComponent?.dispose();
+
+  /* 10. what is on disk ---------------------------------------------------------- */
   commandNotices.length = 0;
   await commandHandler?.("saved", { ui: { notify: (text: string) => commandNotices.push({ text }) } });
   const savedText = commandNotices.map((entry: { text: string }) => entry.text).join(" ");

@@ -47,12 +47,14 @@ function fakePi() {
   const notices: Array<{ text: string; level?: string }> = [];
   const statuses: Array<{ key: string; text?: string }> = [];
   const commands: Record<string, (args: string, ctx: unknown) => Promise<void>> = {};
+  const shortcuts: string[] = [];
+  const overlays: Array<Record<string, any>> = [];
   const api = {
     registerTool: (tool: Record<string, any>) => tools.push(tool),
     registerCommand: (name: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
       commands[name] = spec.handler;
     },
-    registerShortcut: () => {},
+    registerShortcut: (key: string) => shortcuts.push(key),
     on: () => {},
     sendMessage: (message: Record<string, any>, options?: Record<string, any>) => messages.push({ message, options }),
   };
@@ -61,9 +63,13 @@ function fakePi() {
     ui: {
       setStatus: (key: string, text?: string) => statuses.push({ key, text }),
       notify: (text: string, level?: string) => notices.push({ text, level }),
+      custom: async (component: unknown, options?: Record<string, any>) => {
+        overlays.push({ component, options });
+        return undefined;
+      },
     },
   };
-  return { tools, commands, messages, notices, statuses, api, ctx };
+  return { tools, commands, messages, notices, statuses, shortcuts, overlays, api, ctx };
 }
 
 function harness(options: Parameters<typeof createWorkflowToolExtension>[0] = {}) {
@@ -333,5 +339,31 @@ describe("pause, resume and resume-from-journal commands", () => {
     const { commands, notices } = harness({ runner: fakeRunner().runner, agentDir: tempDir() });
     await commands.workflows!("saved", { ui: { notify: (text: string) => notices.push({ text }) } });
     expect(notices.map((entry) => entry.text).join(" ")).toContain("No workflow run is saved");
+  });
+});
+
+describe("the panel entry points", () => {
+  test("Alt+W is registered for the panel", () => {
+    const { shortcuts } = harness({ runner: fakeRunner().runner, agentDir: tempDir() });
+    expect(shortcuts).toContain("alt+w");
+  });
+
+  test("/workflows panel opens the overlay, centred", async () => {
+    const { commands, overlays, ctx } = harness({ runner: fakeRunner().runner, agentDir: tempDir() });
+    await commands.workflows!("panel", ctx);
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]!.options.overlay).toBe(true);
+    expect(overlays[0]!.options.overlayOptions.anchor).toBe("center");
+  });
+
+  test("the overlay builds a panel without touching the disk", async () => {
+    const { commands, overlays, ctx } = harness({ runner: fakeRunner().runner, agentDir: tempDir() });
+    await commands.workflows!("panel", ctx);
+    const build = overlays[0]!.component as (tui: unknown, theme: unknown, kb: unknown, done: () => void) => any;
+    const panel = build({ requestRender: () => {} }, { fg: (_slot: string, text: string) => text }, {}, () => {});
+    const lines = panel.render(74);
+    expect(lines.length).toBeGreaterThan(2);
+    expect(lines.join("\n")).toContain("Workflows");
+    panel.dispose();
   });
 });

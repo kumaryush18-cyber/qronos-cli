@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.12",
+    highlights: [
+      "Workflows have a live panel now: Alt+W, or /workflows panel, opens a floating view in the middle of the screen, the same shape as the Agent Hub. Header with running, done, tokens and time; one bar per phase; one row per agent; the footer says which run you are looking at and whether its journal is on disk.",
+      "The panel uses the same 3 s pale-orange shimmer as the header for whatever is working right now: the active phase and the running agents. One moving light now means one thing everywhere in the CLI.",
+      "Keys: space pauses or resumes, x stops, enter opens one agent (phase, cost, time, error, answer), arrows move between runs or agents, r replays a finished run from its journal, esc goes back or closes. Every one of them is also a /workflows command, so the panel is never the only way to do something.",
+      "Agents that are still working now get their own row with their own name and a time that counts up. Before this, a run with nothing finished yet drew no rows at all, which looked broken exactly when you wanted to look at it.",
+      "The ticker is honest: 120 ms redraws only while a run is live, one last frame when the last run ends, then nothing. A panel left open on a finished run costs no terminal work.",
+      "Proved on a real model (claude-haiku-5.5): Alt+W opened the overlay on a live 3-agent run, every line was the same width, space paused it and space let it run again, and the panel drew the finish without a single silent cap.",
+    ],
+  },
+  {
     version: "1.0.11",
     highlights: [
       "Workflows can be paused and resumed, the way Claude Code does it. /workflows pause stops new agents and lets the ones in flight finish; /workflows resume carries on from the pause and replays nothing. The wall clock pauses with the run, so a run paused overnight keeps its full ten minutes.",

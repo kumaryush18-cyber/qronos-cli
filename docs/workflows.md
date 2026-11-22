@@ -133,6 +133,66 @@ what a later resume needs.
 Old journals are pruned: the newest 20 runs are always kept, anything older than
 7 days is removed, and the folder never grows past 200 files.
 
+## The live panel
+
+`Alt+W`, or `/workflows panel`, opens a floating panel in the middle of the
+screen. It is the same shape as the Agent Hub (`Alt+A`), and for the same
+reason: a workflow can run for ten minutes, and a command that prints a snapshot
+is not the same as watching it.
+
+```
+╭──────────────────────────────────────────────────────────────────────╮
+│auth-audit              3 running · 9 done · 42.1k tokens · 2m 05s    │
+│  ┆ running · hj6qy01                                                  │
+│                                                                      │
+│  ▸ Understand       4 agents          ███                12.1k        │
+│  ▸ Review           8 agents   ✗ 1    ██████████         31.4k        │
+│                                                                      │
+│  ▸ ✻ routes.ts                    ████████       7.1k  00:19         │
+│  ┆ ✓ middleware.ts                ██████         5.0k  00:12         │
+│  ┆ ↺ db.ts                        ██████         5.0k   skip replayed│
+│  ┆ ✗ auth.ts                      ██             1.2k  00:04         │
+│       no answer from the model                                        │
+│                                                                      │
+│ space pause · x stop · enter agent · ↑↓ job · esc close               │
+│  wf_hj6qy01 · journal on disk                                        │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+How to read it:
+
+- The first line is the run: its name, what is happening now, and the cost in
+  tokens and time.
+- Phase rows have a bar of their tokens, so the expensive stage is obvious.
+  The phase that is working right now carries the **same 3 s pale-orange band**
+  that flows through the header and the working line. One moving light means one
+  thing everywhere in the CLI: this is happening now.
+- Agent rows are sorted the way you look at them: still working first, then
+  failures, then the ones that cost the most. A bright green `✓` is done, a dark
+  red `✗` failed, a blue `↺` was answered from the journal and cost nothing.
+- A running agent's time counts up while you watch.
+
+Keys:
+
+| Key | What it does |
+|---|---|
+| `space` | Pause a running run, or resume a paused one. Nothing is replayed by a live resume. |
+| `x` | Stop the run. Agents in flight are cancelled. |
+| `enter` | Open one agent: its phase, cost, time, error and answer. |
+| `↑` `↓` | Move between runs (or between agents inside one agent's view). |
+| `r` | Replay a finished run from its journal, without leaving the panel. |
+| `esc` | Back out of an agent, or close the panel. |
+
+Three rules the panel keeps:
+
+1. **It only reads.** It holds no job of its own, so closing it can never lose a
+   run. Everything it can do is also a `/workflows` command.
+2. **The ticker stops.** Redrawing costs terminal time; the panel redraws every
+   120 ms only while a run is live, draws one last frame when the last run ends,
+   and then stops.
+3. **It says how much of a run you are seeing.** `12 more` is printed when there
+   are more agents than rows, so nothing is silently cut.
+
 ## Why a script, and not just many `agent` calls
 
 A tool call returns its result into the conversation. Ten calls return ten
@@ -265,12 +325,15 @@ use it, so it can only be called when the model asks for it directly.
 | `src/workflow-slots.ts` | One slot pool for the whole process. |
 | `src/workflow-replay.ts` | Match a call by position, replay saved answers, respect the change boundary. |
 | `src/workflow-clock.ts` | The pausable wall clock, and the frozen clock the script sees. |
+| `src/workflow-panel.ts` | The overlay: box, colour, shimmer, keys, and the ticker that stops. |
+| `src/workflow-panel-view.ts` | The panel's text, pure: header, phases, agent rows, agent view. |
 
 Tests: `test/workflow-runtime.test.ts`, `test/workflow-tool.test.ts`,
 `test/workflow-notice.test.ts`, `test/workflow-glyphs.test.ts`,
 `test/workflow-jobs.test.ts`, `test/workflow-journal.test.ts`,
 `test/workflow-background.test.ts`, `test/workflow-replay.test.ts`,
 `test/workflow-clock.test.ts`, `test/workflow-pause.test.ts`,
-`test/workflow-resume.test.ts`. Real-model E2E:
-`scripts/workflow-e2e.ts` (`QRONOS_E2E_MODEL=claude-haiku-5.5`). They use a fake agent, so they spend no tokens
+`test/workflow-resume.test.ts`, `test/workflow-panel-view.test.ts`,
+`test/workflow-panel.test.ts`. Real-model E2E: `scripts/workflow-e2e.ts` and
+`scripts/workflow-panel-e2e.ts` (`QRONOS_E2E_MODEL=claude-haiku-5.5`). They use a fake agent, so they spend no tokens
 and take no seconds.

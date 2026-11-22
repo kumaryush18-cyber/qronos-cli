@@ -19,6 +19,7 @@ import { WorkflowRuntime } from "./workflow-runtime";
 import { RUNNING, cross, formatDuration, formatTokens, pad, phaseMark, replayMark, tick, tokenBar } from "./workflow-glyphs";
 import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
+import { openWorkflowPanel } from "./workflow-panel";
 import { sharedSlotPool } from "./workflow-slots";
 import {
   workflowConfigFromEnv,
@@ -557,6 +558,12 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           const words = (args ?? "").trim().split(/\s+/).filter(Boolean);
           const manager = state.manager;
 
+          // `/workflows panel`: the live overlay, the same thing Alt+W opens.
+          if (words[0] === "panel") {
+            await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never);
+            return;
+          }
+
           // `/workflows pause <id>`: stop starting agents, keep what is running.
           if (words[0] === "pause") {
             const job = words[1] ? manager?.get(words[1]) : manager?.active().find((entry) => entry.state === "running");
@@ -668,6 +675,17 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           ctx.ui.notify(renderWorkflowDetail(last), last?.result.ok === false ? "warning" : "info");
         },
       });
+
+      // Alt+W: the live panel. It reads the job manager and writes nothing, so
+      // opening it is always safe, even with no run at all.
+      if (typeof qronos.registerShortcut === "function") {
+        qronos.registerShortcut("alt+w", {
+          description: "Workflow panel",
+          handler: async (ctx: ExtensionCommandContext | any) => {
+            await openWorkflowPanel(ctx, managerFor(), (ctx as { theme?: unknown }).theme as never);
+          },
+        });
+      }
     },
   };
 }
