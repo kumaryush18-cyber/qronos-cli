@@ -27,6 +27,8 @@ import {
   type WorkflowEvent,
   type WorkflowPhaseStat,
   type WorkflowRunResult,
+  type WorkflowToolDecision,
+  type WorkflowToolFacts,
   type WorkflowUsage,
 } from "./workflow-types";
 import { extractJson, validateJsonSchema } from "./agent-schema";
@@ -63,6 +65,20 @@ export interface WorkflowRuntimeOptions {
    * run's start time, so the script's own decisions repeat exactly.
    */
   scriptNow?: number;
+  /**
+   * Ask before a tool runs. The runtime owns the grants and the counter, because
+   * "allow for this run" means this run: it must die when the run does.
+   */
+  approveTool?: (request: WorkflowToolAsk) => Promise<WorkflowToolDecision>;
+}
+
+/** One question about one tool call, with the run's own bookkeeping. */
+export interface WorkflowToolAsk {
+  facts: WorkflowToolFacts;
+  /** How many times this run has stopped to ask, including this one. */
+  asked: number;
+  /** How many agents the run plans, so a card can say "1 of 3". */
+  total?: number;
 }
 
 /** State that must be shared by a run and its children, never copied. */
@@ -87,6 +103,13 @@ export interface SharedState {
    * no collision; and because a child agent's tools are just as interesting.
    */
   activity: Map<string, LiveActivity>;
+  /**
+   * "Allow for this run", as keys. Shared with nested runs and thrown away when
+   * the run ends: nothing about a grant is written anywhere.
+   */
+  grants: Set<string>;
+  /** How many times this run has stopped to ask about a tool. */
+  asked: number;
 }
 
 /** The tool calls of one agent that has not finished yet. */
@@ -151,6 +174,8 @@ export class WorkflowRuntime {
   private readonly replay?: WorkflowReplay;
   private readonly scope: string;
   private readonly scriptNow?: number;
+  /** The ask, when the caller allows one. Undefined means "nobody to ask". */
+  private readonly approveTool?: (request: WorkflowToolAsk) => Promise<WorkflowToolDecision>;
   /** Calls started in this scope, so a replay asks for the same position. */
   private scopeCalls = 0;
   /** Children get their own scope; this count keeps two calls apart. */
@@ -162,6 +187,8 @@ export class WorkflowRuntime {
   private readonly phaseTiming = new Map<string, { agents: number; failed: number; tokens: number; durationMs: number }>();
   private startedAt = 0;
   private currentPhase: string | undefined;
+  /** How many agents the script says it plans, when `meta.phases` says. */
+  private plannedAgents?: number;
 
   constructor(options: WorkflowRuntimeOptions) {
     this.config = options.config ?? workflowConfigFromEnv();
@@ -174,6 +201,7 @@ export class WorkflowRuntime {
     this.replay = options.replay;
     this.scope = options.scope ?? "";
     this.scriptNow = options.scriptNow;
+    this.approveTool = options.approveTool;
     this.shared =
       options.shared ?? {
         started: 0,
@@ -187,6 +215,8 @@ export class WorkflowRuntime {
         paused: false,
         pauseWaiters: [],
         activity: new Map(),
+        grants: new Set<string>(),
+        asked: 0,
       };
     this.wallClock = createResumableWallClock(this.config.wallClockMs, { now: () => this.now() });
   }
@@ -312,6 +342,11 @@ export class WorkflowRuntime {
       // Every tool the runner finishes lands here: the count keeps rising, only
       // the kept rows are capped, so the panel can honestly say "3 of 41".
       onActivity: ({ tool, turns, detail }) => this.noteActivity(id, tool, turns, detail),
+      // Only when a decision is actually possible: a runner with no ask keeps
+      // today's behaviour instead of guessing what silence means.
+      approveTool: this.approveTool ? (facts) => this.approveToolUse(facts) : undefined,
+      // Read-only: the runner sees the grants, and only the ask adds one.
+      toolGrants: this.approveTool ? () => this.shared.grants as ReadonlySet<string> : undefined,
     };
     const fingerprint = fingerprintOf({ prompt: text, agent: request.agentType, model: request.model });
 
@@ -519,6 +554,28 @@ export class WorkflowRuntime {
     this.phaseTiming.set(record.phase, entry);
   }
 
+  /**
+   * Ask before one tool runs, and remember a grant if the user gave one.
+   *
+   * A refused call is never a thrown error: the subagent hears "no" as a tool
+   * result, so it can say what it wanted to do and the run keeps going.
+   */
+  async approveToolUse(facts: WorkflowToolFacts): Promise<WorkflowToolDecision> {
+    const approve = this.approveTool;
+    if (!approve) return { approved: true };
+    this.shared.asked += 1;
+    const decision = await approve({ facts, asked: this.shared.asked, total: this.plannedAgents });
+    if (decision.approved && decision.grant) {
+      for (const key of decision.grant) this.shared.grants.add(key);
+    }
+    return decision;
+  }
+
+  /** The grants this run has been given, for a test or a report. */
+  grants(): readonly string[] {
+    return [...this.shared.grants];
+  }
+
   /** Validate the schema here, so a script cannot receive unchecked data. */
   private checkSchema(result: WorkflowAgentResult, schema: unknown): WorkflowAgentResult {
     if (schema === undefined || schema === null) return result;
@@ -617,6 +674,10 @@ export class WorkflowRuntime {
     this.startedAt = this.now();
     this.emit({ type: "run_start", at: this.startedAt, scriptChars: script.length, depth: this.depth });
     const meta = parseWorkflowMeta(script);
+    // The plan is what the script declares, so a card can say "1 of 3" instead
+    // of a number that means nothing. Unknown is fine: the card drops it.
+    const planned = (meta.phases ?? []).reduce((total, phase) => total + (phase.agents ?? 0), 0);
+    this.plannedAgents = planned > 0 ? planned : undefined;
     const topLevel = this.depth === 1;
 
     let timedOut = false;

@@ -524,6 +524,68 @@ already a big job, and a script that needs more should be split into several run
 Nothing is dropped silently: when the log cap is reached, the report says so, and
 a run that hits the agent cap fails with a message that names the env var.
 
+## Approving a tool inside a workflow
+
+A subagent can use tools. Until now it used them without asking, which is fine
+for a run of `read` and `grep`, and not fine for a run that can write and run
+shell commands. So every tool call a subagent makes now meets **the chat's own
+permission mode**, read at the moment the tool would run:
+
+| Mode | reads | writes in the project | shell | destructive shell, write outside |
+| --- | --- | --- | --- | --- |
+| `auto` (default) | run | run | run | **ask** |
+| `accept edits` | run | run | **ask** | **ask** |
+| `manual` | run | **ask** | **ask** | **ask** |
+| `plan` | run | refused | refused unless it only reads | refused |
+| `skip permissions` | run | run | run | run |
+
+The card appears in the **chat**, not in the panel, because the panel only reads:
+
+```
+╭──────────────────────────────────────────────────────────────────────╮
+│ Bash command · from the "analyze-src" workflow                  1 of 3 │
+│                                                                      │
+│   $ cd src && ls                                                     │
+│                                                                      │
+│   ▸ 1. Yes                                                           │
+│     2. Yes, allow shell commands for this run                        │
+│     3. Yes, and switch to auto mode                                  │
+│     4. No                                                            │
+│                                                                      │
+│   enter choose · 1 2 3 4 pick · esc cancel                           │
+│   nothing runs unless you say yes                                    │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+Three rules, and each one is a test:
+
+- **Closing the card without choosing means "No".** `esc` is an answer, and
+  the answer is no. Silence must never run a tool.
+- **"Allow for this run" dies with the run.** The grant is a `Set` on the run
+  itself. It is never written to a file, never survives `/workflows resume`,
+  and is gone the moment the run settles. A refused tool is not a crash: the
+  subagent receives `No: <reason>` as the tool result, says what it wanted to
+  do, and the run carries on.
+- **There is no terminal, so there is no yes.** A headless run (`qronos -p`) has
+  no way to ask, so a call the mode would question is refused instead of
+  allowed. `auto` and `skip permissions` still work, because their rules never
+  needed an answer.
+
+### What a subagent may hold
+
+A workflow agent gets **the same tool pool as the chat** — no wider, and no
+narrower — because the door, not the tool list, is what decides whether a call
+may run. Before this a workflow agent could only read: the builtin agent
+definition carries a read-only allow-list, so `bash` and `write` were dropped
+before the model ever saw them, and a door that nobody can reach guards nothing.
+
+The listed set is still the intersection with the parent's pool, and four names
+stay denied for every subagent (`workflow`, `agent`, `ask_user_question`,
+`end_conversation`): recursion is governed by the depth limit, and only the top
+level owns the conversation.
+
+Set `QRONOS_WORKFLOW_TOOLS=0` to turn the door off and keep the old behaviour.
+
 ## Safety — what is really true
 
 The script runs in a Node `vm` context that has:

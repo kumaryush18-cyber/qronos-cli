@@ -35,6 +35,8 @@ import {
   type WorkflowEvent,
   type WorkflowPhaseStat,
   type WorkflowRunResult,
+  type WorkflowToolDecision,
+  type WorkflowToolFacts,
   type WorkflowUsage,
 } from "./workflow-types";
 
@@ -116,6 +118,17 @@ export interface WorkflowJobManagerOptions {
   now?: () => number;
   /** Called exactly once per job, when it settles. */
   onSettle?: (job: WorkflowJob) => void;
+  /**
+   * Ask before a tool runs. Handed straight to the runtime, which owns the
+   * grants, so "allow for this run" cannot outlive the run.
+   */
+  approveTool?: (request: {
+    facts: WorkflowToolFacts;
+    asked: number;
+    total?: number;
+    /** The run that asked, so a card can name it. */
+    workflow: string;
+  }) => Promise<WorkflowToolDecision>;
   /**
    * Called whenever the number of live jobs changes. The waiting row above the
    * editor listens to this; it is one hook instead of one call per transition,
@@ -229,6 +242,10 @@ export class WorkflowJobManager {
       // The script sees the run's start time: on a resume that is the ORIGINAL
       // start, so the script's own decisions and timestamps repeat exactly.
       scriptNow: saved?.startedAt ?? job.startedAt,
+      // The job name travels with the ask, so a card can say which run is asking.
+      approveTool: this.options.approveTool
+        ? (request) => this.options.approveTool!({ ...request, workflow: job.name })
+        : undefined,
       onEvent: (event) => {
         this.applyEvent(job, event, journal);
       },

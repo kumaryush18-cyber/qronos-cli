@@ -11,6 +11,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.19",
+    highlights: [
+      "A workflow subagent can no longer use a tool in silence. Every call a subagent makes now meets the chat's own permission mode, read at the moment the tool would run — not when the run started.",
+      "The card lands in the chat, not in the panel, because a decision belongs where the conversation is. The panel still only reads. The heading glows the same pale orange as the header and names the run: Bash command · from the \"analyze-src\" workflow, 1 of 3.",
+      "Four answers, as in Claude Code: Yes · Yes, allow shell commands for this run · Yes, and switch to auto mode · No. The second one is a grant for one run only, and it is never written to a file.",
+      "Closing the card with esc means No. The grant dies with the run, so a resumed run asks again. A refused tool is not a crash: the subagent receives No: <reason> as the tool result, says what it wanted to do, and the rest of the run carries on.",
+      "The default mode still lets normal work run: in auto, a read, a write inside the project and a plain shell command go ahead, and only a command that can destroy work or a write outside the project stops to ask.",
+      "A headless run has no one to ask, so a call the mode would question is refused instead of allowed. Silence never becomes a yes. QRONOS_WORKFLOW_TOOLS=0 turns the door off and restores the old behaviour.",
+      "The decision is one pure function in its own file, so the mode table is tested without a terminal: 39 tests on the table, 23 on the card, 11 on the gate inside a real run.",
+      "A workflow agent now holds the same tools as the chat instead of a read-only list, so bash and write can finally be offered to it. The door is what decides whether a call runs, so a door nobody could reach would have guarded nothing.",
+      "Proved on claude-haiku-5.5, end to end: the card really appeared for a real bash call, esc meant No and the command never ran, then answer 1 meant Yes and the command printed the file (12 checks, scripts/workflow-tool-approval-e2e.ts).",
+    ],
+  },
+  {
     version: "1.0.18",
     highlights: [
       "A background workflow now has a row of its own above the editor: ※ Waiting for 1 dynamic workflow to finish. Before this the CLI looked idle while five agents worked and the token bill went up.",

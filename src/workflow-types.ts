@@ -41,6 +41,42 @@ export interface WorkflowAgentRequest {
    * into the agent: a display hook cannot be allowed to break a run.
    */
   onActivity?: (activity: { tool: string; turns: number; detail?: string }) => void;
+  /**
+   * Ask before a tool runs, when the chat's permission mode says a question is
+   * needed. The runner calls this *instead of* running the tool.
+   *
+   * Optional, and its default is "no one to ask": a runner without it must not
+   * become more permissive, so the caller decides what silence means.
+   */
+  approveTool?: (facts: WorkflowToolFacts) => Promise<WorkflowToolDecision>;
+  /**
+   * The grants this run has already been given ("allow for this run").
+   *
+   * A function, not the set: the runner may read it and may never change it, so
+   * a subagent cannot grant itself anything.
+   */
+  toolGrants?: () => ReadonlySet<string>;
+}
+
+/** What a tool call would do, as far as the decision needs to know. */
+export interface WorkflowToolFacts {
+  name: string;
+  kind: "read" | "write" | "shell" | "other";
+  path?: string;
+  command?: string;
+  insideProject: boolean;
+  dangerous: boolean;
+  summary: string;
+}
+
+/** The answer to one ask. `grant` is what "allow for this run" adds. */
+export interface WorkflowToolDecision {
+  approved: boolean;
+  grant?: string[];
+  /** True when the user asked to switch the chat to auto mode. */
+  switchToAuto?: boolean;
+  /** True when there was no terminal to ask in. */
+  skipped?: boolean;
 }
 
 /** What one `agent()` call gives back. It never throws: a script keeps going. */

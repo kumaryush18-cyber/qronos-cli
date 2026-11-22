@@ -98,6 +98,10 @@ Storing it inline is an explicit opt-in.
   While a background run is live a second row sits above the editor —
   `※ Waiting for 1 dynamic workflow to finish`, with the same 3 s orange shimmer — and a
   finished run ends with a table of the structured results when the agents used a `schema`.
+  A subagent's tool call meets **your permission mode**: in `auto` a read, a write inside the
+  project and a plain shell command go ahead, and a destructive command or a write outside the
+  project stops at a card in the chat — `Yes`, `Yes, allow shell commands for this run`,
+  `Yes, and switch to auto mode`, `No`. Closing the card means No, and a grant dies with the run.
   See [docs/workflows.md](docs/workflows.md).
 - **Lifecycle hooks** — run your own commands on `PreToolUse`, `PostToolUse`, `SessionStart`,
   `UserPromptSubmit` and `Stop`. Exit code 2 blocks the action.
@@ -151,6 +155,7 @@ Storing it inline is an explicit opt-in.
 | `QRONOS_WORKFLOW_WALL_CLOCK_MS` | time limit for one workflow run | `600000` (10 min) |
 | `QRONOS_WORKFLOW_MAX_AGENTS` | agents a single workflow may start | `60` |
 | `QRONOS_WORKFLOW_CONCURRENCY` | workflow agents running at once | `8` |
+| `QRONOS_WORKFLOW_TOOLS` | `0` turns off the per-tool permission door for workflow subagents | on |
 
 ---
 

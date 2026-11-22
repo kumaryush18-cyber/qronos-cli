@@ -22,6 +22,9 @@ import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { openWorkflowPanel } from "./workflow-panel";
 import { saveWorkflowScript } from "./workflow-save";
 import { resultTableSection } from "./workflow-table";
+import { decideToolUse, grantKeys, readToolFacts, refusalReason } from "./workflow-permissions";
+import { askToolApproval } from "./workflow-tool-approval";
+import { getExecutionMode, setExecutionMode } from "./execution-modes";
 import { setWaitingWorkflows } from "./workflow-waiting";
 import { appendWorkflowNote, registerWorkflowNoteRenderer } from "./workflow-note";
 import { approvalRequestFor, askWorkflowApproval } from "./workflow-approval";
@@ -333,6 +336,12 @@ export interface CreateWorkflowToolOptions {
   onEvent?: (event: WorkflowEvent) => void;
 }
 
+/** The name to put on a card before the script's own `meta.name` is known. */
+function runNameOf(name: string): string {
+  const clean = name.trim();
+  return clean === "" || clean === "workflow" ? "workflow" : clean;
+}
+
 export function createWorkflowToolExtension(options: CreateWorkflowToolOptions = {}): InlineExtension {
   const runner = options.runner ?? defaultSubagentRunner;
   const registry = options.registry ?? new AgentRegistry();
@@ -355,16 +364,35 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
       ): Promise<WorkflowAgentResult> => {
         if (signal.aborted) return { ok: false, text: "", error: "stopped" };
         const base: AgentDefinition = { ...BUILTIN_AGENTS["general-purpose"]!, source: "builtin" };
-        const definition: AgentDefinition = request.agentType ? { ...base, name: request.agentType } : base;
+        // A builtin definition carries a read-only allow-list. A workflow agent
+        // gets the parent session's pool instead, because here the permission
+        // door — not the allow-list — is what decides whether a tool may run, and
+        // a door nobody can reach guards nothing. A named agent type keeps its own
+        // narrowing, since the caller chose it on purpose.
+        //
+        // `acceptEdits` marks the agent as one that may hold mutating tools. It is
+        // not a permission grant: every such call still walks through the door and
+        // meets the chat's mode, so `plan` refuses a write and `manual` asks.
+        const definition: AgentDefinition = request.agentType
+          ? { ...base, name: request.agentType, permissionMode: "acceptEdits" }
+          : { ...base, tools: undefined, permissionMode: "acceptEdits" };
         try {
           const outcome = await runner({
             agentDef: definition,
             prompt: request.prompt,
             description: request.label ?? "workflow task",
             cwd: ctx.cwd || process.cwd(),
-            ctx,
+            // Every tool this subagent runs goes through the permission door.
+            ctx: gatedContext(ctx, request),
             outputSchema: request.schema,
             model: request.model,
+            // The parent's pool, so a subagent holds exactly what the chat holds
+            // and never more. Without this a workflow agent could only read,
+            // which would leave the permission door below with nothing to guard.
+            parentTools: (ctx.tools ?? []).map((tool) => tool.name),
+            // Writes are allowed to be *offered*; whether one runs is the door's
+            // decision, taken per tool call in the chat's own mode.
+            parentCanWrite: true,
             // The panel's Activity block. A display hook: if it ever throws, the
             // agent keeps working and only the row is lost.
             onEvent: (event) => {
@@ -401,9 +429,80 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
         }
       };
 
+      /** A tool result that says "no" without throwing into the agent. */
+      const refuseTool = (name: string, reason: string) => ({
+        result: { content: [{ type: "text" as const, text: `No: ${reason}` }], isError: true },
+        isError: true,
+      });
+
+      /**
+       * Wrap the tool context so a subagent's tool call meets the chat's own
+       * permission mode.
+       *
+       * Why a wrapper and not a check inside the subagent runner: the runner is
+       * shared with the chat's own `agent` tool, and a workflow is the only place
+       * with a run to grant against. Here the decision has a run, a name for the
+       * card, and somewhere to keep "allow for this run".
+       */
+      const gatedContext = (ctx: ExtensionToolContext, request: Parameters<WorkflowAgentRunner>[0]): ExtensionToolContext => {
+        // A host with no tool executor cannot run a tool at all, so there is
+        // nothing to gate: pass the context through instead of crashing.
+        if (typeof ctx.executeTool !== "function") return ctx;
+
+        // The old behaviour, for a user who wants it and knows what it means.
+        if ((process.env.QRONOS_WORKFLOW_TOOLS ?? "").trim() === "0") return ctx;
+        const base = ctx.executeTool.bind(ctx);
+        const executeTool = async (name: string, args: unknown) => {
+          const mode = getExecutionMode();
+          const facts = readToolFacts({ name, args: (args ?? {}) as Record<string, unknown>, cwd: ctx.cwd || process.cwd() });
+          const grants = request.toolGrants?.() ?? new Set<string>();
+          const verdict = decideToolUse(mode, facts, grants);
+          if (verdict === "allow") return base(name, args);
+          if (verdict === "refuse") return refuseTool(name, refusalReason(mode, facts));
+
+          // The runtime owns the ask and the grants. No ask means nobody to
+          // question, and silence must never run a tool.
+          if (!request.approveTool) return refuseTool(name, refusalReason(mode, facts));
+          const decision = await request.approveTool({ ...facts, name });
+          if (!decision.approved) return refuseTool(name, refusalReason(mode, facts));
+          if (decision.switchToAuto) {
+            try {
+              setExecutionMode("auto");
+            } catch {
+              // A host without a mode slider still runs the tool: the user said yes.
+            }
+          }
+          return base(name, args);
+        };
+        return { ...ctx, executeTool } as ExtensionToolContext;
+      };
+
       // The job manager is per extension instance, so the journals, the status
       // line and the "one report per job" rule all belong to this session.
       const state: WorkflowSessionState = { lastStatusAt: 0 };
+
+      /**
+       * The ask, for one named run.
+       *
+       * Both paths need it — the job manager for a background run and the
+       * foreground runtime below — so it is written once. Two copies would drift,
+       * and the one that drifted would be the path where a tool ran unguarded.
+       */
+      const askFor =
+        (workflow: string) =>
+        async ({ facts, asked, total }: { facts: Parameters<typeof askToolApproval>[1]["facts"]; asked: number; total?: number }) => {
+          const answer = await askToolApproval(state.toolCtx, { workflow, facts, asked, total });
+          const approved = answer.answer !== "No";
+          return {
+            approved,
+            // "Yes, allow ... for this run" is the only answer that remembers
+            // anything, and what it remembers dies with the run.
+            grant: approved && answer.answer === "yes-for-run" ? grantKeys(facts) : undefined,
+            switchToAuto: approved && answer.answer === "yes-and-auto",
+            skipped: answer.skipped,
+          };
+        };
+
       const managerFor = (): WorkflowJobManager => {
         if (state.manager) return state.manager;
         state.manager = new WorkflowJobManager({
@@ -415,6 +514,9 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             if (!ctx) return Promise.resolve({ ok: false, text: "", error: "no session context" });
             return runAgentOnce(request, signal, ctx);
           },
+          // Every tool a subagent runs that the mode says to question lands
+          // here, as a card in the chat. The panel stays read-only.
+          approveTool: ({ facts, asked, total, workflow }) => askFor(workflow)({ facts, asked, total }),
           // The waiting row above the editor follows this: one hook, so a run
           // that ends by being cancelled cannot leave the row behind.
           onActiveChange: (active) => {
@@ -552,6 +654,7 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
                 options.onEvent?.(event);
                 if (event.type === "agent_end") publishStatus();
               },
+              approveTool: askFor(runNameOf(name)),
               runAgent: (request, signal) => runAgentOnce(request, signal, ctx),
             });
             const result = await runtime.run(approvedScript);
