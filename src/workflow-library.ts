@@ -129,3 +129,23 @@ export function savedScriptLine(script: SavedScript, now: number): string {
 export function scriptDirFor(cwd: string): string {
   return saveDir(cwd);
 }
+
+/**
+ * A long path, cut from the left so the end survives.
+ *
+ * A card has about sixty columns. A deep temp directory spends all of them on a
+ * prefix nobody needs, and hides the one thing the reader is checking: the file
+ * name. So the tail wins and the head becomes `…/`.
+ */
+export function shortPath(path: string, max = 52): string {
+  if (path.length <= max) return path;
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  let tail = "";
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const next = tail === "" ? parts[index]! : `${parts[index]!}/${tail}`;
+    // Two columns for the `…/` that goes in front.
+    if (next.length + 2 > max) break;
+    tail = next;
+  }
+  return tail === "" ? `…${path.slice(-(max - 1))}` : `…/${tail}`;
+}

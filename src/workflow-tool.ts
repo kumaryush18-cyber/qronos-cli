@@ -21,7 +21,7 @@ import { WorkflowJobManager, type WorkflowJob } from "./workflow-jobs";
 import { journalDir, journalPath, pruneJournals } from "./workflow-journal";
 import { openWorkflowPanel } from "./workflow-panel";
 import { saveWorkflowScript } from "./workflow-save";
-import { listSavedScripts, readSavedScript, resolveSavedScript, savedScriptLine, scriptDirFor, scriptProblem } from "./workflow-library";
+import { listSavedScripts, readSavedScript, resolveSavedScript, savedScriptLine, scriptDirFor, scriptProblem, shortPath } from "./workflow-library";
 import { askConfirm } from "./workflow-confirm";
 import { editTextInEditor } from "./editor-edit";
 import { writeFileSync } from "node:fs";
@@ -1033,7 +1033,8 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
             }
             const save = await askConfirm(ctx, {
               title: "Save the change?",
-              lines: [script.path, "the file on disk would be replaced"],
+              // The tail of the path, so the file name is not the part that is cut.
+              lines: [shortPath(script.path), "the file on disk would be replaced"],
               yes: "Yes, save it",
               no: "No, leave the file alone",
             });

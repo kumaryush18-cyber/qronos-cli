@@ -8,6 +8,7 @@ import {
   savedScriptLine,
   scriptDirFor,
   scriptProblem,
+  shortPath,
 } from "../src/workflow-library";
 
 const dir = "/project/.qronos/workflows";
@@ -146,5 +147,27 @@ describe("one line about a script", () => {
 
   test("a file with no time still gets a line", () => {
     expect(savedScriptLine({ ...script, updatedAt: undefined }, 61_000)).toBe("review · 900 B");
+  });
+});
+
+describe("a long path on a card", () => {
+  test("the tail survives, because the file name is what you check", () => {
+    const deep = "/private/var/folders/q2/p1t6rgxj5fj32g1dc7dmd49r0000gn/T/qronos-scripts-abc/.qronos/workflows/review.js";
+    const shown = shortPath(deep, 46);
+    expect(shown.length).toBeLessThanOrEqual(46);
+    expect(shown).toEndWith(".qronos/workflows/review.js");
+    expect(shown).toStartWith("…/");
+  });
+
+  test("a path that fits is left exactly as it is", () => {
+    expect(shortPath(".qronos/workflows/review.js", 46)).toBe(".qronos/workflows/review.js");
+  });
+
+  test("one very long name still gives something short, not nothing", () => {
+    // There is no folder to keep here, so it is cut to the tail alone: an answer
+    // is better than an empty line, and a cut is better than a wrapped card.
+    const shown = shortPath(`/${"x".repeat(200)}`, 30);
+    expect(shown.length).toBeLessThanOrEqual(30);
+    expect(shown).toStartWith("…");
   });
 });
