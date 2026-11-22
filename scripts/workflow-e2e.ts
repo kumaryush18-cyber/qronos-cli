@@ -95,17 +95,35 @@ function walk(dir: string): string[] {
 }
 
 const statuses: Array<{ key: string; text?: string }> = [];
-const ctx = {
-  cwd: project,
-  model,
-  modelRegistry: registry,
-  signal: new AbortController().signal,
+
+/**
+ * The context is a class, not an object literal, and `tools` is a getter on the
+ * prototype. That is how the real host hands it over, and the difference is not
+ * cosmetic: a spread (`{ ...ctx }`) drops it, the subagent loop then reads
+ * `ctx.tools` as undefined, and every agent dies with "ctx.tools is not iterable"
+ * before its first call. A literal in this harness hid that bug for a release.
+ */
+class HostContext {
+  cwd = project;
+  model = model!;
+  modelRegistry = registry;
+  signal = new AbortController().signal;
+  toolList = [readTool, lsTool, grepTool] as Array<{ name: string }>;
+  // A getter on the prototype, exactly like the real host.
+  get tools(): Array<{ name: string }> {
+    return this.toolList;
+  }
+  ui: Record<string, unknown> = {};
+  executeTool: (name: string, args: any) => Promise<unknown> = async () => ({});
+}
+
+const ctx = new HostContext();
+Object.assign(ctx, {
   ui: {
     setStatus: (key: string, text?: string) => statuses.push({ key, text }),
     notify: (text: string) => notices.push(text),
   },
-  tools: [readTool, lsTool, grepTool] as never,
-  async executeTool(name: string, args: any) {
+  async executeTool(this: unknown, name: string, args: any) {
     try {
       if (name === "read") {
         const target = join(project, args?.path ?? "");
@@ -130,7 +148,7 @@ const ctx = {
       return { result: { content: [{ type: "text", text: String(error) }] }, isError: true };
     }
   },
-} as never;
+});
 
 /* --- capture the tool the extension registers --------------------------- */
 
@@ -456,7 +474,15 @@ try {
   const panelDeadline = Date.now() + 180_000;
   while (deliveries.length === 0 && Date.now() < panelDeadline) await new Promise((resolve) => setTimeout(resolve, 500));
   const finishedText = plain((panelComponent?.render(74) ?? []).join("\n"));
-  check("the panel shows the finished run", /finished|done/.test(finishedText), finishedText.slice(0, 200));
+  // A settled panel does not print the word "finished": the agent counter says it
+  // (3/3) and the footer key becomes `p retry`. This check used to look for the
+  // word and had been failing since the panel was redrawn — a stale test, not a
+  // stale panel.
+  check(
+    "the panel shows the finished run",
+    /3\/3 agents/.test(finishedText) && /p retry/.test(finishedText),
+    finishedText.split("\n").slice(0, 2).join(" | ").slice(0, 160),
+  );
   check("the panel still draws after the run ends", (panelComponent?.render(74) ?? []).length > 4, "no lines");
   panelComponent?.dispose();
 

@@ -273,8 +273,11 @@ export async function defaultSubagentRunner(params: SubagentRunnerParams): Promi
   });
 
   const subagentTools: Tool[] = [];
-  for (const t of ctx.tools) {
-    if (allowedToolNames.has(t.name)) {
+  // Read the pool the same forgiving way as `currentToolNames`: a host that keeps
+  // its tools behind `getAllTools()`, or has none at all, must give an empty pool
+  // — not an exception that kills the whole run before the first model call.
+  for (const t of ctxToolsOf<Tool>(ctx)) {
+    if (t.name && allowedToolNames.has(t.name)) {
       subagentTools.push({
         name: t.name,
         description: t.description,
@@ -666,10 +669,22 @@ export const PARALLEL_TASK_LIMIT = 12;
  * missing accessor must degrade to "no inheritance" rather than throw inside a
  * tool call.
  */
+export function ctxToolsOf<T extends { name?: string }>(ctx: ExtensionToolContext): T[] {
+  const anyCtx = ctx as unknown as { getAllTools?: () => T[]; tools?: T[] };
+  let list: unknown;
+  try {
+    list = anyCtx.getAllTools?.() ?? anyCtx.tools;
+  } catch {
+    // A host whose accessor throws is a host with no tools to offer.
+    return [];
+  }
+  return Array.isArray(list) ? (list as T[]) : [];
+}
+
 function currentToolNames(ctx: ExtensionToolContext): string[] {
-  const anyCtx = ctx as unknown as { getAllTools?: () => Array<{ name?: string }>; tools?: Array<{ name?: string }> };
-  const list = (anyCtx.getAllTools?.() ?? anyCtx.tools ?? []) as Array<{ name?: string }>;
-  return list.map((t) => t?.name).filter((n): n is string => typeof n === "string" && n.length > 0);
+  return ctxToolsOf(ctx)
+    .map((t) => t?.name)
+    .filter((n): n is string => typeof n === "string" && n.length > 0);
 }
 
 /**

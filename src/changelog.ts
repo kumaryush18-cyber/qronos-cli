@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.26",
+    highlights: [
+      "A workflow that stopped before it started is fixed. Every run died with \"ctx.tools is not iterable\", so no agent ever ran a tool. The cause was one line: the permission door handed the agent a copy of the host context, and a copy loses the fields the host keeps behind a getter — `tools` was one of them.",
+      "The door now forwards the whole context instead of copying it, so no field can go missing again, and a context without a tool list gives an empty list rather than an exception.",
+      "The test harness was the reason this shipped: it passed a plain object with `tools` written out, which is not how the host gives it. The harness now uses the host's shape, so the same bug cannot pass a test again.",
+    ],
+  },
+  {
     version: "1.0.25",
     highlights: [
       "Only the agents that failed run again. `f` in the panel, or /workflows retry <id>, picks the red crosses and leaves every good answer where it is — the cleanup you actually want after a run with two holes in it.",

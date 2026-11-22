@@ -34,6 +34,7 @@ import { openWorkflowPanel } from "./workflow-panel";
 import { saveWorkflowScript } from "./workflow-save";
 import { listSavedScripts, readSavedScript, resolveSavedScript, savedScriptLine, scriptDirFor, scriptProblem, shortPath } from "./workflow-library";
 import { askConfirm } from "./workflow-confirm";
+import { withToolExecutor } from "./context-proxy";
 import {
   failedAgents,
   retryFailed,
@@ -559,7 +560,10 @@ export function createWorkflowToolExtension(options: CreateWorkflowToolOptions =
           }
           return base(name, args);
         };
-        return { ...ctx, executeTool } as ExtensionToolContext;
+        // A proxy, not a spread: a spread loses the fields the host keeps behind
+        // prototype getters (`tools` is one), and that cost every workflow run its
+        // first tool call. See src/context-proxy.ts.
+        return withToolExecutor(ctx, executeTool as never);
       };
 
       // The job manager is per extension instance, so the journals, the status

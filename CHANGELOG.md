@@ -1,3 +1,15 @@
+## 1.0.26 — a workflow that could start
+
+- **Fixed: every workflow stopped at once with `ctx.tools is not iterable`.** The
+  permission door passed the agent a *copy* of the host context, and a copy keeps
+  own properties only — `tools` lives behind a getter, so it vanished. The door now
+  forwards the whole context (`src/context-proxy.ts`), so no field can go missing.
+- **Armour:** a context with no tool list now gives an empty list instead of an
+  exception, so a different host shape cannot kill a run before its first call.
+- **The harness was the real hole.** `scripts/workflow-e2e.ts` passed a plain object
+  with `tools` written out; the host passes a class. It now uses the host's shape,
+  and the fixed run passes 51 checks.
+
 ## 1.0.25 — run the failed agents again
 
 - **`f` retries only what broke.** In the panel `f`, in the chat `/workflows retry <id>`.
