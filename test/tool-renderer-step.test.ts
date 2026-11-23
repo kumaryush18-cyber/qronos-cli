@@ -110,9 +110,11 @@ describe("fallbacks", () => {
   test("a description on a non-shell tool changes nothing", () => {
     const lines = renderCall("read", { path: "src/index.ts", description: "Read the entry point" });
     expect(lines).toHaveLength(1);
-    // The path is wrapped in an OSC file link, so match the visible words only.
+    // The path is wrapped in an OSC file link and uses the platform's
+    // separator (src\index.ts on Windows), so match the visible words only.
     expect(lines[0]).toContain("Read(");
-    expect(lines[0]).toContain("src/index.ts");
+    expect(lines[0]).toContain("index.ts");
+    expect(lines[0]).toContain("src");
     expect(lines[0]).not.toContain("Read the entry point");
   });
 });
