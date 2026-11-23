@@ -125,6 +125,8 @@ Storing it inline is an explicit opt-in.
 | `/context` | inspect what is filling the context window |
 | `/compact [focus]` | compress the conversation, optionally with a focus |
 | `/recall [n]` | bring back an earlier prompt |
+| `/export` | export the conversation as plain text: copy it, or save a `.txt` file |
+| `/export <file>` | write that file straight away, with no question |
 | `/review` | review the current diff |
 | `/status`, `/doctor` | session and environment diagnostics |
 | `/usage` | credits left today |

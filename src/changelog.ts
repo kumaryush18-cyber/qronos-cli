@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.28",
+    highlights: [
+      "`/export` now writes plain text. The old command wrote a `.html` file or a `.jsonl` file; both are awkward to read, awkward to paste, and need something else to open them. A `.txt` file opens everywhere.",
+      "`/export` with no file name asks first: copy the conversation to the clipboard, or save it to a file. `Esc` closes the question and writes nothing.",
+      "`/export notes.txt` skips the question. A bare name gets `.txt`, so `/export notes` saves `notes.txt`.",
+      "The save screen shows the name already filled in, like `2026-11-23-104846-hi.txt` — the date, the time, and a short slug of your first message. Enter saves; `Esc` goes back.",
+      "A file is never overwritten: a name that is taken gets `-2`, then `-3`, in front of the extension.",
+      "The clipboard is tried over OSC 52 first on SSH and containers, then with `pbcopy` / `clip` / `wl-copy` / `xclip` / `xsel`. If nothing works it says so and suggests `/export <file>`.",
+      "Secrets are redacted on the way out, colours and control characters are stripped, and a transcript is cut at 2 million characters with a note, so one huge tool result cannot make an unreadable file.",
+    ],
+  },
+  {
     version: "1.0.27",
     highlights: [
       "A shell call now says what it is doing. Claude Code asks the model for a short `description` with every Bash call (\"List files in current directory\") and prints it above the command; pi's bash tool had no such field, so ours printed the raw command and nothing else.",

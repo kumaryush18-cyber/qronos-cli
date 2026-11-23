@@ -12,6 +12,7 @@ import { BUY_NOT_AVAILABLE_TEXT, buyPageText, resolveBuyPage } from "./buy-tool"
 import { detectReaBackends, summarizeReaBackends } from "./rea-backends";
 import { fetchUsageText } from "./usage-tool";
 import { runInit } from "./init-cmd";
+import { runExport } from "./export-command";
 import { runCost } from "./cost-cmd";
 import { getExecutionMode, type ExecutionMode } from "./execution-modes";
 import { HOOK_EVENTS, mergeHookConfigs, parseHookConfig } from "./hooks";
@@ -577,6 +578,12 @@ export function createCommandsExtension(opts: CreateCommandsOptions): InlineExte
       qronos.registerCommand("init", {
         description: "Initialize project instructions for Qronos AI (creates QRONOS.md).",
         handler: async (_args, ctx) => runInit(ctx),
+      });
+      // Replaces the built-in /export (which wrote HTML) with a plain-text one.
+      // Extension commands win over built-ins, so typing /export reaches this.
+      qronos.registerCommand("export", {
+        description: "Export the conversation as text (copy it, or save a .txt file).",
+        handler: async (args, ctx) => runExport(args, ctx),
       });
       qronos.registerCommand("cost", {
         description: "Show detailed session token usage and PAYG / Token Plan billing status.",
