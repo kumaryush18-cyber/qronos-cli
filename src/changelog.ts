@@ -11,7 +11,7 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
-    version: "1.0.28",
+    version: "1.0.29",
     highlights: [
       "`/export` now writes plain text. The old command wrote a `.html` file or a `.jsonl` file; both are awkward to read, awkward to paste, and need something else to open them. A `.txt` file opens everywhere.",
       "`/export` with no file name asks first: copy the conversation to the clipboard, or save it to a file. `Esc` closes the question and writes nothing.",
@@ -20,6 +20,7 @@ export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
       "A file is never overwritten: a name that is taken gets `-2`, then `-3`, in front of the extension.",
       "The clipboard is tried over OSC 52 first on SSH and containers, then with `pbcopy` / `clip` / `wl-copy` / `xclip` / `xsel`. If nothing works it says so and suggests `/export <file>`.",
       "Secrets are redacted on the way out, colours and control characters are stripped, and a transcript is cut at 2 million characters with a note, so one huge tool result cannot make an unreadable file.",
+      "The export tests now build their paths with `join`, so they pass on Windows too. 1.0.28 shipped the same code; this release is the one with a green run on all three systems.",
     ],
   },
   {

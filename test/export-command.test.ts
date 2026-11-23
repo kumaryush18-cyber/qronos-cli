@@ -53,20 +53,25 @@ function makeHost(options: HostOptions) {
 }
 
 describe("resolveTargetPath", () => {
+  // Paths are compared through `join`, because Windows uses `\` and CI runs
+  // the same tests on all three systems.
+  const CWD = join(tmpdir(), "proj");
+
   test("a bare name gets .txt", () => {
-    expect(resolveTargetPath("/proj", "notes")).toBe("/proj/notes.txt");
+    expect(resolveTargetPath(CWD, "notes")).toBe(join(CWD, "notes.txt"));
   });
 
   test("a name with an extension is kept", () => {
-    expect(resolveTargetPath("/proj", "notes.md")).toBe("/proj/notes.md");
+    expect(resolveTargetPath(CWD, "notes.md")).toBe(join(CWD, "notes.md"));
   });
 
   test("an absolute path is used as it is", () => {
-    expect(resolveTargetPath("/proj", "/tmp/x.txt")).toBe("/tmp/x.txt");
+    const absolute = join(tmpdir(), "x.txt");
+    expect(resolveTargetPath(CWD, absolute)).toBe(absolute);
   });
 
   test("quotes around a name are dropped", () => {
-    expect(resolveTargetPath("/proj", '"my notes"')).toBe("/proj/my notes.txt");
+    expect(resolveTargetPath(CWD, '"my notes"')).toBe(join(CWD, "my notes.txt"));
   });
 });
 
