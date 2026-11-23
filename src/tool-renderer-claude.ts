@@ -4,6 +4,11 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { toolDescriptionsEnabled } from "./env";
+import { stepHeading } from "./tool-step";
+
+/** The two tools whose calls the model may name with a `description`. */
+const SHELL_TOOLS = new Set(["bash", "powershell"]);
 
 /**
  * How many lines a collapsed tool result shows before "ctrl+o to expand".
@@ -88,11 +93,6 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             const termWidth = process.stdout.columns || 80;
             const cwd = process.cwd();
 
-            const name = formatToolName(toolName);
-            // Reserve space for dot (3 cells), parens (2 cells), and margins
-            const maxTargetLen = Math.max(16, termWidth - name.length - 8);
-            const target = formatTarget(toolName, args, cwd, maxTargetLen);
-
             // While running: dot is dim. When finished: green or red.
             const isFinished = !context.isPartial && context.durationMs !== undefined;
             const isError = Boolean(context.isError);
@@ -100,6 +100,26 @@ export function createClaudeToolRendererExtension(): InlineExtension {
             const dot = isFinished
               ? (isError ? theme.fg("error", "● ") : theme.fg("success", "● "))
               : theme.fg("dim", "● ");
+
+            // Claude-style step name, when the model sent one: the sentence on
+            // top, the command underneath. Same two lines as Claude Code.
+            // Without a description the old one-line `● Bash(cmd)` stays.
+            const step = SHELL_TOOLS.has(toolName) && toolDescriptionsEnabled() ? stepHeading(args) : undefined;
+            if (step) {
+              const stepLine = `${dot}${theme.bold(theme.fg("text", step.title))}`;
+              container.addChild(new Text(truncateToWidth(stepLine, termWidth), 0, 0));
+              if (step.command) {
+                const prompt = toolName === "powershell" ? "PS>" : "$";
+                const commandLine = `  ${theme.fg("dim", "⎿")} ${theme.fg("dim", prompt)} ${theme.fg("text", step.command)}`;
+                container.addChild(new Text(truncateToWidth(commandLine, termWidth), 0, 0));
+              }
+              return container;
+            }
+
+            const name = formatToolName(toolName);
+            // Reserve space for dot (3 cells), parens (2 cells), and margins
+            const maxTargetLen = Math.max(16, termWidth - name.length - 8);
+            const target = formatTarget(toolName, args, cwd, maxTargetLen);
 
             const title = theme.bold(theme.fg("text", name));
             // Target is normal readable text, not dim grey

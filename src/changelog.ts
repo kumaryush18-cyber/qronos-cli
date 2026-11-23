@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
+    version: "1.0.27",
+    highlights: [
+      "A shell call now says what it is doing. Claude Code asks the model for a short `description` with every Bash call (\"List files in current directory\") and prints it above the command; pi's bash tool had no such field, so ours printed the raw command and nothing else.",
+      "We re-register pi's own bash and powershell with one extra optional field, so the model writes the sentence and pi still runs the command. Nothing else changes: the tool is still called `bash`.",
+      "The transcript draws two lines — the sentence, then `⎿ $ command` — and falls back to the old one-line `Bash(cmd)` when the model sends no description. A resumed session, an old transcript or a workflow agent can never break it.",
+      "The sentence is cleaned and cut at 90 characters before it is drawn: no colours, no control characters, no second line. A description that only repeats the command is dropped.",
+      "QRONOS_TOOL_DESCRIPTIONS=0 removes the field from the schema and the line from the display, so nothing is asked for and nothing is spent.",
+      "Proved on claude-haiku-5.5 with a neutral prompt: scripts/tool-step-e2e.ts, 11 checks. The model filled the field on 2 of 2 shell calls without being told to, and both lines fitted 80 columns.",
+    ],
+  },
+  {
     version: "1.0.26",
     highlights: [
       "A workflow that stopped before it started is fixed. Every run died with \"ctx.tools is not iterable\", so no agent ever ran a tool. The cause was one line: the permission door handed the agent a copy of the host context, and a copy loses the fields the host keeps behind a getter — `tools` was one of them.",

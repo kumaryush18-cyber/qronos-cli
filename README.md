@@ -62,6 +62,11 @@ Storing it inline is an explicit opt-in.
 - **Permission modes** — auto, edit-automatically, manual, plan, and a deliberately
   dangerous skip-all. Switch with `/permissions` or the footer shortcut; the choice persists
   in `~/.qronos/config.json`.
+- **Step names above shell commands** — every `bash` call carries an optional short
+  sentence the model writes itself: `List files in current directory`, `Show working tree
+  status`. The transcript draws it above the command, Claude Code style, and falls back to
+  the plain one-line form when the model sends none. `QRONOS_TOOL_DESCRIPTIONS=0` removes
+  the field entirely. See [docs/tool-steps.md](docs/tool-steps.md).
 - **Subagents** — delegate a focused job to a child agent. It inherits your tools and can
   never be more permissive than you: ask for a subagent in plan mode and it is read-only.
   Runs fan out in parallel, up to a depth and concurrency cap.
@@ -148,6 +153,7 @@ Storing it inline is an explicit opt-in.
 | `QRONOS_MODEL` | fallback model id when the server sends no catalog | — |
 | `QRONOS_TUI_MODE` | `regular` = inline mode with terminal scrollback; `fullscreen` (default) lets a click in the input box place the cursor | `fullscreen` |
 | `QRONOS_TITLE` | text for the terminal tab title; text only, no colour | `Qronos CLI` |
+| `QRONOS_TOOL_DESCRIPTIONS` | `0` removes the step-name field from `bash`/`powershell` and the line from the transcript | on |
 | `QRONOS_MAX_SUBAGENT_DEPTH` | how deep subagents may nest | `3` |
 | `QRONOS_MAX_CONCURRENT_SUBAGENTS` | parallel subagents | `8` |
 | `QRONOS_MEMORY` | `0` turns learned memory off | on |

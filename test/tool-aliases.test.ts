@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { aliasArgs, createToolAliasesExtension, normalizeShellPath } from "../src/tool-aliases";
+import {
+  STEP_GUIDELINE,
+  STEP_PARAM_DESCRIPTION,
+  aliasArgs,
+  createToolAliasesExtension,
+  normalizeShellPath,
+  shellParameters,
+  withStepGuideline,
+} from "../src/tool-aliases";
 
 describe("tool argument aliases", () => {
   const bash = (a: unknown) => aliasArgs(a, "command", ["cmd"]);
@@ -82,5 +90,55 @@ describe("normalizeShellPath (mirrors pi's normalizePath for shellPath)", () => 
   });
   test("win32 expands ~\\", () => {
     expect(normalizeShellPath("~\\x", "win32", "C:\\h")).toBe(join("C:\\h", "x"));
+  });
+});
+
+describe("the optional step name (Claude Code parity)", () => {
+  function registeredTools() {
+    const tools: Record<string, any> = {};
+    const pi = { registerTool: (t: any) => (tools[t.name] = t), getSettings: () => ({}) };
+    (createToolAliasesExtension() as { factory: (p: never) => void }).factory(pi as never);
+    return tools;
+  }
+
+  test("on: command, description and timeout, and only command is required", () => {
+    const schema = shellParameters(true) as { properties: Record<string, { description?: string }>; required?: string[] };
+    expect(Object.keys(schema.properties).sort()).toEqual(["command", "description", "timeout"]);
+    expect(schema.properties.description!.description).toBe(STEP_PARAM_DESCRIPTION);
+    expect(schema.required).toEqual(["command"]);
+  });
+  test("off: pi's own schema, so the model is not asked for the field", () => {
+    const schema = shellParameters(false) as { properties: Record<string, unknown> };
+    expect(Object.keys(schema.properties).sort()).toEqual(["command", "timeout"]);
+  });
+  test("the guideline is added, never replacing pi's own", () => {
+    expect(withStepGuideline(["pi's own"], true)).toEqual(["pi's own", STEP_GUIDELINE]);
+    expect(withStepGuideline(["pi's own"], false)).toEqual(["pi's own"]);
+    expect(withStepGuideline(undefined, true)).toEqual([STEP_GUIDELINE]);
+    expect(withStepGuideline(undefined, false)).toEqual([]);
+  });
+  test("the registered bash tool carries the field, and the alias still works", () => {
+    const tools = registeredTools();
+    const schema = tools.bash.parameters as { properties: Record<string, unknown> };
+    expect(Object.keys(schema.properties)).toContain("description");
+    expect(tools.bash.promptGuidelines).toContain(STEP_GUIDELINE);
+    expect(tools.bash.prepareArguments({ cmd: "ls" })).toEqual({ command: "ls" });
+  });
+  test("QRONOS_TOOL_DESCRIPTIONS=0 removes the field from the schema", () => {
+    const before = process.env.QRONOS_TOOL_DESCRIPTIONS;
+    process.env.QRONOS_TOOL_DESCRIPTIONS = "0";
+    try {
+      const tools = registeredTools();
+      const schema = tools.bash.parameters as { properties: Record<string, unknown> };
+      expect(Object.keys(schema.properties).sort()).toEqual(["command", "timeout"]);
+      expect(tools.bash.promptGuidelines).not.toContain(STEP_GUIDELINE);
+    } finally {
+      if (before === undefined) delete process.env.QRONOS_TOOL_DESCRIPTIONS;
+      else process.env.QRONOS_TOOL_DESCRIPTIONS = before;
+    }
+  });
+  test("no powershell tool on a platform that has none", () => {
+    const tools = registeredTools();
+    expect(tools.powershell).toBeUndefined();
   });
 });
