@@ -5,6 +5,7 @@
 // frame, never anything that blocks the chat turn.
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Config } from "@qronos/shared";
+import type { AdMessage } from "../../ad-messages";
 import type { AdsDeps } from "./api";
 import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";
@@ -26,7 +27,12 @@ export interface BannerRendererOptions {
 
 export interface BannerRenderer {
   /** Fetch + show the banner slot. The widget lays itself out at the width pi renders it at. */
-  render(deps: AdsDeps, ctx: ExtensionContext, config: Config): Promise<void>;
+  render(
+    deps: AdsDeps,
+    ctx: ExtensionContext,
+    config: Config,
+    options?: { prompt?: string; messages?: AdMessage[] },
+  ): Promise<void>;
 }
 
 /**
@@ -41,8 +47,8 @@ export function createBannerRenderer(opts: BannerRendererOptions = {}): BannerRe
   const screen = opts.screen ?? {};
 
   return {
-    async render(deps, ctx, config) {
-      const ad = await fetchAdNext(deps, "banner");
+    async render(deps, ctx, config, options) {
+      const ad = await fetchAdNext(deps, "banner", options ?? {});
       if (opts.isActive && !opts.isActive()) return;
       if (!ad) {
         screen.banner = undefined;
@@ -74,7 +80,7 @@ export function createBannerRenderer(opts: BannerRendererOptions = {}): BannerRe
       if (lastPostedToken !== ad.click_token) {
         lastPostedToken = ad.click_token;
         const impFired = fireGravityImpression(deps, ad);
-        await postImpression(deps, ad.ad_id, ad.click_token, impFired);
+        await postImpression(deps, ad, impFired);
       }
     },
   };

@@ -18,6 +18,7 @@ export type CliCommand =
   | { kind: "version" }
   | { kind: "logout" }
   | { kind: "mcp"; args: string[] }
+  | { kind: "freepi"; args: string[] }
   | { kind: "completions"; shell: string }
   | { kind: "unknown"; arg: string };
 
@@ -83,6 +84,7 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
   if (first === undefined) return { kind: "run", options: {} };
 
   if (first === "mcp") return { kind: "mcp", args: rest };
+  if (first === "freepi") return { kind: "freepi", args: rest };
   // Completion scripts must never start a session: print and exit.
   if (first === "completions") return { kind: "completions", shell: rest.join(" ").trim() };
   if (first === "init") return { kind: "init" };

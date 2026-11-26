@@ -12,6 +12,21 @@ import { redactSecrets } from "./secret-redact";
 
 /** A hard cap, so one giant tool result cannot make an unreadable file. */
 export const EXPORT_MAX_CHARS = 2_000_000;
+
+/**
+ * The cap for this run: `QRONOS_EXPORT_MAX_CHARS`.
+ *
+ * `0` means no cap at all, for someone who really wants every byte. Anything
+ * else is a count of characters, so the limit is never a mystery: the file says
+ * on its last line when it was cut.
+ */
+export function exportMaxChars(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.QRONOS_EXPORT_MAX_CHARS;
+  if (raw === undefined || raw.trim() === "") return EXPORT_MAX_CHARS;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return EXPORT_MAX_CHARS;
+  return value === 0 ? Number.POSITIVE_INFINITY : Math.floor(value);
+}
 /** How many lines of a tool result are kept. */
 const RESULT_MAX_LINES = 20;
 /** Width of the rule under the heading. */
@@ -149,6 +164,8 @@ export interface BuildExportTextInput {
   now: Date;
   /** A seam for the tests; the default is the real redactor. */
   redact?: (text: string) => string;
+  /** Character cap; Infinity means no cap. Defaults to `EXPORT_MAX_CHARS`. */
+  maxChars?: number;
 }
 
 /**
@@ -214,9 +231,10 @@ export function buildExportText(input: BuildExportTextInput): string {
   }
 
   let text = out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
-  if (text.length > EXPORT_MAX_CHARS) {
-    const kept = text.slice(0, EXPORT_MAX_CHARS);
-    text = `${kept}\n\n… export cut at ${EXPORT_MAX_CHARS} characters\n`;
+  const maxChars = input.maxChars ?? EXPORT_MAX_CHARS;
+  if (Number.isFinite(maxChars) && maxChars > 0 && text.length > maxChars) {
+    const kept = text.slice(0, maxChars);
+    text = `${kept}\n\n… export cut at ${maxChars} characters (QRONOS_EXPORT_MAX_CHARS=0 keeps everything)\n`;
   }
   return text;
 }

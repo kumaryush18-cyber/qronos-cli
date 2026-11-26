@@ -159,6 +159,9 @@ export const AdNextResponseSchema = z.object({
   // from the user's machine when the ad is actually shown, then reports
   // imp_fired so the server does not fire it again.
   imp_url: z.string().optional(),
+  // Which slot drew it, so the impression report can name it. Optional: an
+  // older server omits it and the report says "unknown".
+  placement: z.string().optional(),
 });
 export type AdNextResponse = z.infer<typeof AdNextResponseSchema>;
 

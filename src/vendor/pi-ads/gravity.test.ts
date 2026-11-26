@@ -92,7 +92,7 @@ describe("client-fired Gravity impression", () => {
   });
 
   test("own ad, or a non-Gravity host, is never fired", async () => {
-    for (const a of [ad({ source: "own", imp_url: IMP }), ad({ source: "gravity", imp_url: "https://evil.example/imp" }), ad({ source: "gravity", imp_url: "http://api.trygravity.ai/imp" }), ad({ source: "gravity", imp_url: "https://nottrygravity.ai/imp" })]) {
+    for (const a of [ad({ source: "own", imp_url: IMP }), ad({ source: "gravity", imp_url: "https://evil.example/imp" }), ad({ source: "gravity", imp_url: "http://api.trygravity.ai/imp" }), ad({ source: "gravity", imp_url: "https://nottrygravity.ai/imp" }), ad({ source: "gravity", imp_url: "https://trygravity.ai" }), ad({ source: "gravity", imp_url: "https://trygravity.ai/" })]) {
       const t = net({ banner: a });
       await createBannerRenderer().render(t.deps(), ctx().c, config);
       expect(t.impFetches().length).toBe(0);

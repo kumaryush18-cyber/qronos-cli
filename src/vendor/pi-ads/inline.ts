@@ -6,6 +6,7 @@
 // second hook to the extension's registered surface.
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Config } from "@qronos/shared";
+import type { AdMessage } from "../../ad-messages";
 import type { AdsDeps } from "./api";
 import { fetchAdNext, fireGravityImpression, postImpression } from "./api";
 import type { AdScreen } from "./screen";
@@ -15,9 +16,16 @@ import { setWidgetSafely } from "./widget";
 export const INLINE_WIDGET_ID = "qronos-ad-inline";
 
 export interface InlineRenderer {
-  onTurnEnd(deps: AdsDeps, ctx: ExtensionContext, config: Config, prompt?: string): Promise<void>;
+  onTurnEnd(
+    deps: AdsDeps,
+    ctx: ExtensionContext,
+    config: Config,
+    options?: { prompt?: string; messages?: AdMessage[] },
+  ): Promise<void>;
   /** Reset turn count / visibility — called on session_start so a /new or /resume starts cadence fresh. */
   reset(ctx: ExtensionContext): void;
+  /** Remove the card from the screen now. Used when a free-pi model takes over. */
+  clear(ctx: ExtensionContext): void;
 }
 
 export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
@@ -32,7 +40,9 @@ export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
   };
 
   return {
-    async onTurnEnd(deps, ctx, config, prompt) {
+    clear: clearInline,
+
+    async onTurnEnd(deps, ctx, config, options) {
       turnCount += 1;
 
       clearInline(ctx);
@@ -41,7 +51,7 @@ export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
       // A programmatic banner is on screen: no other ad (of any source) may appear beside it.
       if (screen.banner === "gravity" || screen.banner === "thrad") return;
 
-      const ad = await fetchAdNext(deps, "inline", prompt);
+      const ad = await fetchAdNext(deps, "inline", options ?? {});
       if (!ad) return;
       const isProgrammatic = ad.source === "gravity" || ad.source === "thrad";
       // The banner may have turned into a programmatic ad while this fetch was in flight.
@@ -56,7 +66,7 @@ export function createInlineRenderer(screen: AdScreen = {}): InlineRenderer {
       if (lastPostedToken !== ad.click_token) {
         lastPostedToken = ad.click_token;
         const impFired = fireGravityImpression(deps, ad);
-        await postImpression(deps, ad.ad_id, ad.click_token, impFired);
+        await postImpression(deps, ad, impFired);
       }
     },
 

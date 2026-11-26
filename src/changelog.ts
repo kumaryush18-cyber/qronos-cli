@@ -11,16 +11,25 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_HIGHLIGHTS: ChangelogEntry[] = [
   {
-    version: "1.0.29",
+    version: "1.0.31",
     highlights: [
-      "`/export` now writes plain text. The old command wrote a `.html` file or a `.jsonl` file; both are awkward to read, awkward to paste, and need something else to open them. A `.txt` file opens everywhere.",
-      "`/export` with no file name asks first: copy the conversation to the clipboard, or save it to a file. `Esc` closes the question and writes nothing.",
-      "`/export notes.txt` skips the question. A bare name gets `.txt`, so `/export notes` saves `notes.txt`.",
-      "The save screen shows the name already filled in, like `2026-11-23-104846-hi.txt` — the date, the time, and a short slug of your first message. Enter saves; `Esc` goes back.",
+      "A sponsor in a terminal now earns what it should: the placement is the one registered for us, and the request carries the real conversation and the real machine instead of a fixed line.",
+      "A sponsor request carries a hashed account email, so the ad you see can be attributed. The address itself is never sent, and `QRONOS_NO_AD_ATTRIBUTION=1` turns the hash off.",
+      "Sponsored slots are requested only in an interactive terminal, never from a piped or background run.",
+      "An impression is fired once per drawn ad, and the server now records it, so the count can be checked.",
+      "`QRONOS_DEBUG_ADS=1` prints one line per slot: which placement was asked for, what the network answered, and why a slot stayed empty.",
+      "Rotation reads better: a switch to a new model starts a fresh session for the free models.",
+    ],
+  },
+  {
+    version: "1.0.30",
+    highlights: [
+      "A model picker offers a model only when it can answer, so a model that would fail is never listed.",
+      "An ad follows the model you picked, and it is counted only after it was actually drawn.",
+      "A busy model is retried once with another key, and one plain sentence says nothing was sent twice.",
+      "`/export` writes plain text, so the file opens anywhere and pastes anywhere.",
       "A file is never overwritten: a name that is taken gets `-2`, then `-3`, in front of the extension.",
-      "The clipboard is tried over OSC 52 first on SSH and containers, then with `pbcopy` / `clip` / `wl-copy` / `xclip` / `xsel`. If nothing works it says so and suggests `/export <file>`.",
-      "Secrets are redacted on the way out, colours and control characters are stripped, and a transcript is cut at 2 million characters with a note, so one huge tool result cannot make an unreadable file.",
-      "The export tests now build their paths with `join`, so they pass on Windows too. 1.0.28 shipped the same code; this release is the one with a green run on all three systems.",
+      "Secrets are redacted on the way out, colours and control characters are stripped, and a transcript is cut at 2 million characters with a note. `QRONOS_EXPORT_MAX_CHARS` sets that limit, and `0` means no limit at all.",
     ],
   },
   {

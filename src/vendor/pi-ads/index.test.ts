@@ -167,3 +167,89 @@ describe("banner refresh on turn_end", () => {
     t.shutdown();
   });
 });
+
+// F3: a free-pi model gets a free-pi ad in the same slot, and the Gravity
+// banner is not fetched at all — one ad above the editor, never two.
+describe("free-pi banner selection", () => {
+  async function setupWith(freepiActive: boolean) {
+    const handlers = new Map<string, Handler>();
+    const pi = { on: (e: string, h: Handler) => handlers.set(e, h) } as unknown as ExtensionAPI;
+    const widgets: string[] = [];
+    const ctx = {
+      ui: {
+        setStatus: () => {},
+        setWidget: (id: string) => widgets.push(id),
+        theme: { fg: (_c: string, t: string) => t, bold: (t: string) => t },
+      },
+      model: { provider: "free", id: "particle" },
+    } as unknown as ExtensionContext;
+    let gravityFetches = 0;
+    let freepiFetches = 0;
+    const fetchImpl = (async (input: string) => {
+      if (new URL(input.toString()).pathname === "/ads/next") gravityFetches++;
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+    const source = {
+      async fetch() {
+        freepiFetches++;
+        return { adsRequired: false, adsRequiredKnown: false };
+      },
+      async drawn() {
+        return { ok: true, adsRequired: false };
+      },
+      adsRequired: () => false,
+      reset: () => {},
+    };
+    globalThis.setInterval = (() => 0) as unknown as typeof setInterval;
+    const ext = createAdsExtension({
+      baseUrl: "https://api.test",
+      getToken: () => "jwt",
+      sessionId: "s",
+      fetchImpl,
+      freepi: {
+        getPool: async () => {
+          throw new Error("unused");
+        },
+        identity: { version: "1.0.30", os: "linux", arch: "x64" },
+        isActiveModel: () => freepiActive,
+        source,
+      },
+    }) as { factory: (qronos: ExtensionAPI) => void };
+    ext.factory(pi);
+    await handlers.get("session_start")!({}, ctx);
+    return {
+      gravityFetches: () => gravityFetches,
+      freepiFetches: () => freepiFetches,
+      turnEnd: async () => {
+        for (let i = 0; i < 5; i += 1) await handlers.get("turn_end")!({}, ctx);
+      },
+    };
+  }
+
+  test("free model → the free-pi source is used, the Gravity banner is not fetched", async () => {
+    const seen = await setupWith(true);
+    expect(seen.freepiFetches()).toBe(1);
+    expect(seen.gravityFetches()).toBe(0);
+  });
+
+  test("other model → the Gravity banner keeps the slot", async () => {
+    const seen = await setupWith(false);
+    expect(seen.freepiFetches()).toBe(0);
+    expect(seen.gravityFetches()).toBeGreaterThan(0);
+  });
+
+  // The inline card is an ad too. Under a free-pi model no Qronos ad of any kind
+  // may appear, and the inline cadence must not fire at all.
+  test("a free-pi model never asks Qronos for an inline ad", async () => {
+    const seen = await setupWith(true);
+    const before = seen.gravityFetches();
+    await seen.turnEnd();
+    expect(seen.gravityFetches()).toBe(before);
+  });
+
+  test("a qronos model still uses the inline cadence", async () => {
+    const seen = await setupWith(false);
+    await seen.turnEnd();
+    expect(seen.gravityFetches()).toBeGreaterThan(0);
+  });
+});

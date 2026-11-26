@@ -143,6 +143,34 @@ Storing it inline is an explicit opt-in.
 
 ---
 
+## Free models
+
+Four free models can appear in `/model` under **free**: `particle`,
+`deepseek-v4.1-flash`, `glm-5.3-flash`, `deepseek-v4-flash`.
+
+You do nothing special to get them. Sign in to Qronos once with the GitHub device
+flow, and the CLI asks the Qronos gateway for the shared model pool with your own
+Qronos key. There is no second sign-in, no key to paste, and nothing is written
+to disk.
+
+That pool is the **only** source, on purpose: one hidden second source would make
+a broken pool look fine. If the gateway cannot be reached the pool is simply
+empty. The CLI still starts, `/model` shows no free model, and one line says the
+free models are unavailable right now.
+
+One honest limit: the upstream free tier allows one live request per key, so a
+pool of N keys serves N requests at the same moment. When all are busy, a request
+waits, and says so if the wait runs out.
+
+Which ad you see follows the model, never a fallback:
+
+- a free model shows the free ad, and **never** a Qronos ad;
+- a Qronos model, or a third-party BYOK model, shows the Qronos ad, and never a
+  free one;
+- the inline card obeys the same rule.
+
+---
+
 ## Environment variables
 
 | Variable | Description | Default |
@@ -156,6 +184,11 @@ Storing it inline is an explicit opt-in.
 | `QRONOS_TUI_MODE` | `regular` = inline mode with terminal scrollback; `fullscreen` (default) lets a click in the input box place the cursor | `fullscreen` |
 | `QRONOS_TITLE` | text for the terminal tab title; text only, no colour | `Qronos CLI` |
 | `QRONOS_TOOL_DESCRIPTIONS` | `0` removes the step-name field from `bash`/`powershell` and the line from the transcript | on |
+| `QRONOS_FREEPI_INVITE` | the sign-up link the owner sign-in shows, so it can change without a release | set in the owner's environment |
+| `QRONOS_DEBUG_FREEPI` | `1` keeps the raw upstream error text beside the masked sentence | off |
+| `QRONOS_DEBUG_ADS` | `1` prints one line per ad fetch: the slot, the status, and `no fill` when the answer was empty | off |
+| `QRONOS_NO_AD_ATTRIBUTION` | `1` stops sending the hashed account email to the ad network | off |
+| `QRONOS_FREEPI_TOKEN` | no longer a token source. The shared pool in the admin panel is the only one; it is never used for a request | — |
 | `QRONOS_MAX_SUBAGENT_DEPTH` | how deep subagents may nest | `3` |
 | `QRONOS_MAX_CONCURRENT_SUBAGENTS` | parallel subagents | `8` |
 | `QRONOS_MEMORY` | `0` turns learned memory off | on |
@@ -179,6 +212,20 @@ you ask for it.
 Two things do reach our server on the gateway path: the consent version, and — after you
 accept the notice — a request that carries your account id so sponsored placements work.
 `QRONOS_NO_GRAVITY_PIXEL=1` turns that off. Configured as BYOK, neither happens.
+
+Inside a sponsored request, and only when a real ad slot is being fetched:
+
+- the **last few turns of the conversation** (at most 8, 4 000 characters each), with
+  secret-looking strings redacted before they leave the machine. This is what makes the
+  slot worth anything; an ad network prices real conversation, not a topic line.
+- a **hashed** account email (SHA-256 of a trimmed, lowercased address). The address
+  itself never exists on your machine and never leaves our server.
+- the real operating system, CPU architecture and CLI version, so the request is not
+  pretending to be a different machine.
+
+`QRONOS_NO_AD_ATTRIBUTION=1` drops the hashed email only; `QRONOS_NO_GRAVITY_PIXEL=1`
+drops the whole ad identity. Ads are requested only in an interactive terminal, never
+from a piped or CI run.
 
 ---
 

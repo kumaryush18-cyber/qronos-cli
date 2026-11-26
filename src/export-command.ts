@@ -15,6 +15,7 @@ import { askExportFileName } from "./export-panel";
 import {
   buildExportText,
   exportFileName,
+  exportMaxChars,
   firstUserText,
   freeFileName,
   type ExportEntryLike,
@@ -33,6 +34,8 @@ export interface ExportCommandDeps {
   mkdir?: (path: string) => void;
   /** Injected in tests: the save screen, without a terminal. */
   askName?: (ctx: any, initialName: string) => Promise<string | undefined>;
+  /** Injected in tests: the character cap (`QRONOS_EXPORT_MAX_CHARS`). */
+  maxChars?: number;
 }
 
 function notify(ctx: any, message: string, type: "info" | "warning" | "error" = "info"): void {
@@ -98,6 +101,7 @@ export async function runExport(
     model: ctx?.model?.id,
     title: ctx?.sessionManager?.getSessionName?.(),
     now,
+    maxChars: deps.maxChars ?? exportMaxChars(),
   });
 
   const requested = args.trim();

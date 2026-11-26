@@ -43,7 +43,15 @@ import { ensureUiDefaults, installSmoothScrolling } from "./ui-defaults";
 import { resolveTuiMode } from "./env";
 import { AGENT_RULES } from "./agent-rules";
 import { loadMemoryPrompt } from "./memory-io";
-import { getUserMemoryPath } from "./paths";
+import { getFreepiCatalogPath, getFreepiTokensPath, getUserMemoryPath } from "./paths";
+import { createFreepiProviderExtension, freepiScopeIds } from "./freepi-provider";
+import { loadFreepiPool } from "./freepi-pool-singleton";
+import { fetchRemoteFreepiTokens, remoteRecords } from "./freepi-remote";
+import { clientIdentity } from "./ad-client-headers";
+import { isFreepiActiveModel, FREEPI_PROVIDER_NAME } from "./freepi-models";
+import { setFreepiAdsRequired } from "./freepi-ads-state";
+import { loadFreepiCatalog } from "./freepi-catalog";
+import { CLI_VERSION } from "./version";
 import { createToolGuardExtension } from "./tool-guard";
 import { installBugHandler } from "./bug-report";
 import { createAdvisorExtension } from "./advisor";
@@ -93,6 +101,10 @@ export interface LaunchOptions {
   /** Base64url Gravity context for the ads extension's /ads/next header; undefined when the pixel is off or not ready. */
   getGravityContext?: () => string | undefined;
   dangerouslySkipPermissions?: boolean;
+  /** A human is watching a real terminal. Defaults to process.stdout.isTTY. */
+  interactive?: boolean;
+  /** A getter for the pre-hashed account email (64 hex), filled in the background. */
+  getEmailHash?: () => string | undefined;
   /**
    * Whether the current folder's project resources (.pi/mcp.json, .pi/extensions,
    * .pi/settings.json, .agents/skills) may load. launchPi() decides this before
@@ -295,15 +307,54 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   // banner/inline ads + usage meter, sandboxed to UI-only hooks.
   // See packages/pi-ads/src/sandbox.test.ts for the enforced proof.
   const adsBaseUrl = process.env.QRONOS_BASE_URL || DEFAULT_BASE_URL;
-  const adsExtension: InlineExtension = createAdsExtension({
-    baseUrl: adsBaseUrl,
-    getToken: () => opts.jwt,
-    sessionId,
-    getGravityContext: opts.getGravityContext,
-    onBannerAd: (u) => {
-      advertiserUrl = u;
-    },
-  });
+  // Ads belong to a session a human is watching. A piped or CI run draws nothing
+  // and must not ask a sponsor network for a creative, so the whole ad surface
+  // (banner, inline card, meter) is skipped outside a real terminal.
+  const adsEnabled = opts.interactive ?? process.stdout.isTTY === true;
+  // F3: the free-pi ad source. One pool for the whole process, shared with the
+  // provider, so an ad request and a model request never take the same token at
+  // the same moment. Built lazily: a launch never waits on a network read.
+  /**
+   * The shared free-pi pool from the qronos-ai admin panel.
+   *
+   * This is the only source. There is no file and no environment fallback, so a
+   * broken pool is visible instead of being hidden by a stale local token. A
+   * failure is an empty pool with one plain line, never a broken start: the free
+   * models simply do not appear in `/model`.
+   */
+  const loadRemoteFreepiRecords = async () => {
+    const result = await fetchRemoteFreepiTokens({ baseUrl: opts.baseUrl, jwt: opts.jwt });
+    if (!result.ok) {
+      if (result.reason !== "no-key" && process.env.QRONOS_DEBUG_FREEPI === "1") {
+        process.stderr.write(`[freepi] shared pool: ${result.reason}\n`);
+      }
+      return [];
+    }
+    if (process.env.QRONOS_DEBUG_FREEPI === "1") {
+      process.stderr.write(`[freepi] shared pool: ${result.tokens.length} token(s)\n`);
+    }
+    return remoteRecords(result.tokens);
+  };
+  const getFreepiPool = () => loadFreepiPool({ remote: loadRemoteFreepiRecords });
+  const adsExtension: InlineExtension | undefined = adsEnabled
+    ? createAdsExtension({
+        baseUrl: adsBaseUrl,
+        getToken: () => opts.jwt,
+        sessionId,
+        identity: clientIdentity({ version: CLI_VERSION }),
+        getEmailHash: opts.getEmailHash,
+        getGravityContext: opts.getGravityContext,
+        onBannerAd: (u) => {
+          advertiserUrl = u;
+        },
+        freepi: {
+          getPool: getFreepiPool,
+          identity: clientIdentity({ version: CLI_VERSION }),
+          isActiveModel: (ctx) => isFreepiActiveModel(ctx.model?.provider, ctx.model?.id),
+          onAdsRequired: setFreepiAdsRequired,
+        },
+      })
+    : undefined;
 
   // read-only "what's my usage" tool. Outside packages/pi-ads on
   // purpose — see usage-tool.ts's header comment.
@@ -428,6 +479,18 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
   //   stream rules: stop a turn the moment a banned pattern is streamed
   const advisorConfig = parseAdvisorConfig(process.env as Record<string, string | undefined>);
   const advisorExtension = createAdvisorExtension({ config: advisorConfig });
+  // F2: the four free-pi models, served through the token pool. The factory
+  // registers nothing when no token is saved, so a user who never added one
+  // sees no extra provider in /model.
+  const freepiExtension = createFreepiProviderExtension({
+    getPool: getFreepiPool,
+    identity: clientIdentity({ version: CLI_VERSION }),
+    // F4: real context sizes from free-pi's catalogue, cached for an hour.
+    getCatalog: async () => (await loadFreepiCatalog({ path: getFreepiCatalogPath() })).models,
+    // Live routing for the admin panel: one silent event per request, carrying the
+    // real input and output token counts. Nothing is printed for the user.
+    routeDeps: {},
+  });
   const streamRulesRuntime = createStreamRulesExtension({
     ...defaultRulePaths(process.cwd(), opts.agentDir),
   });
@@ -474,7 +537,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     // so registering this one first keeps the working line above the ad box.
     workingLineExtension,
     waitingLineExtension,
-    adsExtension,
+    ...(adsExtension ? [adsExtension] : []),
     usageToolExtension,
     buyToolExtension,
     docsToolExtension,
@@ -504,6 +567,7 @@ export function buildRuntimeOptions(opts: LaunchOptions, sessionId: string): Run
     lspToolExtension,
     // Optional, appended only when configured; undefined entries are dropped.
     advisorExtension,
+    freepiExtension,
     streamRulesExtension,
     notifyExtension,
   ].filter((extension): extension is InlineExtension => extension !== undefined);
@@ -678,7 +742,31 @@ export async function launchPi(opts: LaunchOptions): Promise<string> {
     });
     // Lock the model picker to just the qronos catalog models — pi's own
     // model-scope, no env vars touched. See provider-lock.ts.
-    const scopedModels = resolveQronosScope(services.modelRuntime, PROVIDER_NAME, scopeIds);
+    //
+    // The free-pi models are added when a token exists — saved, in the
+    // environment, or in the shared admin panel pool. They are ours (our pool
+    // pays for them), so the lock must not hide them. A pool that fails to load
+    // simply adds nothing.
+    //
+    // One pool per path: this call and the provider's share the same cache, so
+    // the shared fetch happens at most once per process.
+    const freepiIds = await freepiScopeIds(() =>
+      loadFreepiPool({
+        path: getFreepiTokensPath(),
+        remote: async () => {
+          const result = await fetchRemoteFreepiTokens({ baseUrl: opts.baseUrl, jwt: opts.jwt });
+          return result.ok ? remoteRecords(result.tokens) : [];
+        },
+      }),
+    );
+    const scopedModels = resolveQronosScope(services.modelRuntime, PROVIDER_NAME, scopeIds, process.env, [
+      { provider: FREEPI_PROVIDER_NAME, ids: freepiIds },
+    ]);
+    if (process.env.QRONOS_DEBUG_FREEPI === "1") {
+      process.stderr.write(
+        `[freepi] scope: ${scopedModels.map((entry) => `${entry.model.provider}/${entry.model.id}`).join(", ") || "(empty = every provider)"}\n`,
+      );
+    }
     return {
       ...(await createAgentSessionFromServices({
         services,

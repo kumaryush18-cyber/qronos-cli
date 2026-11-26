@@ -8,6 +8,7 @@ import type { SelfUpdateOutcome } from "./self-update";
 import type { ClientVersionCheck } from "./update-check";
 import { CLI_VERSION } from "./version";
 import { DEFAULT_MODEL_ID } from "./provider";
+import { isFreepiModel } from "./freepi-models";
 import { maybeWhatsNew } from "./whats-new";
 import { type RunOptions, parseCliArgs } from "./cli-args";
 import { PROVIDER_PRESETS } from "./provider";
@@ -41,8 +42,10 @@ export interface RunDeps {
   maybeSelfUpdate: (action: "notice" | "block", latest: string | undefined) => Promise<SelfUpdateOutcome>;
   /** Required-update relaunch. */
   relaunchLatest?: (latest: string | undefined) => Promise<number | undefined>;
-  /** Gravity ad measurement pixel. */
-  startGravityPixel?: (jwt: string) => (() => string | undefined) | undefined;
+  /** Gravity ad measurement pixel. `getEmailHash` is the pre-hashed account email, if known. */
+  startGravityPixel?: (jwt: string, getEmailHash?: () => string | undefined) => (() => string | undefined) | undefined;
+  /** The pre-hashed account email from /me. Optional: absent means no attribution. */
+  startEmailHash?: () => (() => string | undefined) | undefined;
 }
 
 /** Runs the full device-flow login (device code -> consent -> poll), stores the JWT. */
@@ -278,15 +281,28 @@ export async function run(
   if (whatsNew) deps.log(whatsNew);
 
   let getGravityContext: (() => string | undefined) | undefined;
+  let getEmailHash: (() => string | undefined) | undefined;
   if (consentCurrent) {
     try {
-      getGravityContext = deps.startGravityPixel?.(jwt);
+      // The hash is filled in the background by main.ts, so a slow /me never
+      // delays the first ad slot; the first request simply goes without it.
+      getEmailHash = deps.startEmailHash?.();
+      getGravityContext = deps.startGravityPixel?.(jwt, getEmailHash);
     } catch {
       // Gravity analytics pixel is optional; never stop startup
     }
   }
 
   const activeModel = options.model || versionCheck.model || selectedModel;
+  // A free-pi id cannot be chosen with `--model`: the gateway catalogue is read
+  // before the free-pi provider loads. Say the way that works instead of
+  // letting the gateway answer "unknown model".
+  if (options.model && isFreepiModel(options.model) && providerKey === "qronos") {
+    deps.log(
+      `\n[!] "${options.model}" is not a Qronos gateway model.\n` +
+        `    Start without --model, then pick the model inside:  /model\n`,
+    );
+  }
   if (!activeModel && !isDirectThirdParty) {
     deps.log(
       `\n[!] The server sent no model catalog. Falling back to "${DEFAULT_MODEL_ID}".\n` +
@@ -310,6 +326,7 @@ export async function run(
     fusion: versionCheck.fusion,
     updateLatest,
     getGravityContext,
+    getEmailHash,
     dangerouslySkipPermissions: options.dangerouslySkipPermissions,
   });
 

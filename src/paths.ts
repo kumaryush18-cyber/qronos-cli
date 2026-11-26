@@ -13,6 +13,27 @@ export function getCredentialsPath(agentDir: string = getQronosAgentDir()): stri
   return join(agentDir, "credentials.json");
 }
 
+/**
+ * The free-pi token pool, `~/.qronos/agent/freepi.json`.
+ *
+ * Deliberately NOT `~/.free-pi`: that folder belongs to pi, and it is off
+ * limits to our own tools. This file is ours, mode 600, and holds only the
+ * tokens the user added plus one session id each.
+ */
+export function getFreepiTokensPath(agentDir: string = getQronosAgentDir()): string {
+  return join(agentDir, "freepi.json");
+}
+
+/**
+ * The free-pi model catalogue cache, `~/.qronos/agent/freepi-models.json`.
+ *
+ * Holds only model ids and their real context sizes, no secret of any kind.
+ * Kept for an hour so a model list is not fetched on every launch.
+ */
+export function getFreepiCatalogPath(agentDir: string = getQronosAgentDir()): string {
+  return join(agentDir, "freepi-models.json");
+}
+
 /** The last CLI version whose "what's new" the user has already seen. */
 export function getLastSeenVersionPath(agentDir: string = getQronosAgentDir()): string {
   return join(agentDir, "last-seen-version");

@@ -32,7 +32,7 @@ interface ByokPayload {
   source?: string;
 }
 
-function reportOrigin(): string {
+export function reportOrigin(): string {
   const explicit = process.env.QRONOS_API_ORIGIN?.trim();
   if (explicit) return explicit.replace(/\/+$/, "");
   const connection = process.env.QRONOS_BASE_URL?.trim();
@@ -108,7 +108,7 @@ export function telemetryEnabled(): boolean {
   return process.env.QRONOS_NO_TELEMETRY !== "1" && process.env.CI !== "true";
 }
 
-async function authToken(): Promise<string | undefined> {
+export async function reportAuthToken(): Promise<string | undefined> {
   const connectionFile = await loadConnectionFile(getConnectionsPath()).catch(() => ({ connections: {} }));
   const active = activeConnection(connectionFile);
   const managedKey = active && /api\.qronos\.me/i.test(active.baseUrl) ? resolveConnectionKey(active) : undefined;
@@ -121,7 +121,7 @@ async function authToken(): Promise<string | undefined> {
 export async function reportClientOnce(): Promise<boolean> {
   if (!telemetryEnabled()) return false;
   try {
-    const token = await authToken();
+    const token = await reportAuthToken();
     if (!token) return false;
     const payload = await buildPayload();
     const response = await fetch(`${reportOrigin()}${REPORT_PATH}`, {

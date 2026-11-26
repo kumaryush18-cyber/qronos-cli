@@ -17,6 +17,12 @@ import { FUSION_PICKER_ID } from "./fusion";
 // QRONOS_KEEP_ENV_PROVIDERS=1 opts out — an empty scope means "show everything",
 // so the user's own env/`/login` providers appear as before.
 
+/** A provider we do want in the picker, besides the qronos gateway. */
+export interface ScopeExtra {
+  provider: string;
+  ids: readonly string[];
+}
+
 /** Minimal slice of ModelRuntime this needs — kept narrow so it's trivially testable. */
 interface ModelFinder {
   getModel(provider: string, modelId: string): ScopedModel["model"] | undefined;
@@ -34,12 +40,23 @@ export function resolveQronosScope(
   providerName: string,
   modelIds: string[],
   env: Record<string, string | undefined> = process.env,
+  extras: readonly ScopeExtra[] = [],
 ): ScopedModel[] {
   if (env.QRONOS_KEEP_ENV_PROVIDERS) return [];
   const scoped: ScopedModel[] = [];
   for (const id of new Set([FUSION_PICKER_ID, ...modelIds])) {
     const model = modelRuntime.getModel(providerName, id);
     if (model) scoped.push({ model });
+  }
+  // A provider whose credentials we own (the free pool) goes after the
+  // gateway models. Without this the lock hides the four free models, and
+  // `/model free/particle` answers "no model found".
+  for (const extra of extras) {
+    for (const id of extra.ids) {
+      const model = modelRuntime.getModel(extra.provider, id);
+      const already = scoped.some((entry) => entry.model.provider === extra.provider && entry.model.id === id);
+      if (model && !already) scoped.push({ model });
+    }
   }
   return scoped;
 }

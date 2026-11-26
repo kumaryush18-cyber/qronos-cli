@@ -43,7 +43,10 @@ function tempDir(prefix: string): string {
 }
 
 function baseOpts(baseUrl: string): LaunchOptions {
-  return { baseUrl, jwt: "test-jwt", agentDir: tempDir("qronos-agentdir-") };
+  // `interactive: true` because the ad extension only registers in a real
+  // terminal: a piped or CI run draws nothing, so it must not ask a sponsor
+  // network for a creative. This set is the interactive set.
+  return { baseUrl, jwt: "test-jwt", agentDir: tempDir("qronos-agentdir-"), interactive: true };
 }
 
 describe("closed extension list (#28 R20, SB1)", () => {
@@ -118,6 +121,10 @@ describe("closed extension list (#28 R20, SB1)", () => {
     // editor that says "Waiting for 1 dynamic workflow to finish" while a
     // background run is live. A widget and one shared counter; no tool, no
     // model call, and its ticker stops the moment the last run ends.
+    // 2026-11-25: to thirty-five with qronos-freepi: the four free-pi models,
+    // served through the token pool one request at a time per key. It registers
+    // a provider only when a token was saved, so the list is stable while no
+    // model call happens on its own.
     expect([...opts.extensionNames].sort()).toEqual(
       [
         "qronos-ads",
@@ -154,6 +161,7 @@ describe("closed extension list (#28 R20, SB1)", () => {
         "qronos-compact",
         "qronos-workflow",
         "qronos-workflow-waiting",
+        "qronos-freepi",
       ].sort(),
     );
   });

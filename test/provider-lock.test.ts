@@ -49,3 +49,45 @@ describe("resolveQronosScope", () => {
     expect(resolveQronosScope(finder(), "qronos", ["deepseek/deepseek-v4-flash"])).toEqual([]);
   });
 });
+
+describe("resolveQronosScope with an owned provider", () => {
+  test("the free models come after the gateway models, so the default stays the same", () => {
+    const runtime = {
+      getModel: (provider: string, id: string) =>
+        provider === "free" && id === "particle"
+          ? ({ provider: "free", id: "particle" } as never)
+          : finder().getModel(provider, id),
+    };
+    const scope = resolveQronosScope(runtime, "qronos", [QRONOS_MODEL.id], {}, [
+      { provider: "free", ids: ["particle", "glm-5.3-flash"] },
+    ]);
+    expect(scope.map((entry) => `${entry.model.provider}/${entry.model.id}`)).toEqual([
+      "qronos/deepseek/deepseek-v4-flash",
+      "free/particle",
+    ]);
+  });
+
+  test("an id the runtime does not know is left out, never a broken picker entry", () => {
+    const scope = resolveQronosScope(finder(), "qronos", [QRONOS_MODEL.id], {}, [
+      { provider: "free", ids: ["particle"] },
+    ]);
+    expect(scope).toHaveLength(1);
+  });
+
+  test("the same model is never listed twice", () => {
+    const runtime = { getModel: (provider: string, id: string) => ({ provider, id }) as never };
+    const scope = resolveQronosScope(runtime, "qronos", ["m1"], {}, [
+      { provider: "qronos", ids: ["m1"] },
+    ]);
+    expect(scope.filter((entry) => entry.model.id === "m1")).toHaveLength(1);
+  });
+
+  test("the opt-out still wins, so a user can hide everything", () => {
+    const runtime = { getModel: (provider: string, id: string) => ({ provider, id }) as never };
+    expect(
+      resolveQronosScope(runtime, "qronos", ["m1"], { QRONOS_KEEP_ENV_PROVIDERS: "1" }, [
+        { provider: "free", ids: ["particle"] },
+      ]),
+    ).toEqual([]);
+  });
+});

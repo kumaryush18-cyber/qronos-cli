@@ -211,3 +211,34 @@ describe("freeFileName", () => {
     expect(freeFileName("notes.txt", (path) => taken.has(path))).toBe("notes-3.txt");
   });
 });
+
+describe("exportMaxChars", () => {
+  test("defaults to two million characters", async () => {
+    const { exportMaxChars } = await import("../src/export-text");
+    expect(exportMaxChars({})).toBe(EXPORT_MAX_CHARS);
+  });
+
+  test("a value in the environment wins", async () => {
+    const { exportMaxChars } = await import("../src/export-text");
+    expect(exportMaxChars({ QRONOS_EXPORT_MAX_CHARS: "500" })).toBe(500);
+  });
+
+  test("0 means no cap at all", async () => {
+    const { exportMaxChars } = await import("../src/export-text");
+    expect(exportMaxChars({ QRONOS_EXPORT_MAX_CHARS: "0" })).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  test("nonsense falls back to the default instead of cutting at zero", async () => {
+    const { exportMaxChars } = await import("../src/export-text");
+    expect(exportMaxChars({ QRONOS_EXPORT_MAX_CHARS: "lots" })).toBe(EXPORT_MAX_CHARS);
+    expect(exportMaxChars({ QRONOS_EXPORT_MAX_CHARS: "-5" })).toBe(EXPORT_MAX_CHARS);
+  });
+
+  test("a cap given to the builder is honoured, and Infinity keeps everything", async () => {
+    const big = "y".repeat(5_000);
+    const cut = buildExportText({ entries: [user(big)], cwd: "/x", now: NOW, maxChars: 1_000 });
+    expect(cut).toContain("export cut at 1000 characters");
+    const whole = buildExportText({ entries: [user(big)], cwd: "/x", now: NOW, maxChars: Number.POSITIVE_INFINITY });
+    expect(whole).not.toContain("export cut at");
+  });
+});

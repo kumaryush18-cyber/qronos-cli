@@ -48,11 +48,19 @@ function dropPixelSignalHandlers(): () => void {
  * if it failed, or if the result is over the header size cap). Returns
  * undefined when disabled via QRONOS_NO_GRAVITY_PIXEL=1. Never throws.
  */
+export interface PixelOptions {
+  /** The account email, already hashed by the server (64 hex). Never the address. */
+  getEmailHash?: () => string | undefined;
+  /** The real machine this runs on, so Gravity sees an honest device. */
+  identity?: { version: string; os: string; arch: string };
+}
+
 export function startGravityPixel(
   jwt: string,
   storageDir: string,
   env: NodeJS.ProcessEnv = process.env,
   load: () => Promise<GravitySdk> = () => import("@gravity-ai/api"),
+  options: PixelOptions = {},
 ): (() => string | undefined) | undefined {
   if (env.QRONOS_NO_GRAVITY_PIXEL === "1") return undefined;
   const userId = userIdFromJwt(jwt);
@@ -84,9 +92,30 @@ export function startGravityPixel(
     try {
       const sessionId = pixel?.getSessionId();
       if (!sdk || !pixel || !sessionId) return undefined;
+      // Gravity asked for three things its engine prices on: the hashed email
+      // (their identity graph), the real device, and one session id per CLI
+      // session. A missing hash simply sends no identity.
+      const hashedEmail = options.getEmailHash?.();
+      const identity = options.identity;
       const ctx = sdk.gravityContext({
         sessionId,
-        user: { userId: userHash, gruid: pixel.getVisitorId(), grclid: pixel.getClickId(), graid: pixel.getGraid() },
+        user: {
+          userId: userHash,
+          gruid: pixel.getVisitorId(),
+          grclid: pixel.getClickId(),
+          graid: pixel.getGraid(),
+          ...(hashedEmail ? { hashed_email: hashedEmail } : {}),
+        },
+        ...(identity
+          ? {
+              device: {
+                ua: `qronos-cli/${identity.version} (${identity.os}; ${identity.arch})`,
+                device_type: "desktop",
+                os: identity.os,
+                arch: identity.arch,
+              },
+            }
+          : {}),
       });
       const encoded = Buffer.from(JSON.stringify(ctx)).toString("base64url");
       return encoded.length <= GRAVITY_CONTEXT_MAX_BYTES ? encoded : undefined;

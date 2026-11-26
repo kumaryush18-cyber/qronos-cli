@@ -63,7 +63,7 @@ describe("session lease headers", () => {
     }) as unknown as typeof fetch;
 
     await fetchAdNext(deps(fetchImpl), "banner");
-    await postImpression(deps(fetchImpl), AD_BODY.ad_id, AD_BODY.click_token);
+    await postImpression(deps(fetchImpl), AD_BODY);
 
     expect(headers).toHaveLength(2);
     expect(headers[0]?.get("x-session-id")).toBe("session-test");

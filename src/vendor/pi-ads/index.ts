@@ -6,11 +6,14 @@
 // qronos.sendMessage / qronos.sendUserMessage / qronos.appendEntry / the session.
 import type { ExtensionAPI, ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "@qronos/shared";
+import { messagesFromBranch, type AdMessage } from "../../ad-messages";
 import type { AdsDeps } from "./api";
 import { createBannerRenderer } from "./banner";
 import { createInlineRenderer } from "./inline";
 import type { AdScreen } from "./screen";
 import { renderMeter } from "./meter";
+import { createFreepiAdSource } from "../../freepi-ads-source";
+import { createFreepiBanner, type FreepiBanner } from "../../freepi-ads-banner";
 
 export interface CreateAdsExtensionOptions {
   baseUrl: string;
@@ -18,11 +21,30 @@ export interface CreateAdsExtensionOptions {
   getToken: () => string | Promise<string>;
   sessionId: string;
   fetchImpl?: typeof fetch;
+  /** The real client identity, so the gateway can report a true OS and user agent. */
+  identity?: import("../../ad-client-headers").ClientIdentity;
+  /** A pre-hashed account email (64 hex) for Gravity attribution. Never the address. */
+  getEmailHash?: () => string | undefined;
   /** Base64url Gravity context for the /ads/next header; undefined result = header omitted. */
   getGravityContext?: () => string | undefined;
  /**: mirrors the currently-shown banner ad's click URL to the caller
    * (qronos-cli's /support command) — undefined when no ad is shown. */
   onBannerAd?: (clickUrl: string | undefined) => void;
+  /**
+   * F3: the free-pi banner, used instead of the Gravity one while a free-pi
+   * model is active. Optional: without tokens there is no free-pi ad to show.
+   */
+  freepi?: {
+    /** The shared token pool, resolved on first use. */
+    getPool: () => Promise<import("../../freepi-tokens").FreepiTokenPool>;
+    identity: import("../../ad-client-headers").ClientIdentity;
+    /** True while the active model is one of the four free models. */
+    isActiveModel: (ctx: ExtensionContext) => boolean;
+    fetchImpl?: typeof fetch;
+    onAdsRequired?: (value: boolean) => void;
+    /** Seam: the ad source, so a test needs no token pool. */
+    source?: import("../../freepi-ads-source").FreepiAdSource;
+  };
 }
 
 // Idle fallback refresh, plus a per-step refresh on turn_end capped at one
@@ -38,8 +60,26 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
     sessionId: opts.sessionId,
     fetchImpl: opts.fetchImpl,
     getGravityContext: opts.getGravityContext,
+    identity: opts.identity,
+    getEmailHash: opts.getEmailHash,
   };
   const config = loadConfig();
+  // Built once per launch: one dedupe state, one ads_required flag.
+  const freepiBanner: FreepiBanner | undefined = opts.freepi
+    ? createFreepiBanner({
+        source:
+          opts.freepi.source ??
+          createFreepiAdSource({
+            getPool: opts.freepi.getPool,
+            identity: opts.freepi.identity,
+            fetchImpl: opts.freepi.fetchImpl,
+            onAdsRequired: opts.freepi.onAdsRequired,
+          }),
+        adMinColumns: config.adMinColumns,
+        onBannerAd: opts.onBannerAd,
+        fetchImpl: opts.freepi.fetchImpl,
+      })
+    : undefined;
 
   return {
     name: "qronos-ads",
@@ -57,12 +97,30 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
       // Every trigger shares one throttle: skip while a render is pending or
       // the last one finished under BANNER_MIN_REFRESH_MS ago. session_start
       // forces a render.
-      const renderBanner = async (ctx: ExtensionContext, force = false) => {
+      /** True only when a free-pi model is the active one. */
+      const isFreepiModel = (ctx: ExtensionContext): boolean =>
+        Boolean(opts.freepi && freepiBanner && opts.freepi.isActiveModel(ctx));
+
+      const renderBanner = async (
+        ctx: ExtensionContext,
+        force = false,
+        context: { prompt?: string; messages?: AdMessage[] } = {},
+      ) => {
         if (stopped) return;
         if (!force && (bannerInFlight || Date.now() - lastBannerAt < BANNER_MIN_REFRESH_MS)) return;
         bannerInFlight = true;
         try {
-          await banner.render(deps, ctx, config);
+          // One rule decides which ad shows, and it is the active model:
+          //  - a free-pi model gets a free-pi ad, and never a Qronos one;
+          //  - every other model (a Qronos model, or a third-party BYOK) gets
+          //    the Qronos banner, and never a free-pi one.
+          // An empty free-pi answer clears the slot instead of falling back,
+          // because a Qronos ad under a free-pi model is the wrong ad.
+          if (isFreepiModel(ctx)) {
+            await freepiBanner!.render(ctx, context.prompt);
+            return;
+          }
+          await banner.render(deps, ctx, config, context);
         } finally {
           bannerInFlight = false;
           lastBannerAt = Date.now();
@@ -108,10 +166,25 @@ export function createAdsExtension(opts: CreateAdsExtensionOptions): InlineExten
           }
         } catch {}
 
+        // The real turns go to the ad network; Gravity prices conversation, not
+        // a topic string. The same branch gives the free-pi ad its one line.
+        let messages: AdMessage[] = [];
+        try {
+          messages = messagesFromBranch(ctx.sessionManager.getBranch());
+        } catch {}
+
         // Not awaited: a slow /ads/next (Gravity can take seconds) must not
         // hold up the agent's next step.
-        void renderBanner(ctx);
-        await Promise.all([inline.onTurnEnd(deps, ctx, config, prompt), renderMeter(deps, ctx)]);
+        void renderBanner(ctx, false, { prompt, messages });
+        // The inline card is money too, so it follows the same rule as the
+        // banner: under a free-pi model no Qronos inline card may appear, and a
+        // card already on screen is removed as soon as the model changes.
+        if (isFreepiModel(ctx)) {
+          inline.clear(ctx);
+          await renderMeter(deps, ctx);
+          return;
+        }
+        await Promise.all([inline.onTurnEnd(deps, ctx, config, { prompt, messages }), renderMeter(deps, ctx)]);
       });
 
       qronos.on("session_shutdown", () => {
